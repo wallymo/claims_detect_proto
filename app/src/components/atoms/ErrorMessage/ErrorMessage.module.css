@@ -1,0 +1,20 @@
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-2);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-error);
+  line-height: 1.5;
+}
+
+.icon {
+  display: flex;
+  align-items: center;
+  color: var(--color-text-error);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.message {
+  flex: 1;
+}

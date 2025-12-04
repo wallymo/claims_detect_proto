@@ -1,0 +1,119 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  width: 100%;
+}
+
+.containerDisabled {
+  opacity: 0.6;
+}
+
+.label {
+  font-family: var(--font-family-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  display: block;
+  margin-bottom: var(--spacing-1);
+}
+
+.required {
+  color: var(--color-state-error);
+  margin-left: var(--spacing-1);
+}
+
+.input {
+  font-family: var(--font-family-primary);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  background-color: var(--color-background-primary);
+  border: var(--border-width-thin) solid var(--color-border-default);
+  border-radius: var(--border-radius-base);
+  transition: all 0.2s ease;
+  width: 100%;
+  box-sizing: border-box;
+  outline: none;
+}
+
+.input::placeholder {
+  color: var(--color-text-secondary);
+}
+
+/* Hover State */
+.input:hover:not(.disabled):not(:focus) {
+  border-color: var(--color-border-strong);
+}
+
+/* Focus State */
+.input:focus {
+  border-color: var(--color-interactive-default);
+  box-shadow: 0 0 0 3px rgba(51, 51, 51, 0.1);
+}
+
+/* Sizes */
+.small {
+  padding: var(--spacing-2) var(--spacing-3);
+  height: 32px;
+  font-size: var(--font-size-xs);
+}
+
+.medium {
+  padding: var(--spacing-3) var(--spacing-4);
+  height: 40px;
+  font-size: var(--font-size-sm);
+}
+
+.large {
+  padding: var(--spacing-4) var(--spacing-5);
+  height: 48px;
+  font-size: var(--font-size-base);
+}
+
+/* State - Error */
+.error {
+  border-color: var(--color-state-error);
+}
+
+.error:focus {
+  border-color: var(--color-state-error);
+  box-shadow: 0 0 0 3px rgba(211, 47, 47, 0.1);
+}
+
+/* State - Success */
+.success {
+  border-color: var(--color-state-success);
+}
+
+.success:focus {
+  border-color: var(--color-state-success);
+  box-shadow: 0 0 0 3px rgba(56, 142, 60, 0.1);
+}
+
+/* State - Disabled */
+.disabled {
+  cursor: not-allowed;
+  background-color: var(--color-background-secondary);
+  color: var(--color-text-disabled);
+}
+
+.disabled::placeholder {
+  color: var(--color-text-disabled);
+}
+
+/* Helper Text */
+.helperText {
+  font-family: var(--font-family-primary);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  margin-top: var(--spacing-1);
+  display: block;
+}
+
+.helperError {
+  color: var(--color-state-error);
+}
+
+.helperSuccess {
+  color: var(--color-state-success);
+}

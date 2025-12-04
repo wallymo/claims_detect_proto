@@ -1,0 +1,45 @@
+.trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: var(--spacing-4);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  background-color: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  text-align: left;
+}
+
+.trigger:hover:not(.disabled) {
+  background-color: var(--color-background-secondary);
+}
+
+.trigger:focus-visible {
+  outline: 2px solid var(--color-interactive-default);
+  outline-offset: -2px;
+}
+
+.label {
+  flex: 1;
+}
+
+.icon {
+  display: flex;
+  align-items: center;
+  color: var(--color-text-secondary);
+  transition: transform 0.2s ease;
+}
+
+/* States */
+.expanded .icon {
+  transform: rotate(180deg);
+}
+
+.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

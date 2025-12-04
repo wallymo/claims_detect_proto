@@ -1,0 +1,27 @@
+{
+  "accordionTrigger": {
+    "padding": "spacing.4",
+    "fontSize": "font.size.base",
+    "fontWeight": "font.weight.medium",
+    "color": "color.text.primary",
+    "backgroundColor": "transparent",
+    "transition": "background-color 0.2s ease",
+    "icon": {
+      "color": "color.text.secondary",
+      "size": "16px",
+      "transition": "transform 0.2s ease"
+    },
+    "states": {
+      "hover": {
+        "backgroundColor": "color.background.secondary"
+      },
+      "expanded": {
+        "iconTransform": "rotate(180deg)"
+      },
+      "disabled": {
+        "opacity": "0.5",
+        "cursor": "not-allowed"
+      }
+    }
+  }
+}

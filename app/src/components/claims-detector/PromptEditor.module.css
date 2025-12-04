@@ -1,0 +1,54 @@
+.promptEditor {
+  margin-top: var(--spacing-6);
+}
+
+.content {
+  padding: var(--spacing-4);
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-4);
+}
+
+.hint {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.textarea {
+  width: 100%;
+  padding: var(--spacing-4);
+  border: var(--border-width-thin) solid var(--color-border-default);
+  border-radius: var(--border-radius-base);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-family-mono);
+  line-height: var(--line-height-relaxed);
+  resize: vertical;
+  background-color: var(--color-background-secondary);
+}
+
+.textarea:focus {
+  outline: none;
+  border-color: var(--color-interactive-default);
+  background-color: var(--color-background-primary);
+}
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: var(--spacing-3);
+}
+
+.charCount {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-disabled);
+}
+
+.actions {
+  display: flex;
+  gap: var(--spacing-2);
+}

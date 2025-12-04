@@ -1,0 +1,188 @@
+:root {
+  /* Colors - Background */
+  --color-background-primary: #FFFFFF;
+  --color-background-secondary: #F5F5F5;
+  --color-background-tertiary: #E5E5E5;
+
+  /* Colors - Text */
+  --color-text-primary: #333333;
+  --color-text-secondary: #666666;
+  --color-text-disabled: #999999;
+
+  /* Colors - Border */
+  --color-border-default: #CCCCCC;
+  --color-border-strong: #999999;
+
+  /* Colors - Interactive */
+  --color-interactive-default: #333333;
+  --color-interactive-hover: #000000;
+
+  /* Colors - State */
+  --color-state-error: #D32F2F;
+  --color-state-success: #388E3C;
+  --color-state-warning: #F57C00;
+  --color-state-info: #1976D2;
+
+  /* Colors - DataViz - Categorical - Purple */
+  --color-dataviz-categorical-purple-0: #F3E5F5;
+  --color-dataviz-categorical-purple-1: #E1BEE7;
+  --color-dataviz-categorical-purple-2: #CE93D8;
+  --color-dataviz-categorical-purple-3: #BA68C8;
+  --color-dataviz-categorical-purple-4: #AB47BC;
+  --color-dataviz-categorical-purple-5: #9C27B0;
+  --color-dataviz-categorical-purple-6: #8E24AA;
+  --color-dataviz-categorical-purple-7: #7B1FA2;
+  --color-dataviz-categorical-purple-8: #6A1B9A;
+  --color-dataviz-categorical-purple-9: #4A148C;
+
+  /* Colors - DataViz - Categorical - Pink */
+  --color-dataviz-categorical-pink-0: #FCE4EC;
+  --color-dataviz-categorical-pink-1: #F8BBD0;
+  --color-dataviz-categorical-pink-2: #F48FB1;
+  --color-dataviz-categorical-pink-3: #F06292;
+  --color-dataviz-categorical-pink-4: #EC407A;
+  --color-dataviz-categorical-pink-5: #E91E63;
+  --color-dataviz-categorical-pink-6: #D81B60;
+  --color-dataviz-categorical-pink-7: #C2185B;
+  --color-dataviz-categorical-pink-8: #AD1457;
+  --color-dataviz-categorical-pink-9: #880E4F;
+
+  /* Colors - DataViz - Categorical - Yellow */
+  --color-dataviz-categorical-yellow-0: #FFFDE7;
+  --color-dataviz-categorical-yellow-1: #FFF9C4;
+  --color-dataviz-categorical-yellow-2: #FFF59D;
+  --color-dataviz-categorical-yellow-3: #FFF176;
+  --color-dataviz-categorical-yellow-4: #FFEE58;
+  --color-dataviz-categorical-yellow-5: #FFEB3B;
+  --color-dataviz-categorical-yellow-6: #FDD835;
+  --color-dataviz-categorical-yellow-7: #FBC02D;
+  --color-dataviz-categorical-yellow-8: #F9A825;
+  --color-dataviz-categorical-yellow-9: #F57F17;
+
+  /* Colors - DataViz - Categorical - Orange */
+  --color-dataviz-categorical-orange-0: #FFF3E0;
+  --color-dataviz-categorical-orange-1: #FFE0B2;
+  --color-dataviz-categorical-orange-2: #FFCC80;
+  --color-dataviz-categorical-orange-3: #FFB74D;
+  --color-dataviz-categorical-orange-4: #FFA726;
+  --color-dataviz-categorical-orange-5: #FF9800;
+  --color-dataviz-categorical-orange-6: #FB8C00;
+  --color-dataviz-categorical-orange-7: #F57C00;
+  --color-dataviz-categorical-orange-8: #EF6C00;
+  --color-dataviz-categorical-orange-9: #E65100;
+
+  /* Colors - DataViz - Categorical - Teal */
+  --color-dataviz-categorical-teal-0: #E0F2F1;
+  --color-dataviz-categorical-teal-1: #B2DFDB;
+  --color-dataviz-categorical-teal-2: #80CBC4;
+  --color-dataviz-categorical-teal-3: #4DB6AC;
+  --color-dataviz-categorical-teal-4: #26A69A;
+  --color-dataviz-categorical-teal-5: #009688;
+  --color-dataviz-categorical-teal-6: #00897B;
+  --color-dataviz-categorical-teal-7: #00796B;
+  --color-dataviz-categorical-teal-8: #00695C;
+  --color-dataviz-categorical-teal-9: #004D40;
+
+  /* Colors - DataViz - Categorical - Green */
+  --color-dataviz-categorical-green-0: #E8F5E9;
+  --color-dataviz-categorical-green-1: #C8E6C9;
+  --color-dataviz-categorical-green-2: #A5D6A7;
+  --color-dataviz-categorical-green-3: #81C784;
+  --color-dataviz-categorical-green-4: #66BB6A;
+  --color-dataviz-categorical-green-5: #4CAF50;
+  --color-dataviz-categorical-green-6: #43A047;
+  --color-dataviz-categorical-green-7: #388E3C;
+  --color-dataviz-categorical-green-8: #2E7D32;
+  --color-dataviz-categorical-green-9: #1B5E20;
+
+  /* Colors - DataViz - Sequential - Gray */
+  --color-dataviz-sequential-gray-0: #FAFAFA;
+  --color-dataviz-sequential-gray-1: #F5F5F5;
+  --color-dataviz-sequential-gray-2: #EEEEEE;
+  --color-dataviz-sequential-gray-3: #E0E0E0;
+  --color-dataviz-sequential-gray-4: #BDBDBD;
+  --color-dataviz-sequential-gray-5: #9E9E9E;
+  --color-dataviz-sequential-gray-6: #757575;
+  --color-dataviz-sequential-gray-7: #616161;
+  --color-dataviz-sequential-gray-8: #424242;
+  --color-dataviz-sequential-gray-9: #212121;
+
+  /* Typography - Font Family */
+  --font-family-primary: Inter, system-ui, -apple-system, sans-serif;
+  --font-family-mono: Roboto Mono, monospace;
+
+  /* Typography - Font Size */
+  --font-size-xs: 12px;
+  --font-size-sm: 14px;
+  --font-size-base: 16px;
+  --font-size-lg: 18px;
+  --font-size-xl: 20px;
+  --font-size-2xl: 24px;
+  --font-size-3xl: 32px;
+  --font-size-4xl: 40px;
+
+  /* Typography - Font Weight */
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* Typography - Line Height */
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.75;
+
+  /* Spacing */
+  --spacing-0: 0px;
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-5: 20px;
+  --spacing-6: 24px;
+  --spacing-8: 32px;
+  --spacing-10: 40px;
+  --spacing-12: 48px;
+  --spacing-16: 64px;
+  --spacing-20: 80px;
+  --spacing-24: 96px;
+
+  /* Effects - Shadow */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+  --shadow-base: 0 1px 3px rgba(0,0,0,0.1);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.1);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,0.1);
+  --shadow-xl: 0 20px 25px rgba(0,0,0,0.1);
+
+  /* Effects - Border Width */
+  --border-width-thin: 1px;
+  --border-width-medium: 2px;
+  --border-width-thick: 4px;
+
+  /* Effects - Border Radius */
+  --border-radius-none: 0px;
+  --border-radius-sm: 2px;
+  --border-radius-base: 4px;
+  --border-radius-md: 6px;
+  --border-radius-lg: 8px;
+  --border-radius-full: 9999px;
+
+  /* Layout - Breakpoints */
+  --breakpoint-xs: 320px;
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+  --breakpoint-2xl: 1536px;
+
+  /* Layout - Container */
+  --container-sm: 640px;
+  --container-md: 768px;
+  --container-lg: 1024px;
+  --container-xl: 1280px;
+
+  /* Layout - Grid */
+  --grid-columns: 12;
+  --grid-gap: 24px;
+
+}

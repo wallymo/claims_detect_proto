@@ -1,0 +1,119 @@
+.container {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  cursor: pointer;
+  user-select: none;
+}
+
+.input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle {
+  position: relative;
+  display: inline-block;
+  border-radius: 9999px;
+  transition: background-color 0.3s ease;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.toggle:focus-within {
+  outline: 2px solid var(--color-interactive-default);
+  outline-offset: 2px;
+}
+
+/* Sizes */
+.small {
+  width: 36px;
+  height: 20px;
+}
+
+.medium {
+  width: 44px;
+  height: 24px;
+}
+
+.large {
+  width: 52px;
+  height: 28px;
+}
+
+/* States */
+.off {
+  background-color: var(--color-border-default);
+}
+
+.off:hover:not(.disabled) {
+  background-color: var(--color-border-hover);
+}
+
+.on {
+  background-color: var(--color-interactive-default);
+}
+
+.on:hover:not(.disabled) {
+  background-color: var(--color-interactive-hover);
+}
+
+.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Thumb */
+.thumb {
+  position: absolute;
+  top: 2px;
+  background-color: var(--color-background-primary);
+  border-radius: 50%;
+  transition: transform 0.3s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.thumbSmall {
+  left: 2px;
+  width: 16px;
+  height: 16px;
+}
+
+.thumbMedium {
+  left: 2px;
+  width: 20px;
+  height: 20px;
+}
+
+.thumbLarge {
+  left: 2px;
+  width: 24px;
+  height: 24px;
+}
+
+/* Thumb positions when on */
+.on .thumbSmall {
+  transform: translateX(16px);
+}
+
+.on .thumbMedium {
+  transform: translateX(20px);
+}
+
+.on .thumbLarge {
+  transform: translateX(24px);
+}
+
+/* Label */
+.label {
+  font-family: var(--font-family-primary);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+.labelDisabled {
+  opacity: 0.5;
+}

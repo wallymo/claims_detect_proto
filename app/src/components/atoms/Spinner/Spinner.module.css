@@ -1,0 +1,193 @@
+.spinner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+/* Size variants */
+.small {
+  width: 16px;
+  height: 16px;
+}
+
+.medium {
+  width: 24px;
+  height: 24px;
+}
+
+.large {
+  width: 32px;
+  height: 32px;
+}
+
+.xlarge {
+  width: 48px;
+  height: 48px;
+}
+
+/* Circular variant */
+.circular .circular {
+  width: 100%;
+  height: 100%;
+  border: 2px solid transparent;
+  border-top-color: var(--color-interactive-default);
+  border-right-color: var(--color-interactive-default);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.small.circular .circular {
+  border-width: 2px;
+}
+
+.medium.circular .circular {
+  border-width: 2px;
+}
+
+.large.circular .circular {
+  border-width: 3px;
+}
+
+.xlarge.circular .circular {
+  border-width: 4px;
+}
+
+/* Dots variant */
+.dotsContainer {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.dot {
+  background-color: var(--color-interactive-default);
+  border-radius: 50%;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.small .dot {
+  width: 4px;
+  height: 4px;
+}
+
+.medium .dot {
+  width: 6px;
+  height: 6px;
+}
+
+.large .dot {
+  width: 8px;
+  height: 8px;
+}
+
+.xlarge .dot {
+  width: 12px;
+  height: 12px;
+}
+
+.dot:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* Bars variant */
+.barsContainer {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.bar {
+  background-color: var(--color-interactive-default);
+  border-radius: 2px;
+  animation: bounce 1s ease-in-out infinite;
+}
+
+.small .bar {
+  width: 3px;
+  height: 12px;
+}
+
+.medium .bar {
+  width: 4px;
+  height: 18px;
+}
+
+.large .bar {
+  width: 5px;
+  height: 24px;
+}
+
+.xlarge .bar {
+  width: 6px;
+  height: 36px;
+}
+
+.bar:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.bar:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.bar:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+/* Visually hidden label for screen readers */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Animations */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(0.6);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-50%);
+  }
+}

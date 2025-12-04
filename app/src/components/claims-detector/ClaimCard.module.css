@@ -1,0 +1,134 @@
+.claimCard {
+  padding: var(--spacing-4);
+  border: var(--border-width-thin) solid var(--color-border-default);
+  border-radius: var(--border-radius-base);
+  background-color: var(--color-background-primary);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  cursor: pointer;
+}
+
+.claimCard:hover {
+  border-color: var(--color-border-strong);
+}
+
+.claimCard.active {
+  border-color: var(--color-interactive-default);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.claimCard.approved {
+  border-left: var(--border-width-thick) solid var(--color-state-success);
+  background-color: #F8FFF8;
+}
+
+.claimCard.rejected {
+  border-left: var(--border-width-thick) solid var(--color-state-error);
+  background-color: #FFF8F8;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-3);
+  margin-bottom: var(--spacing-3);
+}
+
+.confidenceSection {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  flex: 1;
+}
+
+.progressWrapper {
+  flex: 1;
+  max-width: 120px;
+}
+
+.confidenceValue {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  min-width: 36px;
+}
+
+.badges {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  flex-shrink: 0;
+}
+
+.claimText {
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-relaxed);
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-3);
+  font-style: italic;
+}
+
+.location {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-3);
+}
+
+.actions {
+  display: flex;
+  gap: var(--spacing-2);
+  justify-content: flex-end;
+  border-top: var(--border-width-thin) solid var(--color-border-default);
+  padding-top: var(--spacing-3);
+  margin-top: var(--spacing-2);
+}
+
+.feedbackForm {
+  margin-top: var(--spacing-3);
+  padding-top: var(--spacing-3);
+  border-top: var(--border-width-thin) solid var(--color-border-default);
+}
+
+.feedbackLabel {
+  display: block;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-2);
+}
+
+.feedbackInput {
+  width: 100%;
+  padding: var(--spacing-3);
+  border: var(--border-width-thin) solid var(--color-border-default);
+  border-radius: var(--border-radius-base);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-family-primary);
+  resize: vertical;
+  margin-bottom: var(--spacing-3);
+}
+
+.feedbackInput:focus {
+  outline: none;
+  border-color: var(--color-interactive-default);
+}
+
+.feedbackActions {
+  display: flex;
+  gap: var(--spacing-2);
+  justify-content: flex-end;
+}
+
+.rejectionReason {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-3);
+  padding: var(--spacing-3);
+  background-color: var(--color-background-secondary);
+  border-radius: var(--border-radius-base);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}

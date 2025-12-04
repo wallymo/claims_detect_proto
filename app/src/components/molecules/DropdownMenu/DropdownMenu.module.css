@@ -1,0 +1,85 @@
+.dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.iconTrigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: transparent;
+  border: var(--border-width-thin) solid var(--color-border-default);
+  border-radius: var(--border-radius-base);
+  cursor: pointer;
+  color: var(--color-text-primary);
+  transition: all 0.2s ease;
+}
+
+.iconTrigger:hover {
+  background-color: var(--color-background-secondary);
+  border-color: var(--color-interactive-default);
+}
+
+.menu {
+  position: absolute;
+  z-index: 1000;
+  min-width: 180px;
+  padding: var(--spacing-2);
+  background-color: var(--color-background-primary);
+  border: var(--border-width-thin) solid var(--color-border-default);
+  border-radius: var(--border-radius-base);
+  box-shadow: var(--shadow-md);
+}
+
+/* Positions */
+.bottom-left {
+  top: 100%;
+  left: 0;
+  margin-top: var(--spacing-1);
+}
+
+.bottom-right {
+  top: 100%;
+  right: 0;
+  margin-top: var(--spacing-1);
+}
+
+.top-left {
+  bottom: 100%;
+  left: 0;
+  margin-bottom: var(--spacing-1);
+}
+
+.top-right {
+  bottom: 100%;
+  right: 0;
+  margin-bottom: var(--spacing-1);
+}
+
+.divider {
+  height: 1px;
+  margin: var(--spacing-2) 0;
+  background-color: var(--color-border-default);
+}
+
+/* Sizes */
+.small .iconTrigger {
+  width: 28px;
+  height: 28px;
+}
+
+.small .menu {
+  min-width: 140px;
+}
+
+.large .iconTrigger {
+  width: 44px;
+  height: 44px;
+}
+
+.large .menu {
+  min-width: 220px;
+}

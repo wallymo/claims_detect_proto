@@ -1,0 +1,50 @@
+{
+  "toggle": {
+    "primary": {
+      "width": {
+        "small": "36px",
+        "medium": "44px",
+        "large": "52px"
+      },
+      "height": {
+        "small": "20px",
+        "medium": "24px",
+        "large": "28px"
+      },
+      "thumbSize": {
+        "small": "16px",
+        "medium": "20px",
+        "large": "24px"
+      },
+      "borderRadius": "border.radius.full",
+      "transition": "0.3s ease",
+      "backgroundColor": {
+        "off": "color.border.default",
+        "on": "color.interactive.default"
+      },
+      "thumbColor": "color.background.primary",
+      "thumbShadow": "0 1px 3px rgba(0, 0, 0, 0.2)",
+      "states": {
+        "hover": {
+          "backgroundColor": {
+            "off": "color.border.hover",
+            "on": "color.interactive.hover"
+          }
+        },
+        "disabled": {
+          "opacity": "0.5"
+        },
+        "focus": {
+          "outline": "2px solid color.interactive.default",
+          "outlineOffset": "2px"
+        }
+      }
+    },
+    "label": {
+      "fontSize": "font.size.sm",
+      "fontWeight": "font.weight.medium",
+      "color": "color.text.primary",
+      "gap": "spacing.3"
+    }
+  }
+}

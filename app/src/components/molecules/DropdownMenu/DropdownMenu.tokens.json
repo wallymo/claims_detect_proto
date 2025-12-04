@@ -1,0 +1,34 @@
+{
+  "dropdownMenu": {
+    "trigger": {
+      "iconButton": {
+        "size": "36px",
+        "borderRadius": "border.radius.base",
+        "border": "border.width.thin color.border.default"
+      }
+    },
+    "menu": {
+      "minWidth": "180px",
+      "padding": "spacing.2",
+      "backgroundColor": "color.background.primary",
+      "border": "border.width.thin color.border.default",
+      "borderRadius": "border.radius.base",
+      "shadow": "shadow.md"
+    },
+    "positions": ["bottom-left", "bottom-right", "top-left", "top-right"],
+    "sizes": {
+      "small": {
+        "triggerSize": "28px",
+        "menuMinWidth": "140px"
+      },
+      "medium": {
+        "triggerSize": "36px",
+        "menuMinWidth": "180px"
+      },
+      "large": {
+        "triggerSize": "44px",
+        "menuMinWidth": "220px"
+      }
+    }
+  }
+}

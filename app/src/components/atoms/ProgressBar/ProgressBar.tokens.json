@@ -1,0 +1,32 @@
+{
+  "name": "ProgressBar",
+  "category": "atoms",
+  "sizes": ["small", "medium", "large"],
+  "variants": ["default", "success", "warning", "error"],
+  "tokens": {
+    "colors": [
+      "--color-background-secondary",
+      "--color-interactive-default",
+      "--color-state-success",
+      "--color-state-warning",
+      "--color-state-error",
+      "--color-text-secondary"
+    ],
+    "typography": [
+      "--font-family-primary",
+      "--font-size-xs"
+    ],
+    "spacing": [
+      "--spacing-xxs"
+    ],
+    "effects": [
+      "--border-radius-full",
+      "--transition-base"
+    ],
+    "sizing": [
+      "4px",
+      "8px",
+      "12px"
+    ]
+  }
+}

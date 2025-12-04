@@ -1,0 +1,43 @@
+{
+  "statCard": {
+    "padding": "spacing.6",
+    "border": "border.width.thin color.border.default",
+    "borderRadius": "border.radius.base",
+    "backgroundColor": "color.background.primary",
+    "label": {
+      "color": "color.text.secondary",
+      "fontSize": "font.size.sm",
+      "fontWeight": "font.weight.medium"
+    },
+    "value": {
+      "color": "color.text.primary",
+      "fontSize": "font.size.2xl",
+      "fontWeight": "font.weight.bold"
+    },
+    "trend": {
+      "up": {
+        "color": "color.state.success"
+      },
+      "down": {
+        "color": "color.state.error"
+      },
+      "neutral": {
+        "color": "color.text.secondary"
+      }
+    },
+    "sizes": {
+      "small": {
+        "padding": "spacing.4",
+        "valueFontSize": "font.size.xl"
+      },
+      "medium": {
+        "padding": "spacing.6",
+        "valueFontSize": "font.size.2xl"
+      },
+      "large": {
+        "padding": "spacing.8",
+        "valueFontSize": "font.size.3xl"
+      }
+    }
+  }
+}

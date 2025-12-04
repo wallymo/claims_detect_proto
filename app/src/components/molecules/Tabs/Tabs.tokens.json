@@ -1,0 +1,52 @@
+{
+  "tabs": {
+    "gap": "spacing.1",
+    "tab": {
+      "padding": "spacing.3 spacing.4",
+      "fontWeight": "font.weight.medium",
+      "color": {
+        "default": "color.text.secondary",
+        "hover": "color.text.primary",
+        "active": "color.text.primary"
+      }
+    },
+    "variants": {
+      "underlined": {
+        "borderBottom": "border.width.medium color.border.default",
+        "activeIndicator": "border.width.medium color.interactive.default"
+      },
+      "boxed": {
+        "container": {
+          "border": "border.width.thin color.border.default",
+          "borderRadius": "border.radius.base",
+          "backgroundColor": "color.background.secondary"
+        },
+        "active": {
+          "backgroundColor": "color.background.primary",
+          "shadow": "shadow.sm"
+        }
+      },
+      "pills": {
+        "active": {
+          "backgroundColor": "color.interactive.default",
+          "color": "color.background.primary",
+          "borderRadius": "border.radius.full"
+        }
+      }
+    },
+    "sizes": {
+      "small": {
+        "padding": "spacing.2 spacing.3",
+        "fontSize": "font.size.xs"
+      },
+      "medium": {
+        "padding": "spacing.3 spacing.4",
+        "fontSize": "font.size.sm"
+      },
+      "large": {
+        "padding": "spacing.4 spacing.6",
+        "fontSize": "font.size.base"
+      }
+    }
+  }
+}

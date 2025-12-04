@@ -1,0 +1,71 @@
+.toggleWithLabel {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-family-primary);
+}
+
+.container {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  cursor: pointer;
+}
+
+.label {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+}
+
+.helper {
+  margin-top: var(--spacing-1);
+}
+
+/* Label positions */
+.left .container {
+  flex-direction: row-reverse;
+}
+
+.right .container {
+  flex-direction: row;
+}
+
+.left .helper {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+.right .helper {
+  margin-left: auto;
+  margin-right: 0;
+}
+
+/* Sizes */
+.small .label {
+  font-size: var(--font-size-xs);
+}
+
+.small .container {
+  gap: var(--spacing-2);
+}
+
+.medium .label {
+  font-size: var(--font-size-sm);
+}
+
+.large .label {
+  font-size: var(--font-size-base);
+}
+
+.large .container {
+  gap: var(--spacing-4);
+}
+
+/* Disabled */
+.disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.disabled .label {
+  color: var(--color-text-disabled);
+}

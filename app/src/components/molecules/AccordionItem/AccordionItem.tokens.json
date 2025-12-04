@@ -1,0 +1,37 @@
+{
+  "accordionItem": {
+    "border": "border.width.thin color.border.default",
+    "borderRadius": "border.radius.base",
+    "header": {
+      "padding": "spacing.4",
+      "fontWeight": "font.weight.medium",
+      "backgroundColor": "color.background.primary",
+      "hover": {
+        "backgroundColor": "color.background.secondary"
+      }
+    },
+    "content": {
+      "padding": "spacing.4",
+      "borderTop": "border.width.thin color.border.default",
+      "color": "color.text.secondary"
+    },
+    "iconStyles": ["chevron", "plusMinus"],
+    "sizes": {
+      "small": {
+        "headerPadding": "spacing.3",
+        "headerFontSize": "font.size.sm",
+        "contentPadding": "spacing.3"
+      },
+      "medium": {
+        "headerPadding": "spacing.4",
+        "headerFontSize": "font.size.base",
+        "contentPadding": "spacing.4"
+      },
+      "large": {
+        "headerPadding": "spacing.5",
+        "headerFontSize": "font.size.lg",
+        "contentPadding": "spacing.5"
+      }
+    }
+  }
+}

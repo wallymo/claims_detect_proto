@@ -1,0 +1,26 @@
+{
+  "label": {
+    "name": "Label",
+    "category": "atoms",
+    "variants": ["default", "required"],
+    "sizes": ["small", "medium", "large"],
+    "tokens": {
+      "colors": [
+        "--color-text-primary",
+        "--color-text-secondary",
+        "--color-state-error"
+      ],
+      "typography": [
+        "--font-family-primary",
+        "--font-size-xs",
+        "--font-size-sm",
+        "--font-size-base",
+        "--font-weight-medium",
+        "--font-weight-bold"
+      ],
+      "spacing": [
+        "--spacing-1"
+      ]
+    }
+  }
+}

@@ -1,0 +1,63 @@
+.badge {
+  font-family: var(--font-family-primary);
+  font-weight: var(--font-weight-semibold);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  letter-spacing: 0.025em;
+}
+
+/* Variants */
+.default {
+  background-color: var(--color-background-secondary);
+  color: var(--color-text-primary);
+}
+
+.success {
+  background-color: var(--color-state-success);
+  color: var(--color-background-primary);
+}
+
+.warning {
+  background-color: var(--color-state-warning);
+  color: var(--color-text-primary);
+}
+
+.error {
+  background-color: var(--color-state-error);
+  color: var(--color-background-primary);
+}
+
+/* Shapes */
+.pill {
+  border-radius: var(--border-radius-full);
+}
+
+.rounded {
+  border-radius: var(--border-radius-md);
+}
+
+.square {
+  border-radius: var(--border-radius-none);
+}
+
+/* Sizes */
+.small {
+  padding: 0 var(--spacing-2);
+  font-size: var(--font-size-xs);
+  height: 20px;
+  text-transform: uppercase;
+}
+
+.medium {
+  padding: 0 var(--spacing-3);
+  font-size: var(--font-size-sm);
+  height: 24px;
+}
+
+.large {
+  padding: 0 var(--spacing-4);
+  font-size: var(--font-size-base);
+  height: 32px;
+}

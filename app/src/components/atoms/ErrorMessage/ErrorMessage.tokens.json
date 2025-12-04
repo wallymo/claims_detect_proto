@@ -1,0 +1,12 @@
+{
+  "errorMessage": {
+    "fontSize": "font.size.sm",
+    "color": "color.text.error",
+    "lineHeight": "1.5",
+    "gap": "spacing.2",
+    "icon": {
+      "size": "14px",
+      "color": "color.text.error"
+    }
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "input": {
+    "default": {
+      "padding": {
+        "small": "spacing.2 spacing.3",
+        "medium": "spacing.3 spacing.4",
+        "large": "spacing.4 spacing.5"
+      },
+      "fontSize": {
+        "small": "font.size.xs",
+        "medium": "font.size.sm",
+        "large": "font.size.base"
+      },
+      "fontWeight": "font.weight.regular",
+      "borderRadius": "border.radius.base",
+      "borderWidth": "border.width.thin",
+      "borderColor": "color.border.default",
+      "backgroundColor": "color.background.primary",
+      "color": "color.text.primary",
+      "height": {
+        "small": "32px",
+        "medium": "40px",
+        "large": "48px"
+      },
+      "states": {
+        "hover": {
+          "borderColor": "color.border.strong"
+        },
+        "focus": {
+          "borderColor": "color.interactive.default",
+          "boxShadow": "0 0 0 3px rgba(51, 51, 51, 0.1)"
+        },
+        "disabled": {
+          "backgroundColor": "color.background.secondary",
+          "color": "color.text.disabled",
+          "cursor": "not-allowed"
+        },
+        "error": {
+          "borderColor": "color.state.error",
+          "focusBoxShadow": "0 0 0 3px rgba(211, 47, 47, 0.1)"
+        },
+        "success": {
+          "borderColor": "color.state.success",
+          "focusBoxShadow": "0 0 0 3px rgba(56, 142, 60, 0.1)"
+        }
+      }
+    },
+    "label": {
+      "fontSize": "font.size.sm",
+      "fontWeight": "font.weight.medium",
+      "color": "color.text.primary",
+      "marginBottom": "spacing.1"
+    },
+    "helperText": {
+      "fontSize": "font.size.xs",
+      "color": "color.text.secondary",
+      "marginTop": "spacing.1"
+    },
+    "placeholder": {
+      "color": "color.text.secondary"
+    }
+  }
+}

@@ -1,0 +1,47 @@
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  padding: var(--spacing-3) var(--spacing-4);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  user-select: none;
+}
+
+.menuItem:hover:not(.disabled) {
+  background-color: var(--color-background-secondary);
+}
+
+.menuItem:focus {
+  outline: none;
+  background-color: var(--color-background-secondary);
+}
+
+.icon {
+  display: flex;
+  align-items: center;
+  color: var(--color-text-secondary);
+}
+
+.label {
+  flex: 1;
+}
+
+.shortcut {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  margin-left: auto;
+}
+
+/* States */
+.selected {
+  background-color: var(--color-background-tertiary);
+  font-weight: var(--font-weight-medium);
+}
+
+.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

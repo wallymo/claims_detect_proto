@@ -1,0 +1,100 @@
+.statCard {
+  padding: var(--spacing-6);
+  background-color: var(--color-background-primary);
+  border: var(--border-width-thin) solid var(--color-border-default);
+  border-radius: var(--border-radius-base);
+  font-family: var(--font-family-primary);
+}
+
+.label {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  margin-bottom: var(--spacing-2);
+}
+
+.valueRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-3);
+}
+
+.value {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+}
+
+.trend {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.trendUp {
+  color: var(--color-state-success);
+}
+
+.trendDown {
+  color: var(--color-state-error);
+}
+
+.trendNeutral {
+  color: var(--color-text-secondary);
+}
+
+/* Layouts */
+.vertical {
+  flex-direction: column;
+}
+
+.horizontal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.horizontal .label {
+  margin-bottom: 0;
+  margin-right: var(--spacing-4);
+}
+
+.horizontal .valueRow {
+  flex-direction: row-reverse;
+}
+
+/* Sizes */
+.small {
+  padding: var(--spacing-4);
+}
+
+.small .label {
+  font-size: var(--font-size-xs);
+}
+
+.small .value {
+  font-size: var(--font-size-xl);
+}
+
+.medium {
+  padding: var(--spacing-6);
+}
+
+.medium .value {
+  font-size: var(--font-size-2xl);
+}
+
+.large {
+  padding: var(--spacing-8);
+}
+
+.large .label {
+  font-size: var(--font-size-base);
+  margin-bottom: var(--spacing-3);
+}
+
+.large .value {
+  font-size: var(--font-size-3xl);
+}

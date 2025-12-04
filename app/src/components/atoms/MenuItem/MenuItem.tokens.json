@@ -1,0 +1,32 @@
+{
+  "menuItem": {
+    "display": "flex",
+    "alignItems": "center",
+    "gap": "spacing.3",
+    "padding": "spacing.3 spacing.4",
+    "fontSize": "font.size.sm",
+    "color": "color.text.primary",
+    "transition": "background-color 0.2s ease",
+    "icon": {
+      "color": "color.text.secondary",
+      "size": "16px"
+    },
+    "shortcut": {
+      "fontSize": "font.size.xs",
+      "color": "color.text.secondary"
+    },
+    "states": {
+      "hover": {
+        "backgroundColor": "color.background.secondary"
+      },
+      "selected": {
+        "backgroundColor": "color.background.tertiary",
+        "fontWeight": "font.weight.medium"
+      },
+      "disabled": {
+        "opacity": "0.5",
+        "cursor": "not-allowed"
+      }
+    }
+  }
+}

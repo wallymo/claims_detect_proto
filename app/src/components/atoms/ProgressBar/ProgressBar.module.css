@@ -1,0 +1,56 @@
+.wrapper {
+  width: 100%;
+}
+
+/* Container (track) */
+.container {
+  width: 100%;
+  background-color: var(--color-background-secondary);
+  border-radius: var(--border-radius-full);
+  overflow: hidden;
+}
+
+/* Progress bar (fill) */
+.fill {
+  height: 100%;
+  border-radius: var(--border-radius-full);
+  transition: width 0.3s ease;
+}
+
+/* Size variants */
+.small {
+  height: 4px;
+}
+
+.medium {
+  height: 8px;
+}
+
+.large {
+  height: 12px;
+}
+
+/* Variant colors */
+.default {
+  background-color: var(--color-interactive-default);
+}
+
+.success {
+  background-color: var(--color-state-success);
+}
+
+.warning {
+  background-color: var(--color-state-warning);
+}
+
+.error {
+  background-color: var(--color-state-error);
+}
+
+/* Label styling */
+.label {
+  margin-top: var(--spacing-xxs);
+  font-family: var(--font-family-primary);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}

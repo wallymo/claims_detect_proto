@@ -1,0 +1,31 @@
+{
+  "toggleWithLabel": {
+    "gap": "spacing.3",
+    "label": {
+      "fontWeight": "font.weight.medium",
+      "color": "color.text.primary"
+    },
+    "helper": {
+      "marginTop": "spacing.1"
+    },
+    "labelPositions": ["left", "right"],
+    "sizes": {
+      "small": {
+        "labelFontSize": "font.size.xs",
+        "gap": "spacing.2"
+      },
+      "medium": {
+        "labelFontSize": "font.size.sm",
+        "gap": "spacing.3"
+      },
+      "large": {
+        "labelFontSize": "font.size.base",
+        "gap": "spacing.4"
+      }
+    },
+    "disabled": {
+      "opacity": "0.6",
+      "labelColor": "color.text.disabled"
+    }
+  }
+}

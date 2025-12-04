@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claims Detection Report - Export Mock</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #f5f5f5;
+      padding: 40px;
+      color: #333;
+    }
+
+    .page {
+      width: 8.5in;
+      min-height: 11in;
+      background: white;
+      margin: 0 auto;
+      padding: 48px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding-bottom: 24px;
+      border-bottom: 2px solid #333;
+      margin-bottom: 32px;
+    }
+
+    .logo-placeholder {
+      width: 120px;
+      height: 40px;
+      background: #e0e0e0;
+      border: 1px dashed #999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      color: #666;
+    }
+
+    .report-meta {
+      text-align: right;
+      font-size: 12px;
+      color: #666;
+    }
+
+    .report-title {
+      font-size: 24px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    /* Document Info Bar */
+    .doc-info-bar {
+      display: flex;
+      gap: 32px;
+      padding: 16px 20px;
+      background: #f9f9f9;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      margin-bottom: 24px;
+    }
+
+    .info-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .info-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #888;
+    }
+
+    .info-value {
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    /* Accuracy Score Card */
+    .accuracy-section {
+      display: flex;
+      gap: 24px;
+      margin-bottom: 32px;
+    }
+
+    .accuracy-card {
+      flex: 1;
+      padding: 20px;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      text-align: center;
+    }
+
+    .accuracy-card.primary {
+      background: #f0f7f0;
+      border-color: #4a7c4a;
+    }
+
+    .accuracy-number {
+      font-size: 48px;
+      font-weight: 700;
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+
+    .accuracy-number.green { color: #2e7d32; }
+    .accuracy-number.neutral { color: #333; }
+
+    .accuracy-label {
+      font-size: 12px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .accuracy-detail {
+      font-size: 13px;
+      color: #888;
+      margin-top: 8px;
+    }
+
+    /* Section Headers */
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+
+    .section-title {
+      font-size: 14px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .section-count {
+      font-size: 12px;
+      color: #666;
+      background: #f0f0f0;
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+
+    /* Claims Table */
+    .claims-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      margin-bottom: 24px;
+    }
+
+    .claims-table th {
+      text-align: left;
+      padding: 10px 12px;
+      background: #f5f5f5;
+      border-bottom: 1px solid #ddd;
+      font-weight: 600;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #666;
+    }
+
+    .claims-table td {
+      padding: 12px;
+      border-bottom: 1px solid #eee;
+      vertical-align: top;
+    }
+
+    .claim-text {
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .claim-type {
+      display: inline-block;
+      padding: 2px 8px;
+      background: #e8e8e8;
+      border-radius: 3px;
+      font-size: 10px;
+      text-transform: uppercase;
+    }
+
+    .confidence-bar {
+      width: 60px;
+      height: 6px;
+      background: #e0e0e0;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .confidence-fill {
+      height: 100%;
+      background: #666;
+      border-radius: 3px;
+    }
+
+    .confidence-fill.high { background: #4caf50; }
+    .confidence-fill.medium { background: #ff9800; }
+    .confidence-fill.low { background: #f44336; }
+
+    .status-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 500;
+    }
+
+    .status-badge.matched {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+
+    .status-badge.suggested {
+      background: #fff3e0;
+      color: #e65100;
+    }
+
+    .status-badge.rejected {
+      background: #ffebee;
+      color: #c62828;
+    }
+
+    /* Summary Section */
+    .summary-section {
+      padding: 20px;
+      background: #fafafa;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      margin-top: 24px;
+    }
+
+    .summary-title {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+      color: #666;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+
+    .summary-stat {
+      text-align: center;
+      padding: 12px;
+      background: white;
+      border-radius: 4px;
+    }
+
+    .summary-stat-number {
+      font-size: 24px;
+      font-weight: 600;
+    }
+
+    .summary-stat-label {
+      font-size: 10px;
+      color: #888;
+      text-transform: uppercase;
+    }
+
+    /* Footer */
+    .footer {
+      margin-top: 32px;
+      padding-top: 16px;
+      border-top: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: #999;
+    }
+
+    /* Wireframe annotation */
+    .wireframe-note {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      background: #ffeb3b;
+      color: #333;
+      padding: 8px 12px;
+      font-size: 11px;
+      font-weight: 500;
+      border-radius: 4px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+  </style>
+</head>
+<body>
+  <div class="wireframe-note">WIREFRAME MOCK - Export PDF</div>
+
+  <div class="page">
+    <!-- Header -->
+    <div class="header">
+      <div>
+        <div class="report-title">Claims Detection Report</div>
+        <div class="report-meta">Generated from Claims Detector POC</div>
+      </div>
+      <div class="logo-placeholder">[Company Logo]</div>
+    </div>
+
+    <!-- Document Info Bar -->
+    <div class="doc-info-bar">
+      <div class="info-item">
+        <span class="info-label">Document</span>
+        <span class="info-value">ProductX_Marketing_Brief_v2.pdf</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">Brand Guidelines</span>
+        <span class="info-value">ProductX US Market</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">Model Used</span>
+        <span class="info-value">Claude Opus 4.5</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">Date</span>
+        <span class="info-value">December 4, 2025</span>
+      </div>
+    </div>
+
+    <!-- Accuracy Score Cards -->
+    <div class="accuracy-section">
+      <div class="accuracy-card primary">
+        <div class="accuracy-number green">82%</div>
+        <div class="accuracy-label">Overall Accuracy</div>
+        <div class="accuracy-detail">vs. human annotations</div>
+      </div>
+      <div class="accuracy-card">
+        <div class="accuracy-number neutral">14 <span style="font-size: 24px; font-weight: 400;">of</span> 17</div>
+        <div class="accuracy-label">Claims Found by AI</div>
+        <div class="accuracy-detail">matched human annotations</div>
+      </div>
+      <div class="accuracy-card" style="background: #fff8e1; border-color: #ffb300;">
+        <div class="accuracy-number" style="color: #f57c00;">+2</div>
+        <div class="accuracy-label">Bonus Finds</div>
+        <div class="accuracy-detail">AI suggested for review</div>
+      </div>
+    </div>
+
+    <!-- Matched Claims Section -->
+    <div class="section-header">
+      <span class="section-title">Matched Claims</span>
+      <span class="section-count">12 claims</span>
+    </div>
+    <table class="claims-table">
+      <thead>
+        <tr>
+          <th style="width: 50%">Claim Text</th>
+          <th>Type</th>
+          <th>Confidence</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="claim-text">"Reduces symptoms by 40% compared to placebo in clinical trials"</td>
+          <td><span class="claim-type">Efficacy</span></td>
+          <td>
+            <div class="confidence-bar"><div class="confidence-fill high" style="width: 92%"></div></div>
+            <span style="font-size: 10px; color: #666;">92%</span>
+          </td>
+          <td><span class="status-badge matched">Matched</span></td>
+        </tr>
+        <tr>
+          <td class="claim-text">"Well-tolerated with minimal side effects in long-term studies"</td>
+          <td><span class="claim-type">Safety</span></td>
+          <td>
+            <div class="confidence-bar"><div class="confidence-fill high" style="width: 88%"></div></div>
+            <span style="font-size: 10px; color: #666;">88%</span>
+          </td>
+          <td><span class="status-badge matched">Matched</span></td>
+        </tr>
+        <tr>
+          <td class="claim-text">"First-in-class mechanism targeting the XYZ pathway"</td>
+          <td><span class="claim-type">Mechanism</span></td>
+          <td>
+            <div class="confidence-bar"><div class="confidence-fill high" style="width: 95%"></div></div>
+            <span style="font-size: 10px; color: #666;">95%</span>
+          </td>
+          <td><span class="status-badge matched">Matched</span></td>
+        </tr>
+        <tr>
+          <td class="claim-text">"Demonstrated superior outcomes versus standard of care"</td>
+          <td><span class="claim-type">Comparative</span></td>
+          <td>
+            <div class="confidence-bar"><div class="confidence-fill medium" style="width: 76%"></div></div>
+            <span style="font-size: 10px; color: #666;">76%</span>
+          </td>
+          <td><span class="status-badge matched">Matched</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- AI Suggested Section -->
+    <div class="section-header">
+      <span class="section-title">AI Suggested (Potential Missed Claims)</span>
+      <span class="section-count">2 claims</span>
+    </div>
+    <table class="claims-table">
+      <thead>
+        <tr>
+          <th style="width: 50%">Claim Text</th>
+          <th>Type</th>
+          <th>Confidence</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="claim-text">"Patients reported improved quality of life scores"</td>
+          <td><span class="claim-type">Efficacy</span></td>
+          <td>
+            <div class="confidence-bar"><div class="confidence-fill medium" style="width: 68%"></div></div>
+            <span style="font-size: 10px; color: #666;">68%</span>
+          </td>
+          <td><span class="status-badge suggested">Review</span></td>
+        </tr>
+        <tr>
+          <td class="claim-text">"Rapid onset of action within 2 weeks"</td>
+          <td><span class="claim-type">Efficacy</span></td>
+          <td>
+            <div class="confidence-bar"><div class="confidence-fill medium" style="width: 72%"></div></div>
+            <span style="font-size: 10px; color: #666;">72%</span>
+          </td>
+          <td><span class="status-badge suggested">Review</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Summary Section -->
+    <div class="summary-section">
+      <div class="summary-title">Analysis Summary</div>
+      <div class="summary-grid">
+        <div class="summary-stat">
+          <div class="summary-stat-number">16</div>
+          <div class="summary-stat-label">Total Detected</div>
+        </div>
+        <div class="summary-stat">
+          <div class="summary-stat-number">12</div>
+          <div class="summary-stat-label">Matched</div>
+        </div>
+        <div class="summary-stat">
+          <div class="summary-stat-number">2</div>
+          <div class="summary-stat-label">AI Suggested</div>
+        </div>
+        <div class="summary-stat">
+          <div class="summary-stat-number">2</div>
+          <div class="summary-stat-label">Rejected</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <span>Claims Detector POC v1.0</span>
+      <span>Page 1 of 1</span>
+      <span>Confidential - Internal Use Only</span>
+    </div>
+  </div>
+</body>
+</html>

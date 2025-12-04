@@ -1,0 +1,63 @@
+.closeButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: transparent;
+  border: none;
+  border-radius: var(--border-radius-base);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: var(--spacing-2);
+}
+
+.closeButton:hover:not(.disabled) {
+  background-color: var(--color-background-secondary);
+  color: var(--color-text-primary);
+}
+
+.closeButton:active:not(.disabled) {
+  transform: scale(0.95);
+}
+
+.closeButton:focus-visible {
+  outline: 2px solid var(--color-interactive-default);
+  outline-offset: 2px;
+}
+
+/* Sizes */
+.small {
+  width: 24px;
+  height: 24px;
+}
+
+.small svg {
+  width: 16px;
+  height: 16px;
+}
+
+.medium {
+  width: 32px;
+  height: 32px;
+}
+
+.medium svg {
+  width: 20px;
+  height: 20px;
+}
+
+.large {
+  width: 40px;
+  height: 40px;
+}
+
+.large svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* States */
+.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

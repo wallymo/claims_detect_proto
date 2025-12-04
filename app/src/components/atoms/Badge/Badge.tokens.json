@@ -1,0 +1,36 @@
+{
+  "badge": {
+    "name": "Badge",
+    "category": "atoms",
+    "variants": ["default", "success", "warning", "error"],
+    "shapes": ["pill", "rounded", "square"],
+    "sizes": ["small", "medium", "large"],
+    "tokens": {
+      "colors": [
+        "--color-background-secondary",
+        "--color-text-primary",
+        "--color-state-success",
+        "--color-state-warning",
+        "--color-state-error",
+        "--color-background-primary"
+      ],
+      "typography": [
+        "--font-family-primary",
+        "--font-size-xs",
+        "--font-size-sm",
+        "--font-size-base",
+        "--font-weight-semibold"
+      ],
+      "spacing": [
+        "--spacing-2",
+        "--spacing-3",
+        "--spacing-4"
+      ],
+      "effects": [
+        "--border-radius-none",
+        "--border-radius-md",
+        "--border-radius-full"
+      ]
+    }
+  }
+}

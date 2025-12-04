@@ -1,0 +1,12 @@
+{
+  "helperText": {
+    "fontSize": "font.size.sm",
+    "color": "color.text.secondary",
+    "lineHeight": "1.5",
+    "states": {
+      "disabled": {
+        "opacity": "0.5"
+      }
+    }
+  }
+}

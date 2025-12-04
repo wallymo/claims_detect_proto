@@ -1,0 +1,39 @@
+{
+  "fileUpload": {
+    "dropzone": {
+      "padding": "spacing.8",
+      "border": "border.width.medium dashed color.border.default",
+      "borderRadius": "border.radius.base",
+      "backgroundColor": "color.background.secondary",
+      "hover": {
+        "borderColor": "color.interactive.default",
+        "backgroundColor": "color.background.primary"
+      }
+    },
+    "fileInfo": {
+      "padding": "spacing.4",
+      "border": "border.width.thin color.border.default",
+      "borderRadius": "border.radius.base"
+    },
+    "states": {
+      "uploading": "show progress bar",
+      "complete": {
+        "borderColor": "color.state.success"
+      },
+      "error": {
+        "borderColor": "color.state.error"
+      }
+    },
+    "sizes": {
+      "small": {
+        "padding": "spacing.6"
+      },
+      "medium": {
+        "padding": "spacing.8"
+      },
+      "large": {
+        "padding": "spacing.12"
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "Icon",
+  "category": "atoms",
+  "icons": ["search", "menu", "close", "check", "arrow-right", "arrow-down", "info", "warning", "user"],
+  "sizes": ["small", "medium", "large", "xlarge"],
+  "tokens": {
+    "colors": ["currentColor", "--color-text-primary", "--color-text-secondary", "--color-interactive-default", "--color-state-error", "--color-state-warning"],
+    "sizing": ["16px", "20px", "24px", "32px"]
+  }
+}

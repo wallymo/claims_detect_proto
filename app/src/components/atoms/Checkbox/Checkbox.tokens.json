@@ -1,0 +1,59 @@
+{
+  "checkbox": {
+    "default": {
+      "size": {
+        "small": "16px",
+        "medium": "20px",
+        "large": "24px"
+      },
+      "borderRadius": "border.radius.sm",
+      "borderWidth": "border.width.medium",
+      "borderColor": "color.border.default",
+      "backgroundColor": "color.background.primary",
+      "checkmarkColor": "color.background.primary",
+      "iconSize": {
+        "small": "12px",
+        "medium": "16px",
+        "large": "20px"
+      },
+      "states": {
+        "hover": {
+          "borderColor": "color.border.strong"
+        },
+        "focus": {
+          "borderColor": "color.interactive.default",
+          "boxShadow": "0 0 0 3px rgba(51, 51, 51, 0.1)"
+        },
+        "checked": {
+          "backgroundColor": "color.interactive.default",
+          "borderColor": "color.interactive.default",
+          "hover": {
+            "backgroundColor": "color.interactive.hover",
+            "borderColor": "color.interactive.hover"
+          }
+        },
+        "indeterminate": {
+          "backgroundColor": "color.interactive.default",
+          "borderColor": "color.interactive.default",
+          "hover": {
+            "backgroundColor": "color.interactive.hover",
+            "borderColor": "color.interactive.hover"
+          }
+        },
+        "disabled": {
+          "backgroundColor": "color.background.secondary",
+          "borderColor": "color.border.default",
+          "cursor": "not-allowed",
+          "opacity": "0.6",
+          "checkmarkColor": "color.text.disabled"
+        }
+      }
+    },
+    "label": {
+      "fontSize": "font.size.sm",
+      "fontWeight": "font.weight.regular",
+      "color": "color.text.primary",
+      "marginLeft": "spacing.2"
+    }
+  }
+}

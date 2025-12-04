@@ -1,0 +1,20 @@
+{
+  "formField": {
+    "gap": "spacing.2",
+    "composition": {
+      "label": "Label atom",
+      "input": "Input atom",
+      "helperText": "HelperText atom",
+      "errorMessage": "ErrorMessage atom",
+      "requiredIndicator": "RequiredIndicator atom"
+    },
+    "states": {
+      "disabled": {
+        "opacity": "0.6"
+      },
+      "error": {
+        "inputBorder": "color.state.error"
+      }
+    }
+  }
+}

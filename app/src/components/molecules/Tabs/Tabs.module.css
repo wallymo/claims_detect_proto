@@ -1,0 +1,132 @@
+.tabs {
+  display: flex;
+  flex-direction: column;
+}
+
+.horizontal {
+  flex-direction: column;
+}
+
+.vertical {
+  flex-direction: row;
+}
+
+.vertical .tabList {
+  flex-direction: column;
+  border-bottom: none;
+  border-right: var(--border-width-medium) solid var(--color-border-default);
+}
+
+.tabList {
+  display: flex;
+  gap: var(--spacing-1);
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-3) var(--spacing-4);
+  font-family: var(--font-family-primary);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.tab:hover {
+  color: var(--color-text-primary);
+}
+
+.tab.active {
+  color: var(--color-text-primary);
+}
+
+.icon {
+  display: flex;
+  align-items: center;
+}
+
+/* Underlined variant */
+.underlined .tabList {
+  border-bottom: var(--border-width-medium) solid var(--color-border-default);
+}
+
+.underlined .tab {
+  position: relative;
+  margin-bottom: calc(var(--border-width-medium) * -1);
+  border-bottom: var(--border-width-medium) solid transparent;
+}
+
+.underlined .tab.active {
+  border-bottom-color: var(--color-interactive-default);
+}
+
+/* Boxed variant */
+.boxed .tabList {
+  gap: 0;
+  border: var(--border-width-thin) solid var(--color-border-default);
+  border-radius: var(--border-radius-base);
+  background-color: var(--color-background-secondary);
+  padding: var(--spacing-1);
+}
+
+.boxed .tab {
+  border-radius: var(--border-radius-sm);
+}
+
+.boxed .tab.active {
+  background-color: var(--color-background-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Pills variant */
+.pills .tabList {
+  gap: var(--spacing-2);
+}
+
+.pills .tab {
+  border-radius: var(--border-radius-full);
+  border: var(--border-width-thin) solid transparent;
+}
+
+.pills .tab:hover {
+  background-color: var(--color-background-secondary);
+}
+
+.pills .tab.active {
+  background-color: var(--color-interactive-default);
+  color: var(--color-background-primary);
+}
+
+/* Panel */
+.panelContainer {
+  padding: var(--spacing-4) 0;
+}
+
+.panel {
+  display: none;
+}
+
+.panel.activePanel {
+  display: block;
+}
+
+/* Sizes */
+.small .tab {
+  padding: var(--spacing-2) var(--spacing-3);
+  font-size: var(--font-size-xs);
+}
+
+.medium .tab {
+  padding: var(--spacing-3) var(--spacing-4);
+  font-size: var(--font-size-sm);
+}
+
+.large .tab {
+  padding: var(--spacing-4) var(--spacing-6);
+  font-size: var(--font-size-base);
+}

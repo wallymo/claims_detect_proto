@@ -1,0 +1,54 @@
+.label {
+  font-family: var(--font-family-primary);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  display: inline-block;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.label:hover:not(.disabled) {
+  color: var(--color-interactive-default);
+}
+
+/* Variants */
+.default {
+  /* Base styles already applied */
+}
+
+.required {
+  /* Base styles already applied, asterisk added via component */
+}
+
+/* Sizes */
+.small {
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-normal);
+}
+
+.medium {
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+}
+
+.large {
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+}
+
+/* Required indicator */
+.requiredIndicator {
+  color: var(--color-state-error);
+  margin-left: var(--spacing-1);
+  font-weight: var(--font-weight-bold);
+}
+
+/* States */
+.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.disabled:hover {
+  color: var(--color-text-primary);
+}

@@ -1,0 +1,17 @@
+{
+  "requiredIndicator": {
+    "color": "color.text.error",
+    "fontWeight": "font.weight.medium",
+    "variants": {
+      "asterisk": {
+        "fontSize": "font.size.base",
+        "marginLeft": "spacing.1"
+      },
+      "text": {
+        "fontSize": "font.size.sm",
+        "marginLeft": "spacing.2",
+        "fontStyle": "italic"
+      }
+    }
+  }
+}

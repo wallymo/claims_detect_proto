@@ -1,0 +1,56 @@
+{
+  "alert": {
+    "padding": "spacing.4",
+    "gap": "spacing.3",
+    "borderRadius": "border.radius.base",
+    "border": "border.width.thin",
+    "types": {
+      "info": {
+        "backgroundColor": "color.background.secondary",
+        "borderColor": "color.border.default",
+        "iconColor": "color.state.info"
+      },
+      "success": {
+        "backgroundColor": "#f0fdf4",
+        "borderColor": "color.state.success",
+        "iconColor": "color.state.success"
+      },
+      "warning": {
+        "backgroundColor": "#fffbeb",
+        "borderColor": "color.state.warning",
+        "iconColor": "color.state.warning"
+      },
+      "error": {
+        "backgroundColor": "#fef2f2",
+        "borderColor": "color.state.error",
+        "iconColor": "color.state.error"
+      }
+    },
+    "layouts": {
+      "inline": "default horizontal layout",
+      "toast": {
+        "minWidth": "320px",
+        "maxWidth": "420px",
+        "shadow": "shadow.lg"
+      },
+      "banner": {
+        "borderRadius": "0",
+        "fullWidth": true
+      }
+    },
+    "sizes": {
+      "small": {
+        "padding": "spacing.3",
+        "fontSize": "font.size.sm"
+      },
+      "medium": {
+        "padding": "spacing.4",
+        "fontSize": "font.size.sm"
+      },
+      "large": {
+        "padding": "spacing.5",
+        "fontSize": "font.size.base"
+      }
+    }
+  }
+}

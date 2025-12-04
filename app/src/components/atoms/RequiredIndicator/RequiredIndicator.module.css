@@ -1,0 +1,15 @@
+.indicator {
+  color: var(--color-text-error);
+  font-weight: var(--font-weight-medium);
+}
+
+.asterisk {
+  font-size: var(--font-size-base);
+  margin-left: var(--spacing-1);
+}
+
+.text {
+  font-size: var(--font-size-sm);
+  margin-left: var(--spacing-2);
+  font-style: italic;
+}

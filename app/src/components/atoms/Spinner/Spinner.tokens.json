@@ -1,0 +1,11 @@
+{
+  "name": "Spinner",
+  "category": "atoms",
+  "sizes": ["small", "medium", "large", "xlarge"],
+  "variants": ["circular", "dots", "bars"],
+  "tokens": {
+    "colors": ["--color-interactive-default"],
+    "sizing": ["16px", "24px", "32px", "48px"],
+    "effects": ["--transition-base"]
+  }
+}
