@@ -4,20 +4,9 @@ import ProgressBar from '@/components/atoms/ProgressBar/ProgressBar'
 import Button from '@/components/atoms/Button/Button'
 import Icon from '@/components/atoms/Icon/Icon'
 import Badge from '@/components/atoms/Badge/Badge'
+import { CLAIM_TYPES } from '@/mocks/claims'
 
-const TYPE_LABELS = {
-  efficacy: 'Efficacy',
-  regulatory: 'Regulatory',
-  comparative: 'Comparative',
-  safety: 'Safety'
-}
-
-const TYPE_VARIANTS = {
-  efficacy: 'info',
-  regulatory: 'warning',
-  comparative: 'neutral',
-  safety: 'error'
-}
+const getTypeConfig = (type) => CLAIM_TYPES[type] || { label: type, color: '#666', icon: 'help' }
 
 export default function ClaimCard({
   claim,
@@ -98,10 +87,21 @@ export default function ClaimCard({
 
         <div className={styles.badges}>
           {claim.type && (
-            <Badge variant={TYPE_VARIANTS[claim.type] || 'neutral'} size="small">
-              {TYPE_LABELS[claim.type] || claim.type}
+            <Badge
+              variant="neutral"
+              size="small"
+              style={{
+                backgroundColor: `${getTypeConfig(claim.type).color}20`,
+                color: getTypeConfig(claim.type).color,
+                borderColor: getTypeConfig(claim.type).color
+              }}
+            >
+              {getTypeConfig(claim.type).label}
             </Badge>
           )}
+          <span className={`${styles.sourceBadge} ${claim.source === 'core' ? styles.sourceCore : styles.sourceAI}`}>
+            {claim.source === 'core' ? 'Core' : 'AI Found'}
+          </span>
           {claim.status !== 'pending' && (
             <Badge variant={claim.status === 'approved' ? 'success' : 'error'} size="small">
               {claim.status}
