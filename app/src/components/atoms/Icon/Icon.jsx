@@ -102,7 +102,7 @@ export default function Icon({
     : {}
 
   const style = isNumericSize
-    ? { ...baseStyle, width: size, height: size }
+    ? { ...baseStyle, width: `${size}px`, height: `${size}px` }
     : baseStyle
 
   return (
