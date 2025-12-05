@@ -1,0 +1,60 @@
+.progressRing {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.progressRing svg {
+  transform: rotate(-90deg);
+}
+
+.bgCircle {
+  fill: none;
+  stroke: var(--color-border, #e0e0e0);
+}
+
+.progressCircle {
+  fill: none;
+  stroke: var(--color-primary, #2196F3);
+  transition: stroke-dashoffset 0.1s ease-out;
+  stroke-linecap: round;
+}
+
+.progressCircle.complete {
+  stroke: var(--color-success, #4CAF50);
+}
+
+.label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.percentage {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--color-text-primary, #1a1a1a);
+}
+
+.checkmark {
+  font-size: 2rem;
+  color: var(--color-success, #4CAF50);
+  animation: checkPop 0.3s ease-out;
+}
+
+@keyframes checkPop {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
