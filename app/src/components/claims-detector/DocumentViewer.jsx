@@ -1,49 +1,20 @@
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import styles from './DocumentViewer.module.css'
 import Icon from '@/components/atoms/Icon/Icon'
-import Spinner from '@/components/atoms/Spinner/Spinner'
 import Button from '@/components/atoms/Button/Button'
-
-const SAMPLE_DOCUMENT_TEXT = `Introduction
-
-This document presents clinical findings for our new pharmaceutical treatment designed to address chronic inflammatory conditions. The data presented herein represents findings from multiple Phase III clinical trials conducted across 45 research centers.
-
-Clinical Efficacy
-
-Our primary endpoint analysis demonstrates significant therapeutic benefit. Reduces symptoms by 50% in clinical trials conducted over 12 weeks with 500 participants. This represents a meaningful improvement over existing standard-of-care treatments.
-
-The treatment has achieved regulatory milestone status. FDA approved for ages 18 and older with no major contraindications. This approval followed an expedited review process based on breakthrough therapy designation.
-
-Comparative Analysis
-
-In head-to-head studies against market leaders, the results were compelling. Outperforms leading competitor by 35% in efficacy measures. These findings were consistent across all demographic subgroups analyzed.
-
-Patient satisfaction scores also showed marked improvement, with 87% of participants reporting positive outcomes compared to 62% in the control group.
-
-Safety Profile
-
-The treatment demonstrates a favorable safety profile overall. May cause mild side effects in less than 5% of patients. The most common adverse events were headache (3.2%), nausea (1.8%), and fatigue (1.4%), all of which resolved without intervention.
-
-No serious adverse events were attributed to the treatment in any of the clinical trials. Long-term follow-up studies are ongoing to monitor extended safety outcomes.
-
-Quality of Life Outcomes
-
-Beyond clinical measures, patient-reported outcomes were encouraging. Clinically proven to improve quality of life scores. The SF-36 health survey showed statistically significant improvements in both physical and mental health composite scores.
-
-Patients reported improved ability to perform daily activities, better sleep quality, and reduced pain interference with work and social activities.
-
-Conclusions
-
-This treatment represents a significant advancement in the management of chronic inflammatory conditions, offering both superior efficacy and an excellent safety profile.`
+import ScannerOverlay from './ScannerOverlay'
+import { CLAIM_TYPES } from '@/mocks/claims'
 
 export default function DocumentViewer({
-  file,
+  document,
   claims = [],
   activeClaim,
   onClaimClick,
-  isLoading = false
+  isScanning = false,
+  onScanComplete
 }) {
   const contentRef = useRef(null)
+  const [hoveredClaim, setHoveredClaim] = useState(null)
 
   useEffect(() => {
     if (activeClaim && contentRef.current) {
@@ -55,15 +26,16 @@ export default function DocumentViewer({
   }, [activeClaim])
 
   const getConfidenceClass = (confidence) => {
-    if (confidence >= 0.8) return styles.highlightHigh
-    if (confidence >= 0.5) return styles.highlightMedium
-    return styles.highlightLow
+    if (confidence >= 0.8) return styles.confidenceHigh
+    if (confidence >= 0.5) return styles.confidenceMedium
+    return styles.confidenceLow
   }
 
   const renderHighlightedText = () => {
-    if (claims.length === 0) return SAMPLE_DOCUMENT_TEXT
+    if (!document) return ''
+    if (claims.length === 0) return document.content
 
-    let text = SAMPLE_DOCUMENT_TEXT
+    let text = document.content
     const sortedClaims = [...claims].sort((a, b) => {
       const aIndex = text.indexOf(a.text)
       const bIndex = text.indexOf(b.text)
@@ -76,17 +48,36 @@ export default function DocumentViewer({
         const before = text.substring(0, index)
         const after = text.substring(index + claim.text.length)
         const isActive = activeClaim === claim.id
-        const confidenceClass = getConfidenceClass(claim.confidence)
-        const activeClass = isActive ? styles.activeHighlight : ''
+        const isHovered = hoveredClaim === claim.id
+        const typeColor = CLAIM_TYPES[claim.type]?.color || '#666'
 
-        text = `${before}<mark class="${styles.highlight} ${confidenceClass} ${activeClass}" data-claim-id="${claim.id}">${claim.text}</mark>${after}`
+        const classes = [
+          styles.highlight,
+          getConfidenceClass(claim.confidence),
+          isActive ? styles.activeHighlight : '',
+          isHovered ? styles.hoveredHighlight : ''
+        ].filter(Boolean).join(' ')
+
+        text = `${before}<mark class="${classes}" data-claim-id="${claim.id}" data-claim-type="${claim.type}" style="--claim-color: ${typeColor}">${claim.text}</mark>${after}`
       }
     })
 
     return text
   }
 
-  if (!file) {
+  const handleTextClick = (e) => {
+    const claimId = e.target.dataset?.claimId
+    if (claimId) {
+      onClaimClick?.(claimId)
+    }
+  }
+
+  const handleTextHover = (e) => {
+    const claimId = e.target.dataset?.claimId
+    setHoveredClaim(claimId || null)
+  }
+
+  if (!document) {
     return (
       <div className={styles.documentViewer}>
         <div className={styles.emptyState}>
@@ -98,23 +89,12 @@ export default function DocumentViewer({
     )
   }
 
-  if (isLoading) {
-    return (
-      <div className={styles.documentViewer}>
-        <div className={styles.loadingState}>
-          <Spinner size="large" />
-          <p>Processing document...</p>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className={styles.documentViewer}>
       <div className={styles.header}>
         <div className={styles.fileInfo}>
           <Icon name="file" size={16} />
-          <span className={styles.fileName}>{file.name}</span>
+          <span className={styles.fileName}>{document.title}</span>
         </div>
         <div className={styles.toolbar}>
           <Button variant="ghost" size="small">
@@ -127,16 +107,23 @@ export default function DocumentViewer({
         </div>
       </div>
 
-      <div className={styles.content} ref={contentRef}>
+      <div className={styles.contentWrapper}>
         <div
-          className={styles.documentText}
-          dangerouslySetInnerHTML={{ __html: renderHighlightedText() }}
-          onClick={(e) => {
-            const claimId = e.target.dataset?.claimId
-            if (claimId) {
-              onClaimClick?.(claimId)
-            }
-          }}
+          className={styles.content}
+          ref={contentRef}
+        >
+          <div
+            className={styles.documentText}
+            dangerouslySetInnerHTML={{ __html: renderHighlightedText() }}
+            onClick={handleTextClick}
+            onMouseOver={handleTextHover}
+            onMouseOut={() => setHoveredClaim(null)}
+          />
+        </div>
+
+        <ScannerOverlay
+          isScanning={isScanning}
+          onComplete={onScanComplete}
         />
       </div>
 

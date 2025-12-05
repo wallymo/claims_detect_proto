@@ -1,0 +1,14 @@
+.particleContainer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.particle {
+  position: absolute;
+  background: var(--color-primary, #2196F3);
+  border-radius: 50%;
+  filter: blur(1px);
+  box-shadow: 0 0 6px var(--color-primary, #2196F3);
+}

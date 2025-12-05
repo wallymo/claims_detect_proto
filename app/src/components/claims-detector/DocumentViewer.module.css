@@ -43,6 +43,12 @@
   text-align: center;
 }
 
+.contentWrapper {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+}
+
 .content {
   flex: 1;
   overflow-y: auto;
@@ -57,34 +63,43 @@
 }
 
 .highlight {
+  background-color: color-mix(in srgb, var(--claim-color) 15%, transparent);
+  border-left: 2px solid var(--claim-color);
   padding: 2px 4px;
-  border-radius: var(--border-radius-sm);
+  border-radius: 2px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.2s ease;
 }
 
-.highlightHigh {
-  background-color: rgba(56, 142, 60, 0.2);
-  border-bottom: 2px solid #388E3C;
+.highlight.confidenceHigh {
+  border-left-width: 3px;
 }
 
-.highlightMedium {
-  background-color: rgba(245, 124, 0, 0.2);
-  border-bottom: 2px solid #F57C00;
+.highlight.confidenceMedium {
+  border-left-width: 2px;
 }
 
-.highlightLow {
-  background-color: rgba(211, 47, 47, 0.2);
-  border-bottom: 2px solid #D32F2F;
+.highlight.confidenceLow {
+  border-left-width: 1px;
 }
 
-.highlight:hover {
-  filter: brightness(0.95);
+.highlight:hover,
+.highlight.hoveredHighlight {
+  background-color: color-mix(in srgb, var(--claim-color) 25%, transparent);
 }
 
-.activeHighlight {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
+.highlight.activeHighlight {
+  background-color: color-mix(in srgb, var(--claim-color) 30%, transparent);
+  animation: highlightPulse 0.4s ease-out 0.3s;
+}
+
+@keyframes highlightPulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.01);
+  }
 }
 
 .footer {
