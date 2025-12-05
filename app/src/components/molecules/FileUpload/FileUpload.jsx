@@ -12,7 +12,9 @@ export default function FileUpload({
   uploadProgress,
   state = 'empty',
   size = 'medium',
-  className
+  className,
+  mockMode = false,
+  mockFileName = 'Clinical_Trial_Summary.pdf'
 }) {
   const [dragOver, setDragOver] = useState(false)
   const [fileName, setFileName] = useState('')
@@ -69,6 +71,12 @@ export default function FileUpload({
   }
 
   const handleClick = () => {
+    if (mockMode) {
+      // Simulate upload without opening file picker
+      setFileName(mockFileName)
+      onUpload?.({ name: mockFileName, size: 1024000, type: 'application/pdf' })
+      return
+    }
     inputRef.current?.click()
   }
 

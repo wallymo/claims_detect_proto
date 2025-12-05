@@ -223,6 +223,8 @@ function App() {
                 maxSize={10485760}
                 state={uploadState}
                 onUpload={handleFileUpload}
+                mockMode={true}
+                mockFileName={document?.title || 'Clinical_Trial_Summary.pdf'}
               />
             }
           />
