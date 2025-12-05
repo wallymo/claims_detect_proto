@@ -21,6 +21,8 @@ export default function ScannerOverlay({
     }
 
     const startTime = Date.now()
+    let completionTimeout = null
+
     const interval = setInterval(() => {
       const elapsed = Date.now() - startTime
       const newProgress = Math.min((elapsed / duration) * 100, 100)
@@ -29,13 +31,17 @@ export default function ScannerOverlay({
       if (newProgress >= 100) {
         clearInterval(interval)
         setShowComplete(true)
-        setTimeout(() => {
+        completionTimeout = setTimeout(() => {
+          setShowComplete(false)
           onComplete?.()
         }, 600)
       }
     }, 50)
 
-    return () => clearInterval(interval)
+    return () => {
+      clearInterval(interval)
+      if (completionTimeout) clearTimeout(completionTimeout)
+    }
   }, [isScanning, duration, onComplete])
 
   if (!isScanning && !showComplete) return null

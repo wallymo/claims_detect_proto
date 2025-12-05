@@ -408,12 +408,6 @@ function App() {
                 )}
               </div>
 
-              <Alert
-                type="info"
-                message="Click a claim to highlight it in the document. Use thumbs up/down to approve or reject."
-                dismissible={true}
-                size="small"
-              />
             </>
           )}
 
