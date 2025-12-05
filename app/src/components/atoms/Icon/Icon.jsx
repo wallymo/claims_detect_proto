@@ -85,22 +85,30 @@ export default function Icon({
     return null
   }
 
+  // Handle numeric sizes vs string size classes
+  const isNumericSize = typeof size === 'number'
+  const sizeClass = isNumericSize ? null : styles[size]
+
   const combinedClassName = [
     styles.icon,
-    styles[size],
+    sizeClass,
     className
   ].filter(Boolean).join(' ')
 
-  const style = color !== 'currentColor' && color.startsWith('--')
+  const baseStyle = color !== 'currentColor' && color.startsWith('--')
     ? { color: `var(${color})` }
     : color !== 'currentColor'
     ? { color }
-    : undefined
+    : {}
+
+  const style = isNumericSize
+    ? { ...baseStyle, width: size, height: size }
+    : baseStyle
 
   return (
     <span
       className={combinedClassName}
-      style={style}
+      style={Object.keys(style).length ? style : undefined}
       aria-label={ariaLabel}
       aria-hidden={!ariaLabel}
       role={ariaLabel ? 'img' : undefined}
