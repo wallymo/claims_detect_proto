@@ -342,3 +342,128 @@ html, body {
   display: flex;
   gap: var(--spacing-4);
 }
+
+/* Results Summary Styles */
+.resultsSummary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.coreClaimsRow,
+.aiDiscoveredRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.resultLabel {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+
+.resultValue {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.resultNumber {
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.miniProgress {
+  width: 60px;
+  height: 6px;
+  background: var(--color-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.miniProgressBar {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.aiValue {
+  color: var(--color-success);
+  font-weight: 600;
+}
+
+.divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: var(--spacing-xs) 0;
+}
+
+.statusRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--spacing-sm);
+}
+
+.metaRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  margin-top: var(--spacing-xs);
+}
+
+.metaItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.metaDot {
+  opacity: 0.5;
+}
+
+/* Type Filters */
+.typeFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-4);
+  border-bottom: var(--border-width-thin) solid var(--color-border-default);
+}
+
+.typeChip {
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--chip-color);
+  background: transparent;
+  color: var(--chip-color);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.typeChip:hover {
+  background: color-mix(in srgb, var(--chip-color) 10%, transparent);
+}
+
+.typeChip.active {
+  background: var(--chip-color);
+  color: white;
+}
+
+.clearFilters {
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  border-radius: 12px;
+  border: none;
+  background: var(--color-border);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.clearFilters:hover {
+  background: var(--color-text-secondary);
+  color: white;
+}

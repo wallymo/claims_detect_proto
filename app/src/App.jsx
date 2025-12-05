@@ -15,6 +15,8 @@ import ClaimCard from '@/components/claims-detector/ClaimCard'
 import DocumentViewer from '@/components/claims-detector/DocumentViewer'
 import PromptEditor from '@/components/claims-detector/PromptEditor'
 import ModelComparison from '@/components/claims-detector/ModelComparison'
+import { getRandomDocument } from '@/mocks/documents'
+import { getClaimsForDocument, getCoreClaimsCount, getAIDiscoveredCount, CLAIM_TYPES } from '@/mocks/claims'
 
 const MOCK_CLAIMS = [
   {
@@ -76,7 +78,7 @@ const MODEL_OPTIONS = [
 function App() {
   const [demoMode, setDemoMode] = useState(false)
   const [uploadState, setUploadState] = useState('empty')
-  const [uploadedFile, setUploadedFile] = useState(null)
+  const [document, setDocument] = useState(null)
   const [selectedBrand, setSelectedBrand] = useState(null)
   const [selectedModel, setSelectedModel] = useState('gemini-3')
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -86,6 +88,8 @@ function App() {
   const [masterPrompt, setMasterPrompt] = useState('')
   const [activeClaim, setActiveClaim] = useState(null)
   const [claimFilter, setClaimFilter] = useState('all')
+  const [typeFilters, setTypeFilters] = useState([])
+  const [sourceFilter, setSourceFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [showModelComparison, setShowModelComparison] = useState(false)
 
@@ -95,7 +99,8 @@ function App() {
   }, [])
 
   const handleFileUpload = (file) => {
-    setUploadedFile(file)
+    const mockDoc = getRandomDocument()
+    setDocument(mockDoc)
     setUploadState('complete')
     setAnalysisComplete(false)
     setClaims([])
@@ -107,17 +112,17 @@ function App() {
   }
 
   const handleAnalyze = () => {
-    if (!uploadedFile || !selectedBrand) return
-
+    if (!document || !selectedBrand) return
     setIsAnalyzing(true)
     setAnalysisComplete(false)
+  }
 
-    setTimeout(() => {
-      setClaims(MOCK_CLAIMS)
-      setProcessingTime(2340)
-      setIsAnalyzing(false)
-      setAnalysisComplete(true)
-    }, 2000)
+  const handleScanComplete = () => {
+    const mockClaims = getClaimsForDocument(document.id)
+    setClaims(mockClaims)
+    setProcessingTime(2340)
+    setIsAnalyzing(false)
+    setAnalysisComplete(true)
   }
 
   const handleClaimApprove = (claimId) => {
@@ -150,6 +155,14 @@ function App() {
       return c.status === claimFilter
     })
     .filter(c => {
+      if (typeFilters.length === 0) return true
+      return typeFilters.includes(c.type)
+    })
+    .filter(c => {
+      if (sourceFilter === 'all') return true
+      return c.source === sourceFilter
+    })
+    .filter(c => {
       if (!searchQuery) return true
       return c.text.toLowerCase().includes(searchQuery.toLowerCase())
     })
@@ -159,7 +172,11 @@ function App() {
   const rejectedCount = claims.filter(c => c.status === 'rejected').length
   const pendingCount = claims.filter(c => c.status === 'pending').length
 
-  const canAnalyze = uploadedFile && selectedBrand && !isAnalyzing
+  const coreClaimsFound = claims.filter(c => c.source === 'core').length
+  const totalCoreClaims = document?.coreClaims || 0
+  const aiDiscoveredCount = claims.filter(c => c.source === 'ai_discovered').length
+
+  const canAnalyze = document && selectedBrand && !isAnalyzing
 
   const claimFilterTabs = [
     { label: `All (${claims.length})`, content: null },
@@ -277,27 +294,39 @@ function App() {
               defaultOpen={true}
               size="small"
               content={
-                <div className="statsGrid">
-                  <StatCard
-                    label="Approved"
-                    value={approvedCount}
-                    size="small"
-                    trend={approvedCount > 0 ? 'up' : 'neutral'}
-                  />
-                  <StatCard
-                    label="Rejected"
-                    value={rejectedCount}
-                    size="small"
-                    trend={rejectedCount > 0 ? 'down' : 'neutral'}
-                  />
-                  <StatCard
-                    label="Pending"
-                    value={pendingCount}
-                    size="small"
-                  />
-                  <div className="processingTimeCard">
-                    <span className="processingLabel">Processing Time</span>
-                    <span className="processingValue">{(processingTime / 1000).toFixed(1)}s</span>
+                <div className="resultsSummary">
+                  <div className="coreClaimsRow">
+                    <span className="resultLabel">Core Claims Found</span>
+                    <div className="resultValue">
+                      <span className="resultNumber">{coreClaimsFound} of {totalCoreClaims}</span>
+                      <div className="miniProgress">
+                        <div
+                          className="miniProgressBar"
+                          style={{ width: `${(coreClaimsFound / totalCoreClaims) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="aiDiscoveredRow">
+                    <span className="resultLabel">AI-Discovered</span>
+                    <span className="resultValue aiValue">+{aiDiscoveredCount} new</span>
+                  </div>
+                  <div className="divider" />
+                  <div className="statusRow">
+                    <StatCard label="Approved" value={approvedCount} size="small" trend={approvedCount > 0 ? 'up' : 'neutral'} />
+                    <StatCard label="Rejected" value={rejectedCount} size="small" trend={rejectedCount > 0 ? 'down' : 'neutral'} />
+                    <StatCard label="Pending" value={pendingCount} size="small" />
+                  </div>
+                  <div className="metaRow">
+                    <span className="metaItem">
+                      <Icon name="zap" size={14} />
+                      {(processingTime / 1000).toFixed(1)}s
+                    </span>
+                    <span className="metaDot">•</span>
+                    <span className="metaItem">{
+                      selectedModel === 'gemini-3' ? 'Gemini 3' :
+                      selectedModel === 'claude-opus' ? 'Claude Opus 4.5' : 'GPT-4o'
+                    }</span>
                   </div>
                 </div>
               }
@@ -310,11 +339,12 @@ function App() {
         {/* Document Viewer Panel */}
         <div className="documentPanel">
           <DocumentViewer
-            file={uploadedFile}
+            document={document}
             claims={claims}
             activeClaim={activeClaim}
             onClaimClick={handleClaimClick}
-            isLoading={isAnalyzing}
+            isScanning={isAnalyzing}
+            onScanComplete={handleScanComplete}
           />
         </div>
 
@@ -350,6 +380,30 @@ function App() {
                     onChange={(e) => setSearchQuery(e.target.value)}
                   />
                 </div>
+              </div>
+
+              <div className="typeFilters">
+                {Object.entries(CLAIM_TYPES).map(([key, config]) => (
+                  <button
+                    key={key}
+                    className={`typeChip ${typeFilters.includes(key) ? 'active' : ''}`}
+                    style={{ '--chip-color': config.color }}
+                    onClick={() => {
+                      setTypeFilters(prev =>
+                        prev.includes(key)
+                          ? prev.filter(t => t !== key)
+                          : [...prev, key]
+                      )
+                    }}
+                  >
+                    {config.label}
+                  </button>
+                ))}
+                {typeFilters.length > 0 && (
+                  <button className="clearFilters" onClick={() => setTypeFilters([])}>
+                    Clear
+                  </button>
+                )}
               </div>
 
               <Alert
