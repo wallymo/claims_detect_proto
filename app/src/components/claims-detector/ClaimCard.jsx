@@ -17,6 +17,7 @@ export default function ClaimCard({
   onFeedbackSubmit
 }) {
   const [showFeedback, setShowFeedback] = useState(false)
+  const [showSuccess, setShowSuccess] = useState(false)
   const [feedback, setFeedback] = useState('')
 
   const getConfidenceVariant = (confidence) => {
@@ -46,7 +47,13 @@ export default function ClaimCard({
     onReject?.(claim.id, feedback)
     onFeedbackSubmit?.(claim.id, feedback)
     setShowFeedback(false)
+    setShowSuccess(true)
     setFeedback('')
+
+    // Auto-hide success message after 2 seconds
+    setTimeout(() => {
+      setShowSuccess(false)
+    }, 2000)
   }
 
   const handleCancelFeedback = (e) => {
@@ -170,6 +177,13 @@ export default function ClaimCard({
               Submit
             </Button>
           </div>
+        </div>
+      )}
+
+      {showSuccess && (
+        <div className={styles.successMessage}>
+          <Icon name="check" size={14} />
+          <span>Thank you, this helps optimize the model</span>
         </div>
       )}
 

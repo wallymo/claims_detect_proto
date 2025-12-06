@@ -124,21 +124,53 @@
   padding: var(--spacing-3);
   border: var(--border-width-thin) solid var(--color-border-default);
   border-radius: var(--border-radius-base);
+  background-color: var(--color-background-primary);
   font-size: var(--font-size-sm);
   font-family: var(--font-family-primary);
+  color: var(--color-text-primary);
   resize: vertical;
   margin-bottom: var(--spacing-3);
+  box-sizing: border-box;
+}
+
+.feedbackInput:hover {
+  border-color: var(--color-border-strong);
 }
 
 .feedbackInput:focus {
   outline: none;
   border-color: var(--color-interactive-default);
+  box-shadow: 0 0 0 3px rgba(51, 51, 51, 0.1);
 }
 
 .feedbackActions {
   display: flex;
   gap: var(--spacing-2);
   justify-content: flex-end;
+}
+
+.successMessage {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-3);
+  padding: var(--spacing-3);
+  background-color: #E8F5E9;
+  border-radius: var(--border-radius-base);
+  font-size: var(--font-size-sm);
+  color: #2E7D32;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .rejectionReason {

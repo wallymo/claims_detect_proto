@@ -1,33 +1,14 @@
 .icon {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   vertical-align: middle;
   flex-shrink: 0;
   line-height: 1;
 }
 
+/* SVG sizing is now handled via inline styles for bulletproof sizing */
 .icon svg {
   display: block;
-  width: 100%;
-  height: 100%;
-}
-
-/* Size variants */
-.small {
-  width: 16px;
-  height: 16px;
-}
-
-.medium {
-  width: 20px;
-  height: 20px;
-}
-
-.large {
-  width: 24px;
-  height: 24px;
-}
-
-.xlarge {
-  width: 32px;
-  height: 32px;
+  flex-shrink: 0;
 }

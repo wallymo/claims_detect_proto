@@ -11,9 +11,15 @@ export default function Tabs({
   size = 'medium',
   orientation = 'horizontal',
   defaultActiveIndex = 0,
+  onChange,
   className
 }) {
   const [activeIndex, setActiveIndex] = useState(defaultActiveIndex)
+
+  const handleTabChange = (index) => {
+    setActiveIndex(index)
+    onChange?.(index)
+  }
 
   const combinedClassName = [
     styles.tabs,
@@ -28,16 +34,16 @@ export default function Tabs({
 
     if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
       event.preventDefault()
-      setActiveIndex(index === lastIndex ? 0 : index + 1)
+      handleTabChange(index === lastIndex ? 0 : index + 1)
     } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
       event.preventDefault()
-      setActiveIndex(index === 0 ? lastIndex : index - 1)
+      handleTabChange(index === 0 ? lastIndex : index - 1)
     } else if (event.key === 'Home') {
       event.preventDefault()
-      setActiveIndex(0)
+      handleTabChange(0)
     } else if (event.key === 'End') {
       event.preventDefault()
-      setActiveIndex(lastIndex)
+      handleTabChange(lastIndex)
     }
   }
 
@@ -48,7 +54,7 @@ export default function Tabs({
           <button
             key={index}
             className={`${styles.tab} ${index === activeIndex ? styles.active : ''}`}
-            onClick={() => setActiveIndex(index)}
+            onClick={() => handleTabChange(index)}
             onKeyDown={(e) => handleKeyDown(e, index)}
             role="tab"
             aria-selected={index === activeIndex}

@@ -92,11 +92,12 @@ export default function DropdownMenu({
             ) : (
               <MenuItem
                 key={index}
-                label={item.label}
                 icon={item.icon}
                 disabled={item.disabled}
                 onClick={() => handleItemClick(item)}
-              />
+              >
+                {item.label}
+              </MenuItem>
             )
           ))}
         </div>

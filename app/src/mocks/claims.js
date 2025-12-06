@@ -14,7 +14,7 @@ export const MOCK_CLAIMS_BY_DOCUMENT = {
     {
       id: 'claim_001',
       text: 'Reduces cardiovascular events by 47% in clinical trials conducted over 24 weeks with 2,500 participants',
-      confidence: 0.94,
+      confidence: 0.99,
       type: 'efficacy',
       source: 'core',
       status: 'pending',
@@ -40,9 +40,9 @@ export const MOCK_CLAIMS_BY_DOCUMENT = {
     },
     {
       id: 'claim_004',
-      text: 'Each tablet contains 10mg of CardioMax active compound (cardiomaxinil)',
+      text: 'Shows superior bioavailability compared to generic alternatives',
       confidence: 0.85,
-      type: 'ingredient',
+      type: 'comparative',
       source: 'core',
       status: 'pending',
       location: { paragraph: 6 }
@@ -67,9 +67,9 @@ export const MOCK_CLAIMS_BY_DOCUMENT = {
     },
     {
       id: 'claim_007',
-      text: '9 out of 10 of her patients showed improvement within 8 weeks',
+      text: 'Demonstrated 89% treatment adherence rate in long-term studies',
       confidence: 0.58,
-      type: 'testimonial',
+      type: 'efficacy',
       source: 'ai_discovered',
       status: 'pending',
       location: { paragraph: 11 }
@@ -85,18 +85,18 @@ export const MOCK_CLAIMS_BY_DOCUMENT = {
     },
     {
       id: 'claim_009',
-      text: 'CardioMax is priced competitively at $45 per month',
+      text: 'Contraindicated for patients with severe hepatic impairment',
       confidence: 0.89,
-      type: 'pricing',
+      type: 'safety',
       source: 'ai_discovered',
       status: 'pending',
       location: { paragraph: 14 }
     },
     {
       id: 'claim_010',
-      text: 'the most affordable branded cardiovascular treatment in its class',
+      text: 'Meets all EU regulatory standards for pharmaceutical manufacturing',
       confidence: 0.67,
-      type: 'pricing',
+      type: 'regulatory',
       source: 'ai_discovered',
       status: 'pending',
       location: { paragraph: 14 }
@@ -142,7 +142,7 @@ export const MOCK_CLAIMS_BY_DOCUMENT = {
     {
       id: 'claim_103',
       text: 'FDA approval in March 2024 for generalized anxiety disorder in adults',
-      confidence: 0.95,
+      confidence: 0.99,
       type: 'regulatory',
       source: 'core',
       status: 'pending',
@@ -168,9 +168,9 @@ export const MOCK_CLAIMS_BY_DOCUMENT = {
     },
     {
       id: 'claim_106',
-      text: 'Contains no gluten, lactose, or artificial colors',
+      text: 'Demonstrates improved safety profile in elderly patients',
       confidence: 0.78,
-      type: 'ingredient',
+      type: 'safety',
       source: 'ai_discovered',
       status: 'pending',
       location: { paragraph: 8 }
@@ -195,18 +195,18 @@ export const MOCK_CLAIMS_BY_DOCUMENT = {
     },
     {
       id: 'claim_109',
-      text: 'Leading psychiatrists recommend NeuroCalm as a first-line treatment option',
+      text: 'Approved for use in combination with existing SSRI treatments',
       confidence: 0.55,
-      type: 'testimonial',
+      type: 'regulatory',
       source: 'ai_discovered',
       status: 'pending',
       location: { paragraph: 10 }
     },
     {
       id: 'claim_110',
-      text: 'Available for $89 per month',
+      text: 'Shows 40% greater efficacy than benzodiazepine alternatives',
       confidence: 0.88,
-      type: 'pricing',
+      type: 'efficacy',
       source: 'ai_discovered',
       status: 'pending',
       location: { paragraph: 11 }

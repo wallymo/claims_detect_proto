@@ -55,6 +55,18 @@
   background-color: var(--color-background-secondary);
 }
 
+.ghost {
+  background-color: transparent;
+  color: var(--color-text-secondary);
+  border: none;
+  padding: var(--spacing-1) var(--spacing-2);
+}
+
+.ghost:hover:not(.disabled) {
+  background-color: var(--color-background-secondary);
+  color: var(--color-text-primary);
+}
+
 /* Sizes */
 .small {
   padding: var(--spacing-2) var(--spacing-4);

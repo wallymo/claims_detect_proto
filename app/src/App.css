@@ -99,6 +99,23 @@ html, body {
   letter-spacing: 0.5px;
 }
 
+.toggleRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+
+.toggleStatus {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  transition: color 0.2s ease;
+}
+
+.toggleStatus.active {
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
 .statsGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -245,6 +262,65 @@ html, body {
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-semibold);
   margin: 0;
+}
+
+.modalSmall {
+  max-width: 480px;
+}
+
+.modalBody {
+  padding: var(--spacing-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-5);
+}
+
+.formField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.formLabel {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+}
+
+.formTextarea {
+  width: 100%;
+  padding: var(--spacing-3);
+  border: var(--border-width-thin) solid var(--color-border-default);
+  border-radius: var(--border-radius-base);
+  background-color: var(--color-background-primary);
+  font-family: var(--font-family-primary);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  resize: vertical;
+  min-height: 80px;
+  box-sizing: border-box;
+}
+
+.formTextarea:hover {
+  border-color: var(--color-border-strong);
+}
+
+.formTextarea:focus {
+  outline: none;
+  border-color: var(--color-interactive-default);
+  box-shadow: 0 0 0 3px rgba(51, 51, 51, 0.1);
+}
+
+.formTextarea::placeholder {
+  color: var(--color-text-secondary);
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-3);
+  padding-top: var(--spacing-4);
+  border-top: var(--border-width-thin) solid var(--color-border-default);
 }
 
 /* Legacy styles for backward compatibility */
@@ -454,6 +530,58 @@ html, body {
   background: var(--chip-color);
   color: white;
   font-weight: 600;
+}
+
+/* Unavailable chip - diagonal strikethrough like out-of-stock sizes */
+.typeChip.unavailable {
+  position: relative;
+  background: var(--color-background-secondary, #f5f5f5);
+  color: var(--color-text-disabled, #bbb);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.typeChip.unavailable::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  right: 2px;
+  height: 1.5px;
+  background: var(--color-text-disabled, #999);
+  transform: rotate(-12deg);
+  transform-origin: center;
+}
+
+.typeChip.unavailable:hover {
+  background: var(--color-background-secondary, #f5f5f5);
+  color: var(--color-text-disabled, #bbb);
+}
+
+/* AI chip distinct styling - inactive state is muted outline */
+.typeChip.aiChip {
+  background: transparent;
+  color: #667eea;
+  font-weight: 600;
+  border: 1.5px solid #667eea;
+}
+
+.typeChip.aiChip:hover {
+  background: rgba(102, 126, 234, 0.1);
+  color: #667eea;
+  border-color: #667eea;
+}
+
+/* AI chip active state - full gradient */
+.typeChip.aiChip.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.3);
+}
+
+.typeChip.aiChip.active:hover {
+  background: linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%);
 }
 
 .clearFilters {

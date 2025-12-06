@@ -15,6 +15,7 @@ export default function DocumentViewer({
 }) {
   const contentRef = useRef(null)
   const [hoveredClaim, setHoveredClaim] = useState(null)
+  const [showLegend, setShowLegend] = useState(false)
 
   useEffect(() => {
     if (activeClaim && contentRef.current) {
@@ -132,19 +133,29 @@ export default function DocumentViewer({
           <span className={styles.claimCount}>
             {claims.length} claims highlighted
           </span>
-          <div className={styles.legend}>
-            <span className={styles.legendItem}>
-              <span className={`${styles.legendDot} ${styles.legendHigh}`}></span>
-              High
-            </span>
-            <span className={styles.legendItem}>
-              <span className={`${styles.legendDot} ${styles.legendMedium}`}></span>
-              Medium
-            </span>
-            <span className={styles.legendItem}>
-              <span className={`${styles.legendDot} ${styles.legendLow}`}></span>
-              Low
-            </span>
+          <div className={styles.legendWrapper}>
+            <button
+              className={styles.legendToggle}
+              onClick={() => setShowLegend(!showLegend)}
+              aria-label="Show highlight colors"
+            >
+              <Icon name="info" size={14} />
+              Highlights Legend
+            </button>
+            {showLegend && (
+              <div className={styles.legendTooltip}>
+                <div className={styles.legendTitle}>Highlight Colors</div>
+                {Object.entries(CLAIM_TYPES).map(([key, config]) => (
+                  <div key={key} className={styles.legendItem}>
+                    <span
+                      className={styles.legendDot}
+                      style={{ backgroundColor: config.color }}
+                    />
+                    {config.label}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

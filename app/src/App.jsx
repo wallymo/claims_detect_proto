@@ -15,6 +15,7 @@ import ClaimCard from '@/components/claims-detector/ClaimCard'
 import DocumentViewer from '@/components/claims-detector/DocumentViewer'
 import PromptEditor from '@/components/claims-detector/PromptEditor'
 import ModelComparison from '@/components/claims-detector/ModelComparison'
+import Toggle from '@/components/atoms/Toggle/Toggle'
 import { getRandomDocument } from '@/mocks/documents'
 import { getClaimsForDocument, getCoreClaimsCount, getAIDiscoveredCount, CLAIM_TYPES } from '@/mocks/claims'
 
@@ -62,11 +63,13 @@ const MOCK_CLAIMS = [
 ]
 
 const BRAND_OPTIONS = [
-  { label: 'Novartis', onClick: () => {} },
-  { label: 'Pfizer', onClick: () => {} },
-  { label: 'Merck', onClick: () => {} },
+  { label: 'Novartis' },
+  { label: 'Pfizer' },
+  { label: 'Merck' },
+  { label: 'Amgen' },
+  { label: 'Johnson & Johnson' },
   { divider: true },
-  { label: 'Upload Custom...', icon: 'upload', onClick: () => {} }
+  { label: 'Upload Custom...', icon: 'upload' }
 ]
 
 const MODEL_OPTIONS = [
@@ -92,6 +95,10 @@ function App() {
   const [sourceFilter, setSourceFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [showModelComparison, setShowModelComparison] = useState(false)
+  const [aiDiscoveryEnabled, setAiDiscoveryEnabled] = useState(true)
+  const [showAIOnly, setShowAIOnly] = useState(false)
+  const [showCustomBrandModal, setShowCustomBrandModal] = useState(false)
+  const [customBrand, setCustomBrand] = useState({ name: '', description: '' })
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -108,7 +115,19 @@ function App() {
   }
 
   const handleBrandSelect = (brand) => {
+    if (brand === 'Upload Custom...') {
+      setShowCustomBrandModal(true)
+      return
+    }
     setSelectedBrand(brand)
+  }
+
+  const handleCustomBrandSave = () => {
+    if (customBrand.name.trim()) {
+      setSelectedBrand(customBrand.name)
+      setShowCustomBrandModal(false)
+      setCustomBrand({ name: '', description: '' })
+    }
   }
 
   const handleAnalyze = () => {
@@ -118,7 +137,11 @@ function App() {
   }
 
   const handleScanComplete = () => {
-    const mockClaims = getClaimsForDocument(document.id)
+    let mockClaims = getClaimsForDocument(document.id)
+    // Filter out AI-discovered claims if discovery is disabled
+    if (!aiDiscoveryEnabled) {
+      mockClaims = mockClaims.filter(c => c.source === 'core')
+    }
     setClaims(mockClaims)
     setProcessingTime(2340)
     setIsAnalyzing(false)
@@ -163,6 +186,10 @@ function App() {
       return c.source === sourceFilter
     })
     .filter(c => {
+      if (!showAIOnly) return true
+      return c.source === 'ai_discovered'
+    })
+    .filter(c => {
       if (!searchQuery) return true
       return c.text.toLowerCase().includes(searchQuery.toLowerCase())
     })
@@ -173,8 +200,13 @@ function App() {
   const pendingCount = claims.filter(c => c.status === 'pending').length
 
   const coreClaimsFound = claims.filter(c => c.source === 'core').length
-  const totalCoreClaims = document?.coreClaims || 0
   const aiDiscoveredCount = claims.filter(c => c.source === 'ai_discovered').length
+
+  // Count claims by type for unavailable chip styling
+  const claimCountsByType = Object.keys(CLAIM_TYPES).reduce((acc, type) => {
+    acc[type] = claims.filter(c => c.type === type).length
+    return acc
+  }, {})
 
   const canAnalyze = document && selectedBrand && !isAnalyzing
 
@@ -267,6 +299,20 @@ function App() {
                     />
                   </div>
                 )}
+
+                <div className="settingItem">
+                  <label className="settingLabel">AI Discovery</label>
+                  <div className="toggleRow">
+                    <Toggle
+                      checked={aiDiscoveryEnabled}
+                      onChange={(e) => setAiDiscoveryEnabled(e.target.checked)}
+                      size="small"
+                    />
+                    <span className={`toggleStatus ${aiDiscoveryEnabled ? 'active' : ''}`}>
+                      {aiDiscoveryEnabled ? 'Enhanced Search' : 'Core Claims Only'}
+                    </span>
+                  </div>
+                </div>
               </div>
             }
           />
@@ -299,20 +345,14 @@ function App() {
                 <div className="resultsSummary">
                   <div className="coreClaimsRow">
                     <span className="resultLabel">Core Claims Found</span>
-                    <div className="resultValue">
-                      <span className="resultNumber">{coreClaimsFound} of {totalCoreClaims}</span>
-                      <div className="miniProgress">
-                        <div
-                          className="miniProgressBar"
-                          style={{ width: `${(coreClaimsFound / totalCoreClaims) * 100}%` }}
-                        />
-                      </div>
+                    <span className="resultValue resultNumber">{coreClaimsFound}</span>
+                  </div>
+                  {aiDiscoveryEnabled && aiDiscoveredCount > 0 && (
+                    <div className="aiDiscoveredRow">
+                      <span className="resultLabel">AI-Discovered</span>
+                      <span className="resultValue aiValue">+{aiDiscoveredCount}</span>
                     </div>
-                  </div>
-                  <div className="aiDiscoveredRow">
-                    <span className="resultLabel">AI-Discovered</span>
-                    <span className="resultValue aiValue">+{aiDiscoveredCount} new</span>
-                  </div>
+                  )}
                   <div className="divider" />
                   <div className="statusRow">
                     <StatCard label="Approved" value={approvedCount} size="small" trend={approvedCount > 0 ? 'up' : 'neutral'} />
@@ -385,24 +425,38 @@ function App() {
               </div>
 
               <div className="typeFilters">
-                {Object.entries(CLAIM_TYPES).map(([key, config]) => (
+                {/* AI filter chip with distinct styling */}
+                {aiDiscoveryEnabled && aiDiscoveredCount > 0 && (
                   <button
-                    key={key}
-                    className={`typeChip ${typeFilters.includes(key) ? 'active' : ''}`}
-                    style={{ '--chip-color': config.color }}
-                    onClick={() => {
-                      setTypeFilters(prev =>
-                        prev.includes(key)
-                          ? prev.filter(t => t !== key)
-                          : [...prev, key]
-                      )
-                    }}
+                    className={`typeChip aiChip ${showAIOnly ? 'active' : ''}`}
+                    onClick={() => setShowAIOnly(!showAIOnly)}
                   >
-                    {config.label}
+                    ✦ AI
                   </button>
-                ))}
-                {typeFilters.length > 0 && (
-                  <button className="clearFilters" onClick={() => setTypeFilters([])}>
+                )}
+                {Object.entries(CLAIM_TYPES).map(([key, config]) => {
+                  const isUnavailable = claimCountsByType[key] === 0
+                  return (
+                    <button
+                      key={key}
+                      className={`typeChip ${typeFilters.includes(key) ? 'active' : ''} ${isUnavailable ? 'unavailable' : ''}`}
+                      style={{ '--chip-color': config.color }}
+                      onClick={() => {
+                        if (isUnavailable) return
+                        setTypeFilters(prev =>
+                          prev.includes(key)
+                            ? prev.filter(t => t !== key)
+                            : [...prev, key]
+                        )
+                      }}
+                      disabled={isUnavailable}
+                    >
+                      {config.label}
+                    </button>
+                  )
+                })}
+                {(typeFilters.length > 0 || showAIOnly) && (
+                  <button className="clearFilters" onClick={() => { setTypeFilters([]); setShowAIOnly(false) }}>
                     Clear
                   </button>
                 )}
@@ -469,6 +523,70 @@ function App() {
                 setShowModelComparison(false)
               }}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Custom Brand Modal */}
+      {showCustomBrandModal && (
+        <div className="modalOverlay" onClick={() => setShowCustomBrandModal(false)}>
+          <div className="modalContent modalSmall" onClick={e => e.stopPropagation()}>
+            <div className="modalHeader">
+              <h2>Add Custom Brand</h2>
+              <Button
+                variant="ghost"
+                size="small"
+                onClick={() => setShowCustomBrandModal(false)}
+              >
+                <Icon name="x" size={20} />
+              </Button>
+            </div>
+            <div className="modalBody">
+              <div className="formField">
+                <label className="formLabel">Client Name</label>
+                <Input
+                  placeholder="Enter client name..."
+                  value={customBrand.name}
+                  onChange={(e) => setCustomBrand(prev => ({ ...prev, name: e.target.value }))}
+                  size="medium"
+                />
+              </div>
+              <div className="formField">
+                <label className="formLabel">Description</label>
+                <textarea
+                  className="formTextarea"
+                  placeholder="Brief description of the brand guidelines..."
+                  value={customBrand.description}
+                  onChange={(e) => setCustomBrand(prev => ({ ...prev, description: e.target.value }))}
+                  rows={3}
+                />
+              </div>
+              <div className="formField">
+                <label className="formLabel">Claims Document</label>
+                <FileUpload
+                  accept=".pdf,.docx,.xlsx"
+                  maxSize={10485760}
+                  onUpload={(file) => console.log('Claims doc uploaded:', file.name)}
+                />
+              </div>
+              <div className="modalActions">
+                <Button
+                  variant="secondary"
+                  size="medium"
+                  onClick={() => setShowCustomBrandModal(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="medium"
+                  onClick={handleCustomBrandSave}
+                  disabled={!customBrand.name.trim()}
+                >
+                  Save Brand
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       )}

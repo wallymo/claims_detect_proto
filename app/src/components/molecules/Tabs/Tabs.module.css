@@ -31,10 +31,23 @@
   font-weight: var(--font-weight-medium);
   color: var(--color-text-secondary);
   background: transparent;
-  border: none;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: color 0.2s ease, font-weight 0.2s ease;
   white-space: nowrap;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+}
+
+.tab:focus,
+.tab:focus-visible,
+.tab:active {
+  outline: none !important;
+  box-shadow: none !important;
+  border: none !important;
 }
 
 .tab:hover {
@@ -43,6 +56,7 @@
 
 .tab.active {
   color: var(--color-text-primary);
+  font-weight: 700;
 }
 
 .icon {

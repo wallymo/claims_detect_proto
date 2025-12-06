@@ -55,15 +55,10 @@
   border: var(--border-width-thin) solid var(--color-border-default);
   border-radius: var(--border-radius-base);
   background-color: var(--color-background-primary);
+  overflow: hidden;
 }
 
-.complete svg,
-.uploading svg,
-.errorState svg {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-}
+/* Icon sizing is handled by Icon component - no svg overrides needed */
 
 .fileInfo {
   display: flex;
@@ -74,6 +69,8 @@
 }
 
 .fileName {
+  flex: 1;
+  min-width: 0;
   font-size: var(--font-size-sm);
   color: var(--color-text-primary);
   overflow: hidden;
@@ -87,7 +84,8 @@
 }
 
 .complete {
-  border-color: var(--color-state-success);
+  border: 1px solid var(--color-state-success);
+  background-color: var(--color-background-primary);
 }
 
 .complete .fileInfo {
