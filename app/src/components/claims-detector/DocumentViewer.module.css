@@ -65,7 +65,26 @@
   font-size: var(--font-size-sm);
   line-height: var(--line-height-relaxed);
   color: var(--color-text-primary);
-  white-space: pre-wrap;
+}
+
+.documentText h3 {
+  font-size: 1.05em;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin: 1em 0 0.35em 0;
+  letter-spacing: -0.01em;
+}
+
+.documentText h3:first-child {
+  margin-top: 0;
+}
+
+.documentText p {
+  margin: 0 0 0.6em 0;
+}
+
+.documentText p:last-child {
+  margin-bottom: 0;
 }
 
 .highlight {
