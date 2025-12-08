@@ -17,7 +17,7 @@ import PromptEditor from '@/components/claims-detector/PromptEditor'
 import ModelComparison from '@/components/claims-detector/ModelComparison'
 import Toggle from '@/components/atoms/Toggle/Toggle'
 import { getRandomDocument } from '@/mocks/documents'
-import { getClaimsForDocument, getCoreClaimsCount, getAIDiscoveredCount, CLAIM_TYPES } from '@/mocks/claims'
+import { getClaimsForDocument, getCoreClaimsCount, getAIDiscoveredCount, getAIAnalysisClaims, CLAIM_TYPES } from '@/mocks/claims'
 
 const MOCK_CLAIMS = [
   {
@@ -68,6 +68,7 @@ const BRAND_OPTIONS = [
   { label: 'Merck' },
   { label: 'Amgen' },
   { label: 'Johnson & Johnson' },
+  { label: 'AI Analysis', icon: 'zap' },
   { divider: true },
   { label: 'Upload Custom...', icon: 'upload' }
 ]
@@ -94,6 +95,7 @@ function App() {
   const [typeFilters, setTypeFilters] = useState([])
   const [sourceFilter, setSourceFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
+  const [sortOrder, setSortOrder] = useState('high-low')
   const [showModelComparison, setShowModelComparison] = useState(false)
   const [aiDiscoveryEnabled, setAiDiscoveryEnabled] = useState(true)
   const [showAIOnly, setShowAIOnly] = useState(false)
@@ -137,10 +139,16 @@ function App() {
   }
 
   const handleScanComplete = () => {
-    let mockClaims = getClaimsForDocument(document.id)
-    // Filter out AI-discovered claims if discovery is disabled
-    if (!aiDiscoveryEnabled) {
-      mockClaims = mockClaims.filter(c => c.source === 'core')
+    let mockClaims
+    if (selectedBrand === 'AI Analysis') {
+      // AI Analysis mode: use dedicated AI-only claims dataset
+      mockClaims = getAIAnalysisClaims()
+    } else {
+      mockClaims = getClaimsForDocument(document.id)
+      // Filter out AI-discovered claims if discovery is disabled
+      if (!aiDiscoveryEnabled) {
+        mockClaims = mockClaims.filter(c => c.source === 'core')
+      }
     }
     setClaims(mockClaims)
     setProcessingTime(2340)
@@ -160,6 +168,14 @@ function App() {
     setClaims(prev =>
       prev.map(c =>
         c.id === claimId ? { ...c, status: 'rejected', feedback } : c
+      )
+    )
+  }
+
+  const handleClaimTypeChange = (claimId, newType) => {
+    setClaims(prev =>
+      prev.map(c =>
+        c.id === claimId ? { ...c, type: newType } : c
       )
     )
   }
@@ -193,7 +209,10 @@ function App() {
       if (!searchQuery) return true
       return c.text.toLowerCase().includes(searchQuery.toLowerCase())
     })
-    .sort((a, b) => b.confidence - a.confidence)
+    .sort((a, b) => sortOrder === 'high-low'
+      ? b.confidence - a.confidence
+      : a.confidence - b.confidence
+    )
 
   const approvedCount = claims.filter(c => c.status === 'approved').length
   const rejectedCount = claims.filter(c => c.status === 'rejected').length
@@ -343,15 +362,24 @@ function App() {
               size="small"
               content={
                 <div className="resultsSummary">
-                  <div className="coreClaimsRow">
-                    <span className="resultLabel">Core Claims Found</span>
-                    <span className="resultValue resultNumber">{coreClaimsFound}</span>
-                  </div>
-                  {aiDiscoveryEnabled && aiDiscoveredCount > 0 && (
+                  {selectedBrand === 'AI Analysis' ? (
                     <div className="aiDiscoveredRow">
-                      <span className="resultLabel">AI-Discovered</span>
-                      <span className="resultValue aiValue">+{aiDiscoveredCount}</span>
+                      <span className="resultLabel">AI-Discovered Claims</span>
+                      <span className="resultValue aiValue">{claims.length}</span>
                     </div>
+                  ) : (
+                    <>
+                      <div className="coreClaimsRow">
+                        <span className="resultLabel">Core Claims Found</span>
+                        <span className="resultValue resultNumber">{coreClaimsFound}</span>
+                      </div>
+                      {aiDiscoveryEnabled && aiDiscoveredCount > 0 && (
+                        <div className="aiDiscoveredRow">
+                          <span className="resultLabel">AI-Discovered</span>
+                          <span className="resultValue aiValue">+{aiDiscoveredCount}</span>
+                        </div>
+                      )}
+                    </>
                   )}
                   <div className="divider" />
                   <div className="statusRow">
@@ -414,13 +442,19 @@ function App() {
                     setClaimFilter(filters[index])
                   }}
                 />
-                <div className="claimsSearch">
+                <div className="claimsSearchSort">
                   <Input
                     placeholder="Search claims..."
                     size="small"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                   />
+                  <button
+                    className="sortToggle"
+                    onClick={() => setSortOrder(prev => prev === 'high-low' ? 'low-high' : 'high-low')}
+                  >
+                    Confidence {sortOrder === 'high-low' ? '↓' : '↑'}
+                  </button>
                 </div>
               </div>
 
@@ -496,6 +530,7 @@ function App() {
                 onApprove={handleClaimApprove}
                 onReject={handleClaimReject}
                 onSelect={() => handleClaimClick(claim.id)}
+                onTypeChange={handleClaimTypeChange}
               />
             ))}
           </div>

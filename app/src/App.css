@@ -184,12 +184,33 @@ html, body {
 }
 
 .claimsFilterBar {
-  padding: var(--spacing-3) var(--spacing-4);
+  padding: var(--spacing-4) var(--spacing-4);
   border-bottom: var(--border-width-thin) solid var(--color-border-default);
 }
 
-.claimsSearch {
-  margin-top: var(--spacing-3);
+.claimsSearchSort {
+  display: flex;
+  gap: var(--spacing-2);
+  margin-top: 0;
+}
+
+.claimsSearchSort > div:first-child {
+  flex: 1;
+}
+
+.sortToggle {
+  padding: var(--spacing-2) var(--spacing-3);
+  border: none;
+  background: transparent;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s ease;
+}
+
+.sortToggle:hover {
+  color: var(--color-text-primary);
 }
 
 .claimsList {

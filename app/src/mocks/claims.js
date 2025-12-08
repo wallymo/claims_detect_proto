@@ -225,3 +225,81 @@ export const getAIDiscoveredCount = (docId) => {
   const claims = getClaimsForDocument(docId)
   return claims.filter(c => c.source === 'ai_discovered').length
 }
+
+// AI Analysis mode claims - lower confidence (70-85%), one outlier at ~45%
+export const AI_ANALYSIS_CLAIMS = [
+  {
+    id: 'ai_claim_001',
+    text: 'Clinical studies suggest potential cardiovascular benefits in high-risk patient populations',
+    confidence: 0.84,
+    type: 'efficacy',
+    source: 'ai_discovered',
+    status: 'pending',
+    location: { paragraph: 2 }
+  },
+  {
+    id: 'ai_claim_002',
+    text: 'Recommended for adults with documented treatment-resistant conditions',
+    confidence: 0.79,
+    type: 'regulatory',
+    source: 'ai_discovered',
+    status: 'pending',
+    location: { paragraph: 3 }
+  },
+  {
+    id: 'ai_claim_003',
+    text: 'May be administered with or without food based on patient tolerance',
+    confidence: 0.82,
+    type: 'dosage',
+    source: 'ai_discovered',
+    status: 'pending',
+    location: { paragraph: 4 }
+  },
+  {
+    id: 'ai_claim_004',
+    text: 'Shows favorable comparison to existing treatment protocols in preliminary analysis',
+    confidence: 0.71,
+    type: 'comparative',
+    source: 'ai_discovered',
+    status: 'pending',
+    location: { paragraph: 5 }
+  },
+  {
+    id: 'ai_claim_005',
+    text: 'Adverse events reported in less than 12% of study participants',
+    confidence: 0.85,
+    type: 'safety',
+    source: 'ai_discovered',
+    status: 'pending',
+    location: { paragraph: 6 }
+  },
+  {
+    id: 'ai_claim_006',
+    text: 'Contains proprietary blend of active pharmaceutical ingredients',
+    confidence: 0.73,
+    type: 'ingredient',
+    source: 'ai_discovered',
+    status: 'pending',
+    location: { paragraph: 7 }
+  },
+  {
+    id: 'ai_claim_007',
+    text: 'Product may help with general wellness outcomes',
+    confidence: 0.45,
+    type: 'efficacy',
+    source: 'ai_discovered',
+    status: 'pending',
+    location: { paragraph: 8 }
+  },
+  {
+    id: 'ai_claim_008',
+    text: 'Patient testimonials indicate high satisfaction with treatment regimen',
+    confidence: 0.77,
+    type: 'testimonial',
+    source: 'ai_discovered',
+    status: 'pending',
+    location: { paragraph: 9 }
+  }
+]
+
+export const getAIAnalysisClaims = () => AI_ANALYSIS_CLAIMS

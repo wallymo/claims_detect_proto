@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import styles from './ClaimCard.module.css'
 import ProgressBar from '@/components/atoms/ProgressBar/ProgressBar'
 import Button from '@/components/atoms/Button/Button'
@@ -14,11 +14,38 @@ export default function ClaimCard({
   onApprove,
   onReject,
   onSelect,
-  onFeedbackSubmit
+  onFeedbackSubmit,
+  onTypeChange
 }) {
   const [showFeedback, setShowFeedback] = useState(false)
   const [showSuccess, setShowSuccess] = useState(false)
   const [feedback, setFeedback] = useState('')
+  const [showTypeDropdown, setShowTypeDropdown] = useState(false)
+  const typeDropdownRef = useRef(null)
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (typeDropdownRef.current && !typeDropdownRef.current.contains(e.target)) {
+        setShowTypeDropdown(false)
+      }
+    }
+    if (showTypeDropdown) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showTypeDropdown])
+
+  const handleTypeClick = (e) => {
+    e.stopPropagation()
+    setShowTypeDropdown(!showTypeDropdown)
+  }
+
+  const handleTypeSelect = (e, newType) => {
+    e.stopPropagation()
+    onTypeChange?.(claim.id, newType)
+    setShowTypeDropdown(false)
+  }
 
   const getConfidenceVariant = (confidence) => {
     if (confidence >= 0.8) return 'success'
@@ -94,17 +121,38 @@ export default function ClaimCard({
 
         <div className={styles.badges}>
           {claim.type && (
-            <Badge
-              variant="neutral"
-              size="small"
-              style={{
-                backgroundColor: `${getTypeConfig(claim.type).color}20`,
-                color: getTypeConfig(claim.type).color,
-                borderColor: getTypeConfig(claim.type).color
-              }}
-            >
-              {getTypeConfig(claim.type).label}
-            </Badge>
+            <div className={styles.typeWrapper} ref={typeDropdownRef}>
+              <button
+                className={styles.typeBadge}
+                style={{
+                  backgroundColor: `${getTypeConfig(claim.type).color}20`,
+                  color: getTypeConfig(claim.type).color,
+                  borderColor: getTypeConfig(claim.type).color
+                }}
+                onClick={handleTypeClick}
+              >
+                {getTypeConfig(claim.type).label}
+                <Icon name="chevronDown" size={12} />
+              </button>
+              {showTypeDropdown && (
+                <div className={styles.typeDropdown}>
+                  {Object.entries(CLAIM_TYPES).map(([key, config]) => (
+                    <button
+                      key={key}
+                      className={`${styles.typeOption} ${claim.type === key ? styles.selected : ''}`}
+                      style={{ '--type-color': config.color }}
+                      onClick={(e) => handleTypeSelect(e, key)}
+                    >
+                      <span
+                        className={styles.typeColorDot}
+                        style={{ backgroundColor: config.color }}
+                      />
+                      {config.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
           <span className={`${styles.sourceBadge} ${claim.source === 'core' ? styles.sourceCore : styles.sourceAI}`}>
             {claim.source === 'core' ? 'Core' : 'AI Found'}
