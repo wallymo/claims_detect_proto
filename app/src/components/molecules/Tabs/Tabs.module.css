@@ -118,7 +118,7 @@
 
 /* Panel */
 .panelContainer {
-  padding: var(--spacing-4) 0;
+  padding: var(--spacing-2) 0;
 }
 
 .panel {
