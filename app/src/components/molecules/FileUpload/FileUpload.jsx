@@ -119,7 +119,7 @@ export default function FileUpload({
         <div className={styles.uploading}>
           <div className={styles.fileInfo}>
             <Icon name="file" size={20} />
-            <span className={styles.fileName}>{fileName}</span>
+            <span className={styles.fileName}>{mockMode ? mockFileName : fileName}</span>
           </div>
           <ProgressBar value={uploadProgress} size="small" />
           <span className={styles.progress}>{uploadProgress}%</span>
@@ -130,7 +130,7 @@ export default function FileUpload({
         <div className={styles.complete}>
           <div className={styles.fileInfo}>
             <Icon name="check" size={20} />
-            <span className={styles.fileName}>{fileName}</span>
+            <span className={styles.fileName}>{mockMode ? mockFileName : fileName}</span>
           </div>
           <Button variant="ghost" size="small" onClick={handleRemove}>
             <Icon name="x" size={16} />

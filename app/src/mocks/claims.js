@@ -226,7 +226,8 @@ export const getAIDiscoveredCount = (docId) => {
   return claims.filter(c => c.source === 'ai_discovered').length
 }
 
-// AI Analysis mode claims - lower confidence (70-85%), one outlier at ~45%
+// AI Analysis mode claims - exact text matches from AI_ANALYSIS_DOCUMENT
+// Lower confidence (70-85%), one outlier at ~45%
 export const AI_ANALYSIS_CLAIMS = [
   {
     id: 'ai_claim_001',
@@ -248,7 +249,7 @@ export const AI_ANALYSIS_CLAIMS = [
   },
   {
     id: 'ai_claim_003',
-    text: 'May be administered with or without food based on patient tolerance',
+    text: 'may be administered with or without food based on patient tolerance',
     confidence: 0.82,
     type: 'dosage',
     source: 'ai_discovered',
@@ -266,7 +267,7 @@ export const AI_ANALYSIS_CLAIMS = [
   },
   {
     id: 'ai_claim_005',
-    text: 'Adverse events reported in less than 12% of study participants',
+    text: 'adverse events reported in less than 12% of study participants',
     confidence: 0.85,
     type: 'safety',
     source: 'ai_discovered',
@@ -284,7 +285,7 @@ export const AI_ANALYSIS_CLAIMS = [
   },
   {
     id: 'ai_claim_007',
-    text: 'Product may help with general wellness outcomes',
+    text: 'product may help with general wellness outcomes',
     confidence: 0.45,
     type: 'efficacy',
     source: 'ai_discovered',
@@ -293,7 +294,7 @@ export const AI_ANALYSIS_CLAIMS = [
   },
   {
     id: 'ai_claim_008',
-    text: 'Patient testimonials indicate high satisfaction with treatment regimen',
+    text: 'patient testimonials indicate high satisfaction with treatment regimen',
     confidence: 0.77,
     type: 'testimonial',
     source: 'ai_discovered',

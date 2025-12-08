@@ -16,7 +16,7 @@ import DocumentViewer from '@/components/claims-detector/DocumentViewer'
 import PromptEditor from '@/components/claims-detector/PromptEditor'
 import ModelComparison from '@/components/claims-detector/ModelComparison'
 import Toggle from '@/components/atoms/Toggle/Toggle'
-import { getRandomDocument, getAIAnalysisDocument } from '@/mocks/documents'
+import { getDefaultDocument, getAIAnalysisDocument } from '@/mocks/documents'
 import { getClaimsForDocument, getCoreClaimsCount, getAIDiscoveredCount, getAIAnalysisClaims, CLAIM_TYPES } from '@/mocks/claims'
 
 const MOCK_CLAIMS = [
@@ -70,7 +70,7 @@ const BRAND_OPTIONS = [
   { label: 'Johnson & Johnson' },
   { label: 'AI Analysis', icon: 'zap', iconColor: '#F59E0B' },
   { divider: true },
-  { label: 'Upload Custom...', icon: 'upload' }
+  { label: 'New Client...', icon: 'upload' }
 ]
 
 const MODEL_OPTIONS = [
@@ -82,6 +82,7 @@ const MODEL_OPTIONS = [
 function App() {
   const [demoMode, setDemoMode] = useState(false)
   const [uploadState, setUploadState] = useState('empty')
+  const [uploadProgress, setUploadProgress] = useState(0)
   const [document, setDocument] = useState(null)
   const [selectedBrand, setSelectedBrand] = useState(null)
   const [selectedModel, setSelectedModel] = useState('gemini-3')
@@ -128,21 +129,65 @@ function App() {
     }
   }, [activeClaim])
 
+  // Simulate realistic upload progress
+  const simulateUpload = (onComplete) => {
+    setUploadState('uploading')
+    setUploadProgress(0)
+
+    // Realistic progress: fast start, slow middle, fast finish
+    const steps = [
+      { target: 15, delay: 80 },
+      { target: 35, delay: 120 },
+      { target: 52, delay: 200 },
+      { target: 68, delay: 180 },
+      { target: 79, delay: 250 },
+      { target: 88, delay: 150 },
+      { target: 94, delay: 100 },
+      { target: 100, delay: 60 },
+    ]
+
+    let i = 0
+    const runStep = () => {
+      if (i < steps.length) {
+        setUploadProgress(steps[i].target)
+        setTimeout(runStep, steps[i].delay)
+        i++
+      } else {
+        setTimeout(() => {
+          setUploadState('complete')
+          onComplete?.()
+        }, 150)
+      }
+    }
+
+    setTimeout(runStep, 100)
+  }
+
   const handleFileUpload = (file) => {
-    const mockDoc = getRandomDocument()
-    setDocument(mockDoc)
-    setUploadState('complete')
-    setAnalysisComplete(false)
-    setClaims([])
-    setActiveClaim(null)
+    simulateUpload(() => {
+      setDocument(getDefaultDocument())
+      setAnalysisComplete(false)
+      setClaims([])
+      setActiveClaim(null)
+    })
   }
 
   const handleBrandSelect = (brand) => {
-    if (brand === 'Upload Custom...') {
+    if (brand === 'New Client...') {
       setShowCustomBrandModal(true)
       return
     }
     setSelectedBrand(brand)
+
+    // Only load AI Analysis document when that client is selected
+    if (brand === 'AI Analysis') {
+      simulateUpload(() => {
+        setDocument(getAIAnalysisDocument())
+        setAnalysisComplete(false)
+        setClaims([])
+        setActiveClaim(null)
+      })
+    }
   }
 
   const handleCustomBrandSave = () => {
@@ -155,12 +200,6 @@ function App() {
 
   const handleAnalyze = () => {
     if (!document || !selectedBrand) return
-
-    // For AI Analysis mode, swap to the AI Analysis document
-    if (selectedBrand === 'AI Analysis') {
-      setDocument(getAIAnalysisDocument())
-    }
-
     setIsAnalyzing(true)
     setAnalysisComplete(false)
   }
@@ -322,10 +361,11 @@ function App() {
                 accept=".pdf,.docx"
                 maxSize={10485760}
                 state={uploadState}
+                uploadProgress={uploadProgress}
                 onUpload={handleFileUpload}
                 onRemove={handleDocumentClose}
                 mockMode={true}
-                mockFileName={document?.title || 'Clinical_Trial_Summary.pdf'}
+                mockFileName={document?.id === 'ai_analysis_doc' ? 'NEW_clinical_data.pdf' : 'CardioMax_Clinical_Trial_Summary.pdf'}
               />
             }
           />
@@ -612,7 +652,7 @@ function App() {
         <div className="modalOverlay" onClick={() => setShowCustomBrandModal(false)}>
           <div className="modalContent modalSmall" onClick={e => e.stopPropagation()}>
             <div className="modalHeader">
-              <h2>Add Custom Brand</h2>
+              <h2>Add New Client</h2>
               <Button
                 variant="ghost"
                 size="small"
@@ -635,7 +675,7 @@ function App() {
                 <label className="formLabel">Description</label>
                 <textarea
                   className="formTextarea"
-                  placeholder="Brief description of the brand guidelines..."
+                  placeholder="Include description or any additional info..."
                   value={customBrand.description}
                   onChange={(e) => setCustomBrand(prev => ({ ...prev, description: e.target.value }))}
                   rows={3}
