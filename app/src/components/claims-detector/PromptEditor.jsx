@@ -60,7 +60,7 @@ export default function PromptEditor({
   return (
     <div className={styles.promptEditor}>
       <AccordionItem
-        title="Master Prompt"
+        title="Master AI Prompt"
         icon="settings"
         defaultOpen={false}
       >

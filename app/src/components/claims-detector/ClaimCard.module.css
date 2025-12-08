@@ -12,8 +12,9 @@
 }
 
 .claimCard.active {
-  border-color: var(--color-interactive-default);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+  border: 2px solid var(--color-interactive-default);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15),
+              0 0 12px rgba(59, 130, 246, 0.25);
 }
 
 .claimCard.approved {

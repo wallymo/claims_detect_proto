@@ -16,6 +16,7 @@
   padding: var(--spacing-3) var(--spacing-4);
   border-bottom: var(--border-width-thin) solid var(--color-border-default);
   background-color: var(--color-background-secondary);
+  flex-shrink: 0;
 }
 
 .fileInfo {
@@ -95,15 +96,28 @@
 
 .highlight.activeHighlight {
   background-color: color-mix(in srgb, var(--claim-color) 30%, transparent);
-  animation: highlightPulse 0.4s ease-out 0.3s;
+  animation: glowPulse 1.2s ease-out;
 }
 
-@keyframes highlightPulse {
-  0%, 100% {
-    transform: scale(1);
+.highlight.activeNoFlash {
+  background-color: color-mix(in srgb, var(--claim-color) 30%, transparent);
+}
+
+@keyframes glowPulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--claim-color) 50%, transparent);
+  }
+  25% {
+    box-shadow: 0 0 0 8px transparent;
   }
   50% {
-    transform: scale(1.01);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--claim-color) 40%, transparent);
+  }
+  75% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
   }
 }
 
@@ -114,6 +128,7 @@
   padding: var(--spacing-2) var(--spacing-4);
   border-top: var(--border-width-thin) solid var(--color-border-default);
   background-color: var(--color-background-secondary);
+  flex-shrink: 0;
 }
 
 .claimCount {

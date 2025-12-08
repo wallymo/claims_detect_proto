@@ -93,6 +93,7 @@ export default function DropdownMenu({
               <MenuItem
                 key={index}
                 icon={item.icon}
+                iconColor={item.iconColor}
                 disabled={item.disabled}
                 onClick={() => handleItemClick(item)}
               >

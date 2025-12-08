@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import './App.css'
 import FileUpload from '@/components/molecules/FileUpload/FileUpload'
 import DropdownMenu from '@/components/molecules/DropdownMenu/DropdownMenu'
@@ -16,7 +16,7 @@ import DocumentViewer from '@/components/claims-detector/DocumentViewer'
 import PromptEditor from '@/components/claims-detector/PromptEditor'
 import ModelComparison from '@/components/claims-detector/ModelComparison'
 import Toggle from '@/components/atoms/Toggle/Toggle'
-import { getRandomDocument } from '@/mocks/documents'
+import { getRandomDocument, getAIAnalysisDocument } from '@/mocks/documents'
 import { getClaimsForDocument, getCoreClaimsCount, getAIDiscoveredCount, getAIAnalysisClaims, CLAIM_TYPES } from '@/mocks/claims'
 
 const MOCK_CLAIMS = [
@@ -68,15 +68,15 @@ const BRAND_OPTIONS = [
   { label: 'Merck' },
   { label: 'Amgen' },
   { label: 'Johnson & Johnson' },
-  { label: 'AI Analysis', icon: 'zap' },
+  { label: 'AI Analysis', icon: 'zap', iconColor: '#F59E0B' },
   { divider: true },
   { label: 'Upload Custom...', icon: 'upload' }
 ]
 
 const MODEL_OPTIONS = [
-  { label: 'Gemini 3', onClick: () => {} },
-  { label: 'Claude Opus 4.5', onClick: () => {} },
-  { label: 'GPT-4o', onClick: () => {} }
+  { id: 'gemini-3', label: 'Google Gemini 3' },
+  { id: 'claude-opus', label: 'Claude Opus 4.5' },
+  { id: 'gpt-4o', label: 'OpenAI GPT-4o' }
 ]
 
 function App() {
@@ -101,11 +101,32 @@ function App() {
   const [showAIOnly, setShowAIOnly] = useState(false)
   const [showCustomBrandModal, setShowCustomBrandModal] = useState(false)
   const [customBrand, setCustomBrand] = useState({ name: '', description: '' })
+  const claimsListRef = useRef(null)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     setDemoMode(params.get('demo') === 'true')
   }, [])
+
+  // Scroll to active claim card when clicking highlight in document
+  useEffect(() => {
+    if (activeClaim && claimsListRef.current) {
+      // Delay to ensure DOM is fully rendered after state update
+      const timer = setTimeout(() => {
+        const cardEl = claimsListRef.current?.querySelector(`[data-claim-id="${activeClaim}"]`)
+        if (cardEl) {
+          const container = claimsListRef.current
+          const containerRect = container.getBoundingClientRect()
+          const cardRect = cardEl.getBoundingClientRect()
+          // Calculate offset and subtract container padding to align card at top
+          const containerPadding = parseFloat(getComputedStyle(container).paddingTop) || 0
+          const scrollOffset = cardRect.top - containerRect.top + container.scrollTop - containerPadding
+          container.scrollTo({ top: scrollOffset, behavior: 'smooth' })
+        }
+      }, 50)
+      return () => clearTimeout(timer)
+    }
+  }, [activeClaim])
 
   const handleFileUpload = (file) => {
     const mockDoc = getRandomDocument()
@@ -134,6 +155,12 @@ function App() {
 
   const handleAnalyze = () => {
     if (!document || !selectedBrand) return
+
+    // For AI Analysis mode, swap to the AI Analysis document
+    if (selectedBrand === 'AI Analysis') {
+      setDocument(getAIAnalysisDocument())
+    }
+
     setIsAnalyzing(true)
     setAnalysisComplete(false)
   }
@@ -180,12 +207,34 @@ function App() {
     )
   }
 
+  const [shouldFlashHighlight, setShouldFlashHighlight] = useState(false)
+
   const handleClaimClick = (claimId) => {
     setActiveClaim(claimId)
+    setShouldFlashHighlight(false) // Clicked from document, no flash
+  }
+
+  const handleCardClick = (claimId) => {
+    setActiveClaim(claimId)
+    setShouldFlashHighlight(true) // Clicked from card, flash to guide user
   }
 
   const handlePromptSave = (prompt) => {
     setMasterPrompt(prompt)
+  }
+
+  const handleDocumentClose = () => {
+    setDocument(null)
+    setUploadState('empty')
+    setClaims([])
+    setAnalysisComplete(false)
+    setActiveClaim(null)
+    setSelectedBrand(null)
+    setClaimFilter('all')
+    setTypeFilters([])
+    setSourceFilter('all')
+    setSearchQuery('')
+    setShowAIOnly(false)
   }
 
   const filteredClaims = claims
@@ -274,6 +323,7 @@ function App() {
                 maxSize={10485760}
                 state={uploadState}
                 onUpload={handleFileUpload}
+                onRemove={handleDocumentClose}
                 mockMode={true}
                 mockFileName={document?.title || 'Clinical_Trial_Summary.pdf'}
               />
@@ -287,10 +337,10 @@ function App() {
             content={
               <div className="settingsContent">
                 <div className="settingItem">
-                  <label className="settingLabel">Brand Guidelines</label>
+                  <label className="settingLabel">Client Selection</label>
                   <DropdownMenu
                     trigger="button"
-                    triggerLabel={selectedBrand || 'Select brand...'}
+                    triggerLabel={selectedBrand || 'Select client...'}
                     items={BRAND_OPTIONS.map(item => ({
                       ...item,
                       onClick: item.divider ? undefined : () => handleBrandSelect(item.label)
@@ -301,18 +351,13 @@ function App() {
 
                 {!demoMode && (
                   <div className="settingItem">
-                    <label className="settingLabel">AI Model</label>
+                    <label className="settingLabel">AI Model (Testing Only)</label>
                     <DropdownMenu
                       trigger="button"
-                      triggerLabel={
-                        selectedModel === 'gemini-3' ? 'Gemini 3' :
-                        selectedModel === 'claude-opus' ? 'Claude Opus 4.5' : 'GPT-4o'
-                      }
+                      triggerLabel={MODEL_OPTIONS.find(m => m.id === selectedModel)?.label || 'Select model...'}
                       items={MODEL_OPTIONS.map(item => ({
                         ...item,
-                        onClick: () => setSelectedModel(
-                          item.label.toLowerCase().replace(' ', '-').replace('.', '')
-                        )
+                        onClick: () => setSelectedModel(item.id)
                       }))}
                       size="medium"
                     />
@@ -393,10 +438,7 @@ function App() {
                       {(processingTime / 1000).toFixed(1)}s
                     </span>
                     <span className="metaDot">•</span>
-                    <span className="metaItem">{
-                      selectedModel === 'gemini-3' ? 'Gemini 3' :
-                      selectedModel === 'claude-opus' ? 'Claude Opus 4.5' : 'GPT-4o'
-                    }</span>
+                    <span className="metaItem">{MODEL_OPTIONS.find(m => m.id === selectedModel)?.label}</span>
                   </div>
                 </div>
               }
@@ -412,7 +454,9 @@ function App() {
             document={document}
             claims={claims}
             activeClaim={activeClaim}
+            shouldFlash={shouldFlashHighlight}
             onClaimClick={handleClaimClick}
+            onClose={handleDocumentClose}
             isScanning={isAnalyzing}
             onScanComplete={handleScanComplete}
           />
@@ -499,7 +543,7 @@ function App() {
             </>
           )}
 
-          <div className="claimsList">
+          <div className="claimsList" ref={claimsListRef}>
             {!analysisComplete && !isAnalyzing && (
               <div className="claimsEmptyState">
                 <Icon name="fileSearch" size={48} />
@@ -523,15 +567,16 @@ function App() {
             )}
 
             {analysisComplete && filteredClaims.map(claim => (
-              <ClaimCard
-                key={claim.id}
-                claim={claim}
-                isActive={activeClaim === claim.id}
-                onApprove={handleClaimApprove}
-                onReject={handleClaimReject}
-                onSelect={() => handleClaimClick(claim.id)}
-                onTypeChange={handleClaimTypeChange}
-              />
+              <div key={claim.id} data-claim-id={claim.id}>
+                <ClaimCard
+                  claim={claim}
+                  isActive={activeClaim === claim.id}
+                  onApprove={handleClaimApprove}
+                  onReject={handleClaimReject}
+                  onSelect={() => handleCardClick(claim.id)}
+                  onTypeChange={handleClaimTypeChange}
+                />
+              </div>
             ))}
           </div>
         </div>

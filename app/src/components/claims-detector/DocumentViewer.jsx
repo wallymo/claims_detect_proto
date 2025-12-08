@@ -9,7 +9,9 @@ export default function DocumentViewer({
   document,
   claims = [],
   activeClaim,
+  shouldFlash = false,
   onClaimClick,
+  onClose,
   isScanning = false,
   onScanComplete
 }) {
@@ -55,7 +57,8 @@ export default function DocumentViewer({
         const classes = [
           styles.highlight,
           getConfidenceClass(claim.confidence),
-          isActive ? styles.activeHighlight : '',
+          isActive && shouldFlash ? styles.activeHighlight : '',
+          isActive && !shouldFlash ? styles.activeNoFlash : '',
           isHovered ? styles.hoveredHighlight : ''
         ].filter(Boolean).join(' ')
 
@@ -105,6 +108,11 @@ export default function DocumentViewer({
           <Button variant="ghost" size="small">
             <Icon name="zoomIn" size={14} />
           </Button>
+          {onClose && (
+            <Button variant="ghost" size="small" onClick={onClose}>
+              <Icon name="x" size={16} />
+            </Button>
+          )}
         </div>
       </div>
 

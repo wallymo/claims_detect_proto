@@ -4,6 +4,7 @@ import Icon from '@/components/atoms/Icon/Icon'
 export default function MenuItem({
   children = 'Menu Item',
   icon,
+  iconColor,
   shortcut,
   selected = false,
   disabled = false,
@@ -41,7 +42,7 @@ export default function MenuItem({
     >
       {icon && (
         <span className={styles.icon}>
-          <Icon name={icon} size={16} />
+          <Icon name={icon} size={16} color={iconColor} />
         </span>
       )}
       <span className={styles.label}>{children}</span>

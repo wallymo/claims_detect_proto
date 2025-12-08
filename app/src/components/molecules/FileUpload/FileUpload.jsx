@@ -9,6 +9,7 @@ export default function FileUpload({
   maxSize = 10485760, // 10MB
   multiple = false,
   onUpload,
+  onRemove,
   uploadProgress,
   state = 'empty',
   size = 'medium',
@@ -84,6 +85,7 @@ export default function FileUpload({
     setFileName('')
     setError('')
     if (inputRef.current) inputRef.current.value = ''
+    onRemove?.()
   }
 
   return (

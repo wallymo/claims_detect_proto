@@ -99,6 +99,52 @@ NeuroCalm offers rapid, effective, and well-tolerated relief for anxiety suffere
   }
 ]
 
+// AI Analysis mode document - contains text that matches AI_ANALYSIS_CLAIMS exactly
+export const AI_ANALYSIS_DOCUMENT = {
+  id: 'ai_analysis_doc',
+  title: 'Unverified Marketing Material - Sample',
+  coreClaims: 0,
+  content: `Product Marketing Draft
+
+This document contains marketing claims that require AI analysis for regulatory compliance review. No brand guidelines are available for reference.
+
+Efficacy Statements
+
+Clinical studies suggest potential cardiovascular benefits in high-risk patient populations. These preliminary findings indicate promising results, though further validation may be required.
+
+Our research team has observed that product may help with general wellness outcomes. This broad claim requires careful consideration before publication.
+
+Regulatory Considerations
+
+Recommended for adults with documented treatment-resistant conditions. Regulatory pathway discussions are ongoing with relevant authorities.
+
+Dosage Information
+
+Based on preliminary pharmacokinetic data, may be administered with or without food based on patient tolerance. Individual response may vary.
+
+Comparative Claims
+
+Shows favorable comparison to existing treatment protocols in preliminary analysis. Head-to-head studies are planned for the next phase.
+
+Safety Data
+
+Initial safety monitoring indicates that adverse events reported in less than 12% of study participants. Long-term safety data collection is ongoing.
+
+Formulation Details
+
+Contains proprietary blend of active pharmaceutical ingredients. Full ingredient disclosure pending final formulation approval.
+
+Patient Feedback
+
+Early access program results show that patient testimonials indicate high satisfaction with treatment regimen. Formal patient-reported outcomes studies are in development.
+
+Conclusion
+
+This material requires thorough review before external distribution.`
+}
+
 export const getDocumentById = (id) => MOCK_DOCUMENTS.find(doc => doc.id === id)
 
 export const getRandomDocument = () => MOCK_DOCUMENTS[Math.floor(Math.random() * MOCK_DOCUMENTS.length)]
+
+export const getAIAnalysisDocument = () => AI_ANALYSIS_DOCUMENT
