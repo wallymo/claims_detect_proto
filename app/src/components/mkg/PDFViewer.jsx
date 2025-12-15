@@ -1,16 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
-import * as pdfjsLib from 'pdfjs-dist'
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import styles from './PDFViewer.module.css'
 import Icon from '@/components/atoms/Icon/Icon'
 import Button from '@/components/atoms/Button/Button'
 import Spinner from '@/components/atoms/Spinner/Spinner'
 import ScannerOverlay from '@/components/claims-detector/ScannerOverlay'
 
-// Set the worker source for PDF.js v5+
-// Try multiple sources in case one fails
-const workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
-pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc
-console.log('PDF.js version:', pdfjsLib.version, 'Worker:', workerSrc)
+// Use unpkg CDN for worker (cdnjs doesn't have v5)
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.min.mjs`
+console.log('PDF.js legacy build, version:', pdfjsLib.version)
 
 export default function PDFViewer({
   file,
