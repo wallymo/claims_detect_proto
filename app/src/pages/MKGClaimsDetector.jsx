@@ -224,6 +224,35 @@ export default function MKGClaimsDetector() {
             }
           />
 
+          <AccordionItem
+            title="Master Prompt"
+            defaultOpen={false}
+            size="small"
+            content={
+              <div className="masterPromptContent">
+                <p className="promptSection"><strong>Objective:</strong> High-recall promotional claim detection engine for healthcare marketing materials. Flag liberally; final judgment rests with user.</p>
+
+                <p className="promptSection"><strong>Detection Categories:</strong></p>
+                <ul className="promptList">
+                  <li>Return to Normal - "Be you again," "Get back to what you love"</li>
+                  <li>Speed/Magnitude - "Fast," "All-day relief," "Powerful"</li>
+                  <li>Competitive Framing - "Smarter choice," "Advanced," "Next-gen"</li>
+                  <li>Risk Minimization - "Gentle," "Simple to use," "Natural ingredients"</li>
+                  <li>Appeal to Authority - "Doctor recommended," "Proven in studies"</li>
+                </ul>
+
+                <p className="promptSection"><strong>Confidence Scoring:</strong></p>
+                <ul className="promptList">
+                  <li><span className="confHigh">90-100%:</span> Direct/obvious claim</li>
+                  <li><span className="confMed">70-89%:</span> Strong implication</li>
+                  <li><span className="confLow">40-69%:</span> Vague but suggestive</li>
+                  <li><span className="confVeryLow">1-39%:</span> Possibly navigational</li>
+                </ul>
+
+                <p className="promptHint">Source: docs/workflow/pharma_claims_persona.md</p>
+              </div>
+            }
+          />
 
           <AccordionItem
             title="Settings"

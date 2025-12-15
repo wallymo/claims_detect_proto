@@ -119,6 +119,39 @@
 .resultRow.medConf .resultLabel { color: var(--amber-7, #F57C00); }
 .resultRow.lowConf .resultLabel { color: var(--red-7, #D32F2F); }
 
+/* Master Prompt Section */
+.masterPromptContent {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--gray-8);
+}
+
+.promptSection {
+  margin: 0 0 8px 0;
+}
+
+.promptList {
+  margin: 4px 0 12px 0;
+  padding-left: 16px;
+}
+
+.promptList li {
+  margin-bottom: 4px;
+  color: var(--gray-7);
+}
+
+.confHigh { color: var(--green-7, #388E3C); font-weight: 500; }
+.confMed { color: var(--amber-7, #F57C00); font-weight: 500; }
+.confLow { color: var(--orange-7, #E64A19); font-weight: 500; }
+.confVeryLow { color: var(--gray-6, #757575); font-weight: 500; }
+
+.promptHint {
+  margin: 8px 0 0 0;
+  font-size: 11px;
+  color: var(--gray-6);
+  font-style: italic;
+}
+
 /* Status Toggle Buttons */
 .statusToggleGroup {
   display: flex;
