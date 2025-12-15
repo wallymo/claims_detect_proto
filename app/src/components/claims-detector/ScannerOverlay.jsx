@@ -6,43 +6,29 @@ import AIParticles from './AIParticles'
 
 export default function ScannerOverlay({
   isScanning = false,
-  onComplete,
-  duration = 2500
+  progress = 0, // External progress 0-100
+  statusText = 'Analyzing document...',
+  onComplete
 }) {
-  const [progress, setProgress] = useState(0)
   const [scanLineY, setScanLineY] = useState(0)
   const [showComplete, setShowComplete] = useState(false)
 
   useEffect(() => {
+    if (progress >= 100 && isScanning) {
+      setShowComplete(true)
+      const timeout = setTimeout(() => {
+        setShowComplete(false)
+        onComplete?.()
+      }, 600)
+      return () => clearTimeout(timeout)
+    }
+  }, [progress, isScanning, onComplete])
+
+  useEffect(() => {
     if (!isScanning) {
-      setProgress(0)
       setShowComplete(false)
-      return
     }
-
-    const startTime = Date.now()
-    let completionTimeout = null
-
-    const interval = setInterval(() => {
-      const elapsed = Date.now() - startTime
-      const newProgress = Math.min((elapsed / duration) * 100, 100)
-      setProgress(newProgress)
-
-      if (newProgress >= 100) {
-        clearInterval(interval)
-        setShowComplete(true)
-        completionTimeout = setTimeout(() => {
-          setShowComplete(false)
-          onComplete?.()
-        }, 600)
-      }
-    }, 50)
-
-    return () => {
-      clearInterval(interval)
-      if (completionTimeout) clearTimeout(completionTimeout)
-    }
-  }, [isScanning, duration, onComplete])
+  }, [isScanning])
 
   if (!isScanning && !showComplete) return null
 
@@ -77,12 +63,9 @@ export default function ScannerOverlay({
           strokeWidth={10}
           showComplete={showComplete}
         />
-        {!showComplete && (
-          <p className={styles.statusText}>Analyzing document...</p>
-        )}
-        {showComplete && (
-          <p className={styles.statusText}>Analysis complete</p>
-        )}
+        <p className={styles.statusText}>
+          {showComplete ? 'Analysis complete' : statusText}
+        </p>
       </div>
     </div>
   )

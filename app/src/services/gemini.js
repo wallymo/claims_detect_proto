@@ -140,7 +140,11 @@ Now review the document. Find everything.`
  */
 export async function analyzeDocument(pdfFile, onProgress) {
   const client = getGeminiClient()
+
+  onProgress?.(10, 'Preparing document...')
   const base64Data = await fileToBase64(pdfFile)
+
+  onProgress?.(25, 'Sending to AI...')
 
   try {
     const response = await client.models.generateContent({
@@ -167,6 +171,8 @@ export async function analyzeDocument(pdfFile, onProgress) {
       }
     })
 
+    onProgress?.(75, 'Processing results...')
+
     // Extract text from response
     const text = response.candidates?.[0]?.content?.parts?.[0]?.text || response.text
     const result = JSON.parse(text)
@@ -178,6 +184,8 @@ export async function analyzeDocument(pdfFile, onProgress) {
       confidence: claim.confidence / 100, // Convert 0-100 to 0-1 for frontend
       status: 'pending'
     }))
+
+    onProgress?.(95, 'Finalizing...')
 
     return {
       success: true,

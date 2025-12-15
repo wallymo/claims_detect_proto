@@ -30,6 +30,8 @@ export default function MKGClaimsDetector() {
   const [analysisComplete, setAnalysisComplete] = useState(false)
   const [analysisError, setAnalysisError] = useState(null)
   const [processingTime, setProcessingTime] = useState(0)
+  const [analysisProgress, setAnalysisProgress] = useState(0)
+  const [analysisStatus, setAnalysisStatus] = useState('')
 
   // Claims state
   const [claims, setClaims] = useState([])
@@ -85,33 +87,33 @@ export default function MKGClaimsDetector() {
     setIsAnalyzing(true)
     setAnalysisComplete(false)
     setAnalysisError(null)
+    setAnalysisProgress(0)
+    setAnalysisStatus('Starting...')
     const startTime = Date.now()
 
     try {
       // First check connection
+      setAnalysisProgress(5)
+      setAnalysisStatus('Checking connection...')
       const connectionCheck = await checkGeminiConnection()
       if (!connectionCheck.connected) {
         throw new Error(`Gemini API not connected: ${connectionCheck.error}`)
       }
 
-      // Analyze the document
-      const result = await analyzeDocument(uploadedFile)
+      // Analyze the document with progress tracking
+      const result = await analyzeDocument(uploadedFile, (progress, status) => {
+        setAnalysisProgress(progress)
+        setAnalysisStatus(status)
+      })
 
       if (!result.success) {
         throw new Error(result.error || 'Analysis failed')
       }
 
-      // Process claims - add status for matched/unmatched
-      const processedClaims = result.claims.map((claim, index) => ({
-        ...claim,
-        id: claim.id || `claim_${String(index + 1).padStart(3, '0')}`,
-        status: 'pending',
-        matched: false, // Will be updated by reference matching
-        reference: null
-      }))
-
-      setClaims(processedClaims)
+      setClaims(result.claims)
       setProcessingTime(Date.now() - startTime)
+      setAnalysisProgress(100)
+      setAnalysisStatus('Complete')
       setAnalysisComplete(true)
     } catch (error) {
       console.error('Analysis error:', error)
@@ -348,6 +350,8 @@ export default function MKGClaimsDetector() {
             file={uploadedFile}
             onClose={handleRemoveDocument}
             isAnalyzing={isAnalyzing}
+            analysisProgress={analysisProgress}
+            analysisStatus={analysisStatus}
             onScanComplete={() => {}}
           />
         </div>

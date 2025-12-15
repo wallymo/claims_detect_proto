@@ -13,6 +13,8 @@ export default function PDFViewer({
   file,
   onClose,
   isAnalyzing = false,
+  analysisProgress = 0,
+  analysisStatus = 'Analyzing document...',
   onScanComplete
 }) {
   const [pdf, setPdf] = useState(null)
@@ -161,9 +163,11 @@ export default function PDFViewer({
           )}
         </div>
 
-        {/* Scanner overlay - same as DocumentViewer */}
+        {/* Scanner overlay */}
         <ScannerOverlay
           isScanning={isAnalyzing}
+          progress={analysisProgress}
+          statusText={analysisStatus}
           onComplete={onScanComplete}
         />
       </div>
