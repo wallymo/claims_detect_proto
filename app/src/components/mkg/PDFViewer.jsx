@@ -25,6 +25,13 @@ export default function PDFViewer({
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
 
+  // Pan state for drag navigation
+  const [panX, setPanX] = useState(0)
+  const [panY, setPanY] = useState(0)
+  const [isDragging, setIsDragging] = useState(false)
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
+  const [canvasDimensions, setCanvasDimensions] = useState({ width: 0, height: 0 })
+
   const canvasRef = useRef(null)
   const containerRef = useRef(null)
 
@@ -34,6 +41,8 @@ export default function PDFViewer({
       setPdf(null)
       setTotalPages(0)
       setCurrentPage(1)
+      setPanX(0)
+      setPanY(0)
       return
     }
 
@@ -52,6 +61,8 @@ export default function PDFViewer({
         setPdf(loadedPdf)
         setTotalPages(loadedPdf.numPages)
         setCurrentPage(1)
+        setPanX(0)
+        setPanY(0)
       } catch (err) {
         console.error('PDF load error:', err)
         setError(`Failed to load PDF: ${err.message}`)
@@ -82,6 +93,9 @@ export default function PDFViewer({
         canvas.height = scaledViewport.height
         canvas.width = scaledViewport.width
 
+        // Track canvas dimensions for pan bounds
+        setCanvasDimensions({ width: scaledViewport.width, height: scaledViewport.height })
+
         await page.render({
           canvasContext: context,
           viewport: scaledViewport
@@ -94,6 +108,12 @@ export default function PDFViewer({
     renderPage()
   }, [pdf, currentPage, scale])
 
+  // Reset pan when page changes
+  useEffect(() => {
+    setPanX(0)
+    setPanY(0)
+  }, [currentPage])
+
   const handlePrevPage = () => {
     setCurrentPage(prev => Math.max(1, prev - 1))
   }
@@ -102,12 +122,70 @@ export default function PDFViewer({
     setCurrentPage(prev => Math.min(totalPages, prev + 1))
   }
 
+  // Calculate pan bounds based on canvas vs container size
+  const containerWidth = containerRef.current?.clientWidth || 600
+  const containerHeight = containerRef.current?.clientHeight || 400
+  const overflowX = Math.max(0, canvasDimensions.width - containerWidth + 48) // account for padding
+  const overflowY = Math.max(0, canvasDimensions.height - containerHeight + 48)
+  const maxPanX = overflowX / 2
+  const maxPanY = overflowY / 2
+  const canPan = overflowX > 0 || overflowY > 0
+
+  // Clamp helper
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
+
+  // Clamp pan to bounds for a given scale
+  const clampPan = (x, y) => ({
+    x: clamp(x, -maxPanX, maxPanX),
+    y: clamp(y, -maxPanY, maxPanY)
+  })
+
   const handleZoomIn = () => {
-    setScale(prev => Math.min(2, prev + 0.25))
+    const newScale = Math.min(3, scale + 0.25)
+    const ratio = newScale / scale
+    // Proportionally adjust pan to maintain focus area
+    const newPan = clampPan(panX * ratio, panY * ratio)
+    setPanX(newPan.x)
+    setPanY(newPan.y)
+    setScale(newScale)
   }
 
   const handleZoomOut = () => {
-    setScale(prev => Math.max(0.5, prev - 0.25))
+    const newScale = Math.max(0.5, scale - 0.25)
+    const ratio = newScale / scale
+    const newPan = clampPan(panX * ratio, panY * ratio)
+    setPanX(newPan.x)
+    setPanY(newPan.y)
+    setScale(newScale)
+    // Reset pan if we're back to fitting in container
+    if (newScale <= 1.0) {
+      setPanX(0)
+      setPanY(0)
+    }
+  }
+
+  // Drag handlers for panning
+  const handleMouseDown = (e) => {
+    if (!canPan) return
+    e.preventDefault()
+    setIsDragging(true)
+    setDragStart({ x: e.clientX - panX, y: e.clientY - panY })
+  }
+
+  const handleMouseMove = (e) => {
+    if (!isDragging) return
+    const newPanX = e.clientX - dragStart.x
+    const newPanY = e.clientY - dragStart.y
+    setPanX(clamp(newPanX, -maxPanX, maxPanX))
+    setPanY(clamp(newPanY, -maxPanY, maxPanY))
+  }
+
+  const handleMouseUp = () => {
+    setIsDragging(false)
+  }
+
+  const handleMouseLeave = () => {
+    setIsDragging(false)
   }
 
   // Empty state - matches DocumentViewer
@@ -136,7 +214,7 @@ export default function PDFViewer({
             <Icon name="zoomOut" size={14} />
           </Button>
           <span className={styles.zoom}>{Math.round(scale * 100)}%</span>
-          <Button variant="ghost" size="small" onClick={handleZoomIn} disabled={scale >= 2}>
+          <Button variant="ghost" size="small" onClick={handleZoomIn} disabled={scale >= 3}>
             <Icon name="zoomIn" size={14} />
           </Button>
           {onClose && (
@@ -149,7 +227,14 @@ export default function PDFViewer({
 
       {/* Content wrapper - matches DocumentViewer */}
       <div className={styles.contentWrapper}>
-        <div className={styles.content} ref={containerRef}>
+        <div
+          className={`${styles.content} ${canPan ? styles.canPan : ''} ${isDragging ? styles.dragging : ''}`}
+          ref={containerRef}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseLeave}
+        >
           {isLoading && (
             <div className={styles.loadingState}>
               <Spinner size="large" />
@@ -165,7 +250,13 @@ export default function PDFViewer({
           )}
 
           {!isLoading && !error && (
-            <canvas ref={canvasRef} className={styles.pdfCanvas} />
+            <canvas
+              ref={canvasRef}
+              className={styles.pdfCanvas}
+              style={{
+                transform: `translate(${panX}px, ${panY}px)`
+              }}
+            />
           )}
         </div>
 
