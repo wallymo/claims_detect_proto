@@ -145,12 +145,15 @@ Confidence tiers:
 
 ### AI Claim Detection
 
-Uses persona-based prompt with internal detection categories:
-1. Return to Normal Implication
-2. Speed or Magnitude Language
-3. Competitive Framing
-4. Risk Minimization
-5. Appeal to Authority
+**Prompt Source:** `docs/workflow/pharma_claims_persona.md`
+
+The backend reads the persona prompt directly from this file. This keeps the prompt as a single source of truth that can be iterated on without touching application code.
+
+The persona defines:
+- Detection categories (Return to Normal, Speed/Magnitude, Competitive Framing, Risk Minimization, Appeal to Authority)
+- Confidence scoring rules (90-100% direct claims, 70-89% implications, etc.)
+- Output format requirements
+- Processing rules for thoroughness
 
 **Categories are for detection logic only - not exposed to frontend.**
 
