@@ -33,7 +33,6 @@ export default function MKGClaimsDetector() {
 
   // Claims state
   const [claims, setClaims] = useState([])
-  const [activeClaim, setActiveClaim] = useState(null)
   const [statusFilter, setStatusFilter] = useState('all') // all, pending, approved, rejected
   const [searchQuery, setSearchQuery] = useState('')
   const [sortOrder, setSortOrder] = useState('high-low')
@@ -61,7 +60,6 @@ export default function MKGClaimsDetector() {
       setUploadState('complete')
       setAnalysisComplete(false)
       setClaims([])
-      setActiveClaim(null)
     }, 500)
   }
 
@@ -74,7 +72,6 @@ export default function MKGClaimsDetector() {
     setUploadState('empty')
     setClaims([])
     setAnalysisComplete(false)
-    setActiveClaim(null)
     setAnalysisError(null)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
@@ -137,9 +134,6 @@ export default function MKGClaimsDetector() {
     )
   }
 
-  const handleClaimClick = (claimId) => {
-    setActiveClaim(claimId)
-  }
 
   // Confidence tier counts
   const highConfidenceClaims = claims.filter(c => c.confidence >= 0.9)
@@ -352,14 +346,9 @@ export default function MKGClaimsDetector() {
         <div className="documentPanel">
           <PDFViewer
             file={uploadedFile}
-            claims={claims}
-            activeClaim={activeClaim}
-            onClaimClick={handleClaimClick}
             onClose={handleRemoveDocument}
             isAnalyzing={isAnalyzing}
-            onScanComplete={() => {
-              // Scanner animation complete - analysis results should be ready
-            }}
+            onScanComplete={() => {}}
           />
         </div>
 
