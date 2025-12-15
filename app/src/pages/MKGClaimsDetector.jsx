@@ -35,6 +35,7 @@ export default function MKGClaimsDetector() {
 
   // Claims state
   const [claims, setClaims] = useState([])
+  const [activeClaimId, setActiveClaimId] = useState(null)
   const [statusFilter, setStatusFilter] = useState('all') // all, pending, approved, rejected
   const [searchQuery, setSearchQuery] = useState('')
   const [sortOrder, setSortOrder] = useState('high-low')
@@ -136,6 +137,16 @@ export default function MKGClaimsDetector() {
     )
   }
 
+  const handleClaimSelect = (claimId) => {
+    setActiveClaimId(claimId)
+    // Scroll claim card into view if selecting from PDF
+    if (claimId && claimsListRef.current) {
+      const cardEl = claimsListRef.current.querySelector(`[data-claim-id="${claimId}"]`)
+      if (cardEl) {
+        cardEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    }
+  }
 
   // Confidence tier counts
   const highConfidenceClaims = claims.filter(c => c.confidence >= 0.9)
@@ -353,6 +364,9 @@ export default function MKGClaimsDetector() {
             analysisProgress={analysisProgress}
             analysisStatus={analysisStatus}
             onScanComplete={() => {}}
+            claims={claims}
+            activeClaimId={activeClaimId}
+            onClaimSelect={handleClaimSelect}
           />
         </div>
 
@@ -438,8 +452,10 @@ export default function MKGClaimsDetector() {
               <div key={claim.id} data-claim-id={claim.id}>
                 <ClaimCard
                   claim={claim}
+                  isActive={activeClaimId === claim.id}
                   onApprove={handleClaimApprove}
                   onReject={handleClaimReject}
+                  onSelect={() => handleClaimSelect(claim.id)}
                   hideType={true}
                   hideSource={true}
                 />

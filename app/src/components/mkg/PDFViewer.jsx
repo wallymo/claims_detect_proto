@@ -16,7 +16,10 @@ export default function PDFViewer({
   isAnalyzing = false,
   analysisProgress = 0,
   analysisStatus = 'Analyzing document...',
-  onScanComplete
+  onScanComplete,
+  claims = [],
+  activeClaimId = null,
+  onClaimSelect
 }) {
   const [pdf, setPdf] = useState(null)
   const [currentPage, setCurrentPage] = useState(1)
@@ -34,6 +37,16 @@ export default function PDFViewer({
 
   const canvasRef = useRef(null)
   const containerRef = useRef(null)
+
+  // Helper for confidence-based marker colors
+  const getConfidenceClass = (confidence) => {
+    if (confidence >= 0.8) return styles.markerHigh
+    if (confidence >= 0.5) return styles.markerMedium
+    return styles.markerLow
+  }
+
+  // Filter claims for current page
+  const currentPageClaims = claims.filter(c => c.page === currentPage)
 
   // Load PDF when file changes
   useEffect(() => {
@@ -114,6 +127,16 @@ export default function PDFViewer({
     setPanY(0)
   }, [currentPage])
 
+  // Navigate to claim's page when activeClaimId changes
+  useEffect(() => {
+    if (activeClaimId) {
+      const claim = claims.find(c => c.id === activeClaimId)
+      if (claim && claim.page !== currentPage) {
+        setCurrentPage(claim.page)
+      }
+    }
+  }, [activeClaimId, claims, currentPage])
+
   const handlePrevPage = () => {
     setCurrentPage(prev => Math.max(1, prev - 1))
   }
@@ -188,6 +211,18 @@ export default function PDFViewer({
     setIsDragging(false)
   }
 
+  const handleMarkerClick = (e, claimId) => {
+    e.stopPropagation()
+    onClaimSelect?.(claimId)
+  }
+
+  const handleCanvasClick = (e) => {
+    // Clear selection when clicking canvas (not a marker)
+    if (e.target === canvasRef.current || e.target.classList.contains(styles.content)) {
+      onClaimSelect?.(null)
+    }
+  }
+
   // Empty state - matches DocumentViewer
   if (!file) {
     return (
@@ -230,6 +265,7 @@ export default function PDFViewer({
         <div
           className={`${styles.content} ${canPan ? styles.canPan : ''} ${isDragging ? styles.dragging : ''}`}
           ref={containerRef}
+          onClick={handleCanvasClick}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
@@ -250,13 +286,38 @@ export default function PDFViewer({
           )}
 
           {!isLoading && !error && (
-            <canvas
-              ref={canvasRef}
-              className={styles.pdfCanvas}
-              style={{
-                transform: `translate(${panX}px, ${panY}px)`
-              }}
-            />
+            <>
+              <canvas
+                ref={canvasRef}
+                className={styles.pdfCanvas}
+                style={{
+                  transform: `translate(${panX}px, ${panY}px)`
+                }}
+              />
+              {currentPageClaims.length > 0 && (
+                <div
+                  className={styles.markersLayer}
+                  style={{
+                    width: canvasDimensions.width,
+                    height: canvasDimensions.height,
+                    transform: `translate(${panX}px, ${panY}px)`
+                  }}
+                >
+                  {currentPageClaims.map(claim => (
+                    <button
+                      key={claim.id}
+                      className={`${styles.marker} ${getConfidenceClass(claim.confidence)} ${activeClaimId === claim.id ? styles.active : ''}`}
+                      style={{
+                        left: `${claim.position.x}%`,
+                        top: `${claim.position.y}%`
+                      }}
+                      onClick={(e) => handleMarkerClick(e, claim.id)}
+                      title={claim.text}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -272,6 +333,11 @@ export default function PDFViewer({
       {/* Footer - page navigation */}
       {totalPages > 0 && (
         <div className={styles.footer}>
+          {currentPageClaims.length > 0 && (
+            <span className={styles.claimCount}>
+              {currentPageClaims.length} claim{currentPageClaims.length !== 1 ? 's' : ''} on this page
+            </span>
+          )}
           <div className={styles.pageNav}>
             <Button variant="ghost" size="small" onClick={handlePrevPage} disabled={currentPage <= 1}>
               <Icon name="chevronLeft" size={14} />

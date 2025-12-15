@@ -154,3 +154,57 @@
 .errorState p {
   font-size: var(--font-size-sm);
 }
+
+/* Claim markers overlay */
+.markersLayer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.marker {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid white;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  pointer-events: auto;
+  transform: translate(-50%, -50%);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.marker:hover {
+  transform: translate(-50%, -50%) scale(1.2);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
+}
+
+.marker.active {
+  animation: pulse 1.5s ease-in-out infinite;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.5);
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.15);
+  }
+}
+
+/* Confidence colors */
+.markerHigh {
+  background-color: #388E3C;
+}
+
+.markerMedium {
+  background-color: #F57C00;
+}
+
+.markerLow {
+  background-color: #D32F2F;
+}
