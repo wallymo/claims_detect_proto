@@ -1,0 +1,407 @@
+import { useState, useRef } from 'react'
+import '../App.css'
+import './MKGClaimsDetector.css'
+import Button from '@/components/atoms/Button/Button'
+import Icon from '@/components/atoms/Icon/Icon'
+import Spinner from '@/components/atoms/Spinner/Spinner'
+import Badge from '@/components/atoms/Badge/Badge'
+import AccordionItem from '@/components/molecules/AccordionItem/AccordionItem'
+import Input from '@/components/atoms/Input/Input'
+import DropdownMenu from '@/components/molecules/DropdownMenu/DropdownMenu'
+import PDFViewer from '@/components/mkg/PDFViewer'
+import ClaimCard from '@/components/claims-detector/ClaimCard'
+import { analyzeDocument, checkGeminiConnection } from '@/services/gemini'
+
+// AI Model options - SSOT
+const MODEL_OPTIONS = [
+  { id: 'gemini-3-pro', label: 'Google Gemini 3 Pro' },
+  { id: 'claude-sonnet-4.5', label: 'Claude Sonnet 4.5' }
+]
+
+export default function MKGClaimsDetector() {
+  // Document state
+  const [uploadedFile, setUploadedFile] = useState(null)
+  const [uploadState, setUploadState] = useState('empty') // empty, uploading, complete
+  const fileInputRef = useRef(null)
+
+  // Analysis state
+  const [selectedModel, setSelectedModel] = useState('gemini-3-pro')
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [analysisComplete, setAnalysisComplete] = useState(false)
+  const [analysisError, setAnalysisError] = useState(null)
+  const [processingTime, setProcessingTime] = useState(0)
+
+  // Claims state
+  const [claims, setClaims] = useState([])
+  const [activeClaim, setActiveClaim] = useState(null)
+  const [claimView, setClaimView] = useState('matched') // matched, unmatched
+  const [searchQuery, setSearchQuery] = useState('')
+  const [sortOrder, setSortOrder] = useState('high-low')
+
+
+  const claimsListRef = useRef(null)
+
+  // Handle real file upload
+  const handleFileSelect = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    // Validate file type
+    if (!file.type.includes('pdf')) {
+      setAnalysisError('Please upload a PDF file')
+      return
+    }
+
+    setUploadState('uploading')
+    setAnalysisError(null)
+
+    // Simulate brief upload progress for UX
+    setTimeout(() => {
+      setUploadedFile(file)
+      setUploadState('complete')
+      setAnalysisComplete(false)
+      setClaims([])
+      setActiveClaim(null)
+    }, 500)
+  }
+
+  const handleUploadClick = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleRemoveDocument = () => {
+    setUploadedFile(null)
+    setUploadState('empty')
+    setClaims([])
+    setAnalysisComplete(false)
+    setActiveClaim(null)
+    setAnalysisError(null)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  // Analyze document with Gemini
+  const handleAnalyze = async () => {
+    if (!uploadedFile) return
+
+    setIsAnalyzing(true)
+    setAnalysisComplete(false)
+    setAnalysisError(null)
+    const startTime = Date.now()
+
+    try {
+      // First check connection
+      const connectionCheck = await checkGeminiConnection()
+      if (!connectionCheck.connected) {
+        throw new Error(`Gemini API not connected: ${connectionCheck.error}`)
+      }
+
+      // Analyze the document
+      const result = await analyzeDocument(uploadedFile)
+
+      if (!result.success) {
+        throw new Error(result.error || 'Analysis failed')
+      }
+
+      // Process claims - add status for matched/unmatched
+      const processedClaims = result.claims.map((claim, index) => ({
+        ...claim,
+        id: claim.id || `claim_${String(index + 1).padStart(3, '0')}`,
+        status: 'pending',
+        matched: false, // Will be updated by reference matching
+        reference: null
+      }))
+
+      setClaims(processedClaims)
+      setProcessingTime(Date.now() - startTime)
+      setAnalysisComplete(true)
+    } catch (error) {
+      console.error('Analysis error:', error)
+      setAnalysisError(error.message)
+    } finally {
+      setIsAnalyzing(false)
+    }
+  }
+
+  // Claim actions
+  const handleClaimApprove = (claimId) => {
+    setClaims(prev =>
+      prev.map(c => c.id === claimId ? { ...c, status: 'approved' } : c)
+    )
+  }
+
+  const handleClaimReject = (claimId, feedback) => {
+    setClaims(prev =>
+      prev.map(c => c.id === claimId ? { ...c, status: 'rejected', feedback } : c)
+    )
+  }
+
+  const handleClaimClick = (claimId) => {
+    setActiveClaim(claimId)
+  }
+
+  // Filter and sort claims
+  const matchedClaims = claims.filter(c => c.matched)
+  const unmatchedClaims = claims.filter(c => !c.matched)
+
+  const displayedClaims = (claimView === 'matched' ? matchedClaims : unmatchedClaims)
+    .filter(c => {
+      if (!searchQuery) return true
+      return c.text.toLowerCase().includes(searchQuery.toLowerCase())
+    })
+    .sort((a, b) => sortOrder === 'high-low'
+      ? b.confidence - a.confidence
+      : a.confidence - b.confidence
+    )
+
+  const canAnalyze = uploadedFile && !isAnalyzing
+
+  return (
+    <div className="page">
+      <div className="header">
+        <div className="titleSection">
+          <h1 className="title">MKG Claims Detector</h1>
+          <Badge variant="info">POC</Badge>
+        </div>
+        <p className="subtitle">
+          AI-powered reference matching for pharmaceutical MLR submissions
+        </p>
+      </div>
+
+      <div className="workbench">
+        {/* Config Panel */}
+        <div className="configPanel">
+          <AccordionItem
+            title="Document"
+            defaultOpen={true}
+            size="small"
+            content={
+              <div className="uploadSection">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf"
+                  onChange={handleFileSelect}
+                  style={{ display: 'none' }}
+                />
+
+                {uploadState === 'empty' && (
+                  <div className="uploadDropzone" onClick={handleUploadClick}>
+                    <Icon name="upload" size={32} />
+                    <p>Click to upload PDF</p>
+                    <span className="uploadHint">or drag and drop</span>
+                  </div>
+                )}
+
+                {uploadState === 'uploading' && (
+                  <div className="uploadProgress">
+                    <Spinner size="small" />
+                    <span>Uploading...</span>
+                  </div>
+                )}
+
+                {uploadState === 'complete' && uploadedFile && (
+                  <div className="uploadedFile">
+                    <Icon name="fileText" size={20} />
+                    <span className="fileName">{uploadedFile.name}</span>
+                    <button className="removeFile" onClick={handleRemoveDocument}>
+                      <Icon name="x" size={16} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            }
+          />
+
+
+          <AccordionItem
+            title="Settings"
+            defaultOpen={true}
+            size="small"
+            content={
+              <div className="settingsContent">
+                <div className="settingItem">
+                  <label className="settingLabel">AI Model (Testing Only)</label>
+                  <DropdownMenu
+                    trigger="button"
+                    triggerLabel={MODEL_OPTIONS.find(m => m.id === selectedModel)?.label || 'Select model...'}
+                    items={MODEL_OPTIONS.map(item => ({
+                      ...item,
+                      onClick: () => setSelectedModel(item.id)
+                    }))}
+                    size="medium"
+                  />
+                </div>
+              </div>
+            }
+          />
+
+          <Button
+            variant="primary"
+            size="large"
+            onClick={handleAnalyze}
+            disabled={!canAnalyze}
+          >
+            {isAnalyzing ? (
+              <>
+                <Spinner size="small" />
+                Analyzing...
+              </>
+            ) : (
+              <>
+                <Icon name="zap" size={18} />
+                Analyze Document
+              </>
+            )}
+          </Button>
+
+          {analysisError && (
+            <div className="analysisError">
+              <Icon name="alertCircle" size={16} />
+              <span>{analysisError}</span>
+            </div>
+          )}
+
+          {analysisComplete && (
+            <AccordionItem
+              title="Results Summary"
+              defaultOpen={true}
+              size="small"
+              content={
+                <div className="resultsSummary">
+                  <div className="resultRow">
+                    <span className="resultLabel">Total Claims Found</span>
+                    <span className="resultValue">{claims.length}</span>
+                  </div>
+                  <div className="resultRow matched">
+                    <span className="resultLabel">Matched</span>
+                    <span className="resultValue">{matchedClaims.length}</span>
+                  </div>
+                  <div className="resultRow unmatched">
+                    <span className="resultLabel">Unmatched</span>
+                    <span className="resultValue">{unmatchedClaims.length}</span>
+                  </div>
+                  <div className="divider" />
+                  <div className="metaRow">
+                    <span className="metaItem">
+                      <Icon name="zap" size={14} />
+                      {(processingTime / 1000).toFixed(1)}s
+                    </span>
+                    <span className="metaDot">•</span>
+                    <span className="metaItem">
+                      {MODEL_OPTIONS.find(m => m.id === selectedModel)?.label}
+                    </span>
+                  </div>
+                </div>
+              }
+            />
+          )}
+        </div>
+
+        {/* Document Viewer Panel */}
+        <div className="documentPanel">
+          <PDFViewer
+            file={uploadedFile}
+            claims={claims}
+            activeClaim={activeClaim}
+            onClaimClick={handleClaimClick}
+            onClose={handleRemoveDocument}
+            isAnalyzing={isAnalyzing}
+            onScanComplete={() => {
+              // Scanner animation complete - analysis results should be ready
+            }}
+          />
+        </div>
+
+        {/* Claims Panel */}
+        <div className="claimsPanel">
+          <div className="claimsPanelHeader">
+            <h2 className="claimsPanelTitle">
+              Claims
+              {claims.length > 0 && (
+                <Badge variant="neutral">{claims.length}</Badge>
+              )}
+            </h2>
+          </div>
+
+          {analysisComplete && (
+            <div className="claimsFilterBar">
+              <div className="claimViewToggle">
+                <button
+                  className={`viewToggleBtn ${claimView === 'matched' ? 'active' : ''}`}
+                  onClick={() => setClaimView('matched')}
+                >
+                  Matched ({matchedClaims.length})
+                </button>
+                <button
+                  className={`viewToggleBtn ${claimView === 'unmatched' ? 'active' : ''}`}
+                  onClick={() => setClaimView('unmatched')}
+                >
+                  Unmatched ({unmatchedClaims.length})
+                </button>
+              </div>
+              <div className="claimsSearchSort">
+                <Input
+                  placeholder="Search claims..."
+                  size="small"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                <button
+                  className="sortToggle"
+                  onClick={() => setSortOrder(prev => prev === 'high-low' ? 'low-high' : 'high-low')}
+                >
+                  Confidence {sortOrder === 'high-low' ? '↓' : '↑'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="claimsList" ref={claimsListRef}>
+            {!analysisComplete && !isAnalyzing && (
+              <div className="claimsEmptyState">
+                <Icon name="fileSearch" size={48} />
+                <h3>No Claims Yet</h3>
+                <p>Upload a document and click Analyze to detect claims</p>
+              </div>
+            )}
+
+            {isAnalyzing && (
+              <div className="claimsLoadingState">
+                <Spinner size="large" />
+                <p>Detecting claims...</p>
+              </div>
+            )}
+
+            {analysisComplete && displayedClaims.length === 0 && (
+              <div className="claimsEmptyState">
+                <Icon name="search" size={48} />
+                <p>
+                  {claimView === 'matched'
+                    ? 'No matched claims found'
+                    : 'No unmatched claims - all claims have references!'
+                  }
+                </p>
+              </div>
+            )}
+
+            {analysisComplete && displayedClaims.map(claim => (
+              <div key={claim.id} data-claim-id={claim.id}>
+                <ClaimCard
+                  claim={claim}
+                  isActive={activeClaim === claim.id}
+                  onApprove={handleClaimApprove}
+                  onReject={handleClaimReject}
+                  onSelect={() => handleClaimClick(claim.id)}
+                  hideType={true}
+                  hideSource={true}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
