@@ -230,28 +230,28 @@ export default function MKGClaimsDetector() {
             size="small"
             content={
               <div className="masterPromptContent">
-                <p className="promptSection"><strong>Objective:</strong> High-recall promotional claim detection. Flag liberally - better to surface 10 borderline cases than miss 1 real claim.</p>
+                <p className="promptSection"><strong>Persona:</strong> Veteran MLR reviewer, 20 years experience catching claims that trigger FDA warning letters. Seen every trick - subtle implications, buried superiority claims, lifestyle imagery that promises without saying.</p>
 
-                <p className="promptSection"><strong>What Is A Claim?</strong> Any statement that asserts benefit, suggests efficacy, implies safety, compares alternatives, references authority, or promises quality of life improvement. <em>If in doubt, flag it.</em></p>
+                <p className="promptSection"><strong>Philosophy:</strong> Flag liberally. Rather surface 10 borderline cases than let 1 slip into market. <em>When in doubt, flag it.</em></p>
 
-                <p className="promptSection"><strong>Detection Patterns (Non-Exhaustive):</strong></p>
+                <p className="promptSection"><strong>Patterns Learned from FDA Letters:</strong></p>
                 <ul className="promptList">
                   <li>Return to Normal - "Be you again," "Reclaim your life"</li>
-                  <li>Speed/Magnitude - "Fast," "All-day relief," "Powerful"</li>
-                  <li>Competitive Framing - "Smarter choice," "Next-generation"</li>
+                  <li>Speed & Magnitude - "Fast," "All-day relief," "Powerful"</li>
+                  <li>Competitive Positioning - "Smarter choice," "Next-generation"</li>
                   <li>Risk Minimization - "Gentle," "Natural," "Well-tolerated"</li>
                   <li>Appeal to Authority - "Doctor recommended," "Clinically proven"</li>
-                  <li>Quantitative - Any percentage, statistic, or numeric claim</li>
+                  <li>Quantitative Claims - Any percentage, statistic, or number</li>
                   <li>Quality of Life - "Feel like yourself," "Freedom from symptoms"</li>
                 </ul>
-                <p className="promptNote">Patterns are hints, not limits. Flag anything claim-like.</p>
+                <p className="promptNote">Trust your instincts. If it feels like a claim, flag it anyway.</p>
 
                 <p className="promptSection"><strong>Confidence Scoring:</strong></p>
                 <ul className="promptList">
-                  <li><span className="confHigh">90-100%:</span> Obvious/explicit claim</li>
+                  <li><span className="confHigh">90-100%:</span> Obvious, no question</li>
                   <li><span className="confMed">70-89%:</span> Strong implication</li>
-                  <li><span className="confLow">40-69%:</span> Possibly suggestive</li>
-                  <li><span className="confVeryLow">1-39%:</span> Borderline/contextual</li>
+                  <li><span className="confLow">40-69%:</span> Subtle but suggestive</li>
+                  <li><span className="confVeryLow">1-39%:</span> Borderline, context-dependent</li>
                 </ul>
 
                 <p className="promptHint">Source: docs/workflow/pharma_claims_persona.md</p>
