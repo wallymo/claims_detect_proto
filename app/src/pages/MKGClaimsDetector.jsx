@@ -145,6 +145,11 @@ export default function MKGClaimsDetector() {
   const matchedClaims = claims.filter(c => c.matched)
   const unmatchedClaims = claims.filter(c => !c.matched)
 
+  // Confidence tier counts
+  const highConfidenceClaims = claims.filter(c => c.confidence >= 0.9)
+  const mediumConfidenceClaims = claims.filter(c => c.confidence >= 0.7 && c.confidence < 0.9)
+  const lowConfidenceClaims = claims.filter(c => c.confidence < 0.7)
+
   const displayedClaims = (claimView === 'matched' ? matchedClaims : unmatchedClaims)
     .filter(c => {
       if (!searchQuery) return true
@@ -274,13 +279,18 @@ export default function MKGClaimsDetector() {
                     <span className="resultLabel">Total Claims Found</span>
                     <span className="resultValue">{claims.length}</span>
                   </div>
-                  <div className="resultRow matched">
-                    <span className="resultLabel">Matched</span>
-                    <span className="resultValue">{matchedClaims.length}</span>
+                  <div className="divider" />
+                  <div className="resultRow highConf">
+                    <span className="resultLabel">High Confidence (90-100%)</span>
+                    <span className="resultValue">{highConfidenceClaims.length}</span>
                   </div>
-                  <div className="resultRow unmatched">
-                    <span className="resultLabel">Unmatched</span>
-                    <span className="resultValue">{unmatchedClaims.length}</span>
+                  <div className="resultRow medConf">
+                    <span className="resultLabel">Medium (70-89%)</span>
+                    <span className="resultValue">{mediumConfidenceClaims.length}</span>
+                  </div>
+                  <div className="resultRow lowConf">
+                    <span className="resultLabel">Low (&lt;70%)</span>
+                    <span className="resultValue">{lowConfidenceClaims.length}</span>
                   </div>
                   <div className="divider" />
                   <div className="metaRow">
