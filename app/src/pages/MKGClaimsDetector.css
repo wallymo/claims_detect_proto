@@ -145,6 +145,13 @@
 .confLow { color: var(--orange-7, #E64A19); font-weight: 500; }
 .confVeryLow { color: var(--gray-6, #757575); font-weight: 500; }
 
+.promptNote {
+  margin: 4px 0 12px 0;
+  font-size: 11px;
+  color: var(--blue-7);
+  font-style: italic;
+}
+
 .promptHint {
   margin: 8px 0 0 0;
   font-size: 11px;
