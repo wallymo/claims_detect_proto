@@ -34,7 +34,7 @@ export default function MKGClaimsDetector() {
   // Claims state
   const [claims, setClaims] = useState([])
   const [activeClaim, setActiveClaim] = useState(null)
-  const [claimView, setClaimView] = useState('matched') // matched, unmatched
+  const [statusFilter, setStatusFilter] = useState('all') // all, pending, approved, rejected
   const [searchQuery, setSearchQuery] = useState('')
   const [sortOrder, setSortOrder] = useState('high-low')
 
@@ -141,19 +141,24 @@ export default function MKGClaimsDetector() {
     setActiveClaim(claimId)
   }
 
-  // Filter and sort claims
-  const matchedClaims = claims.filter(c => c.matched)
-  const unmatchedClaims = claims.filter(c => !c.matched)
-
   // Confidence tier counts
   const highConfidenceClaims = claims.filter(c => c.confidence >= 0.9)
   const mediumConfidenceClaims = claims.filter(c => c.confidence >= 0.7 && c.confidence < 0.9)
   const lowConfidenceClaims = claims.filter(c => c.confidence < 0.7)
 
-  const displayedClaims = (claimView === 'matched' ? matchedClaims : unmatchedClaims)
+  // Status counts
+  const pendingCount = claims.filter(c => c.status === 'pending').length
+  const approvedCount = claims.filter(c => c.status === 'approved').length
+  const rejectedCount = claims.filter(c => c.status === 'rejected').length
+
+  // Filter and sort claims
+  const displayedClaims = claims
     .filter(c => {
-      if (!searchQuery) return true
-      return c.text.toLowerCase().includes(searchQuery.toLowerCase())
+      // Status filter
+      if (statusFilter !== 'all' && c.status !== statusFilter) return false
+      // Search filter
+      if (searchQuery && !c.text.toLowerCase().includes(searchQuery.toLowerCase())) return false
+      return true
     })
     .sort((a, b) => sortOrder === 'high-low'
       ? b.confidence - a.confidence
@@ -337,18 +342,24 @@ export default function MKGClaimsDetector() {
 
           {analysisComplete && (
             <div className="claimsFilterBar">
-              <div className="claimViewToggle">
+              <div className="statusToggleGroup">
                 <button
-                  className={`viewToggleBtn ${claimView === 'matched' ? 'active' : ''}`}
-                  onClick={() => setClaimView('matched')}
+                  className={`statusToggleBtn ${statusFilter === 'pending' ? 'active' : ''}`}
+                  onClick={() => setStatusFilter(statusFilter === 'pending' ? 'all' : 'pending')}
                 >
-                  Matched ({matchedClaims.length})
+                  Pending ({pendingCount})
                 </button>
                 <button
-                  className={`viewToggleBtn ${claimView === 'unmatched' ? 'active' : ''}`}
-                  onClick={() => setClaimView('unmatched')}
+                  className={`statusToggleBtn approved ${statusFilter === 'approved' ? 'active' : ''}`}
+                  onClick={() => setStatusFilter(statusFilter === 'approved' ? 'all' : 'approved')}
                 >
-                  Unmatched ({unmatchedClaims.length})
+                  Approved ({approvedCount})
+                </button>
+                <button
+                  className={`statusToggleBtn rejected ${statusFilter === 'rejected' ? 'active' : ''}`}
+                  onClick={() => setStatusFilter(statusFilter === 'rejected' ? 'all' : 'rejected')}
+                >
+                  Rejected ({rejectedCount})
                 </button>
               </div>
               <div className="claimsSearchSort">
@@ -388,9 +399,9 @@ export default function MKGClaimsDetector() {
               <div className="claimsEmptyState">
                 <Icon name="search" size={48} />
                 <p>
-                  {claimView === 'matched'
-                    ? 'No matched claims found'
-                    : 'No unmatched claims - all claims have references!'
+                  {statusFilter === 'all'
+                    ? 'No claims found'
+                    : `No ${statusFilter} claims`
                   }
                 </p>
               </div>
