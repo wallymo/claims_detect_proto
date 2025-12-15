@@ -144,20 +144,10 @@ Return ONLY this JSON structure, no commentary:
     {
       "claim": "[Exact extracted phrase]",
       "confidence": [0-100 integer],
-      "page": [page number where claim appears],
-      "position": {
-        "x": [0-100 percentage from left edge],
-        "y": [0-100 percentage from top edge]
-      }
+      "page": [page number where claim appears]
     }
   ]
 }
-
-For the "position" field:
-- x: 0 = left edge of page, 100 = right edge
-- y: 0 = top edge of page, 100 = bottom edge
-- Target the START of the claim text
-- Estimate visually where the text begins on the page
 
 Now review the document. Inventory everything first, then classify. Find everything.`
 
@@ -219,13 +209,13 @@ export async function analyzeDocument(pdfFile, onProgress) {
     }
 
     // Transform to frontend format
+    // Note: position is NOT included here - it's added later by PDF.js text matching
     const claims = (result.claims || []).map((claim, index) => ({
       id: `claim_${String(index + 1).padStart(3, '0')}`,
       text: claim.claim,
       confidence: claim.confidence / 100, // Convert 0-100 to 0-1 for frontend
       status: 'pending',
-      page: claim.page || 1, // Page number from Gemini, fallback to 1
-      position: claim.position || { x: 90, y: 90 } // Default to bottom-right if missing
+      page: claim.page || 1 // Page number from Gemini, fallback to 1
     }))
 
     onProgress?.(95, 'Finalizing...')
