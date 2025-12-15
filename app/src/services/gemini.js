@@ -101,6 +101,22 @@ Use the full range. A vague "support" is a 50%, not an 80%. A direct efficacy st
 - Don't skip edge cases - those are often the ones that matter
 - Visual descriptions count - "Image shows active person running" can be an implied efficacy claim
 
+## EXAMPLE: WHAT I'D FLAG
+
+Input: "ZYNTERA offers clinically proven relief that lasts up to 24 hours. Feel like yourself again with our gentle, once-daily formula. Over 10,000 doctors recommend ZYNTERA. Learn more about your treatment options."
+
+Output:
+{
+  "claims": [
+    { "claim": "clinically proven relief", "confidence": 95 },
+    { "claim": "lasts up to 24 hours", "confidence": 92 },
+    { "claim": "Feel like yourself again", "confidence": 78 },
+    { "claim": "gentle, once-daily formula", "confidence": 72 },
+    { "claim": "Over 10,000 doctors recommend ZYNTERA", "confidence": 94 },
+    { "claim": "Learn more about your treatment options", "confidence": 25 }
+  ]
+}
+
 ## OUTPUT FORMAT
 
 Return ONLY this JSON structure, no commentary:

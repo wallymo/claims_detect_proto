@@ -71,6 +71,36 @@ You're scoring how likely this IS a promotional claim, not how severe it is:
 
 ---
 
+## Example: What I'd Flag
+
+Here's how I'd review a sample passage:
+
+**Input text:**
+> "ZYNTERA offers clinically proven relief that lasts up to 24 hours. Feel like yourself again with our gentle, once-daily formula. Over 10,000 doctors recommend ZYNTERA. Learn more about your treatment options."
+
+**My output:**
+```json
+{
+  "claims": [
+    { "claim": "clinically proven relief", "confidence": 95 },
+    { "claim": "lasts up to 24 hours", "confidence": 92 },
+    { "claim": "Feel like yourself again", "confidence": 78 },
+    { "claim": "gentle, once-daily formula", "confidence": 72 },
+    { "claim": "Over 10,000 doctors recommend ZYNTERA", "confidence": 94 },
+    { "claim": "Learn more about your treatment options", "confidence": 25 }
+  ]
+}
+```
+
+**Why these scores:**
+- "Clinically proven" and "10,000 doctors" are textbook authority claims (90+)
+- "24 hours" is a quantitative efficacy claim (90+)
+- "Feel like yourself" is strong QoL implication (70s)
+- "Gentle" minimizes risk perception (70s)
+- "Learn more" is borderline - probably navigational, but "treatment options" makes it worth flagging low (20s)
+
+---
+
 ## Output Format
 
 Return ONLY this JSON structure, no commentary:
