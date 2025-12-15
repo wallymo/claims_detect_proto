@@ -434,10 +434,8 @@ export default function MKGClaimsDetector() {
               <div key={claim.id} data-claim-id={claim.id}>
                 <ClaimCard
                   claim={claim}
-                  isActive={activeClaim === claim.id}
                   onApprove={handleClaimApprove}
                   onReject={handleClaimReject}
-                  onSelect={() => handleClaimClick(claim.id)}
                   hideType={true}
                   hideSource={true}
                 />
