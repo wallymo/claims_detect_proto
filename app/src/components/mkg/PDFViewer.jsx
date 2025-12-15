@@ -6,8 +6,11 @@ import Button from '@/components/atoms/Button/Button'
 import Spinner from '@/components/atoms/Spinner/Spinner'
 import ScannerOverlay from '@/components/claims-detector/ScannerOverlay'
 
-// Set the worker source for PDF.js
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+// Set the worker source for PDF.js v5+
+// Try multiple sources in case one fails
+const workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
+pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc
+console.log('PDF.js version:', pdfjsLib.version, 'Worker:', workerSrc)
 
 export default function PDFViewer({
   file,
@@ -37,18 +40,23 @@ export default function PDFViewer({
     }
 
     const loadPDF = async () => {
+      console.log('Loading PDF:', file.name, file.size, 'bytes')
       setIsLoading(true)
       setError(null)
 
       try {
         const arrayBuffer = await file.arrayBuffer()
-        const loadedPdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+        console.log('Got arrayBuffer, size:', arrayBuffer.byteLength)
+        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
+        console.log('Created loading task')
+        const loadedPdf = await loadingTask.promise
+        console.log('PDF loaded, pages:', loadedPdf.numPages)
         setPdf(loadedPdf)
         setTotalPages(loadedPdf.numPages)
         setCurrentPage(1)
       } catch (err) {
         console.error('PDF load error:', err)
-        setError('Failed to load PDF')
+        setError(`Failed to load PDF: ${err.message}`)
       } finally {
         setIsLoading(false)
       }
