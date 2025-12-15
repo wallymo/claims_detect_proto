@@ -124,6 +124,9 @@
   font-size: 12px;
   line-height: 1.5;
   color: var(--gray-8);
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 8px;
 }
 
 .promptSection {
