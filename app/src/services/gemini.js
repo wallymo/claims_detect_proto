@@ -53,6 +53,8 @@ Scan this document and identify all claims. A claim is any statement that:
 - References studies, endorsements, or authority
 - Promises benefits or quality of life improvements
 
+Evaluate each sentence independently. A paragraph may contain multiple claims across different sentences, or mix claims with non-claims. Every statistic requires substantiation - whether it appears as a headline callout or embedded in descriptive text.
+
 For each claim, rate your confidence (0-100):
 - 90-100: Definite claim - explicit stats, direct efficacy statements, specific numbers that clearly need substantiation
 - 70-89: Strong implication - benefit promises, implicit comparisons, authoritative language

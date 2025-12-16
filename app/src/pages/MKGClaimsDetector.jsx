@@ -247,6 +247,7 @@ export default function MKGClaimsDetector() {
                   <li>References studies, endorsements, or authority</li>
                   <li>Promises benefits or quality of life improvements</li>
                 </ul>
+                <p className="promptNote">Evaluate each sentence independently. Every stat needs substantiation - headlines or embedded in text.</p>
 
                 <p className="promptSection"><strong>Confidence Scoring:</strong></p>
                 <ul className="promptList">
