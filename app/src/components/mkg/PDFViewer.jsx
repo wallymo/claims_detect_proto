@@ -323,29 +323,6 @@ export default function PDFViewer({
                   transform: `translate(${panX}px, ${panY}px)`
                 }}
               />
-              {currentPageClaims.length > 0 && (
-                <div
-                  className={styles.markersLayer}
-                  style={{
-                    width: canvasDimensions.width,
-                    height: canvasDimensions.height,
-                    transform: `translate(${panX}px, ${panY}px)`
-                  }}
-                >
-                  {currentPageClaims.map(claim => (
-                    <button
-                      key={claim.id}
-                      className={`${styles.marker} ${getConfidenceClass(claim.confidence)} ${activeClaimId === claim.id ? styles.active : ''}`}
-                      style={{
-                        left: `${claim.position.x}%`,
-                        top: `${claim.position.y}%`
-                      }}
-                      onClick={(e) => handleMarkerClick(e, claim.id)}
-                      title={claim.text}
-                    />
-                  ))}
-                </div>
-              )}
             </>
           )}
         </div>
