@@ -1,11 +1,10 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import styles from './PDFViewer.module.css'
 import Icon from '@/components/atoms/Icon/Icon'
 import Button from '@/components/atoms/Button/Button'
 import Spinner from '@/components/atoms/Spinner/Spinner'
 import ScannerOverlay from '@/components/claims-detector/ScannerOverlay'
-import { extractAllPagesText, addPositionsToClaims } from '@/utils/pdfTextExtractor'
 
 // Use unpkg CDN for worker (cdnjs doesn't have v5)
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.min.mjs`
@@ -36,36 +35,8 @@ export default function PDFViewer({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [canvasDimensions, setCanvasDimensions] = useState({ width: 0, height: 0 })
 
-  // Cached text positions for claim marker placement
-  const [pageTextCache, setPageTextCache] = useState({})
-
   const canvasRef = useRef(null)
   const containerRef = useRef(null)
-
-  // Extract text positions when PDF loads (for claim marker placement)
-  useEffect(() => {
-    if (!pdf) {
-      setPageTextCache({})
-      return
-    }
-
-    const extractText = async () => {
-      console.log('📄 Extracting text positions from PDF...')
-      const cache = await extractAllPagesText(pdf)
-      console.log(`✅ Extracted text from ${Object.keys(cache).length} pages`)
-      setPageTextCache(cache)
-    }
-
-    extractText()
-  }, [pdf])
-
-  // Add positions to claims using PDF.js text matching
-  const claimsWithPositions = useMemo(() => {
-    if (!Object.keys(pageTextCache).length || !claims.length) return claims
-    const positioned = addPositionsToClaims(claims, pageTextCache)
-    console.log('📍 Positioned claims:', positioned.map(c => ({ id: c.id, position: c.position })))
-    return positioned
-  }, [claims, pageTextCache])
 
   // Load PDF when file changes
   useEffect(() => {
@@ -149,12 +120,12 @@ export default function PDFViewer({
   // Navigate to claim's page when activeClaimId changes
   useEffect(() => {
     if (activeClaimId) {
-      const claim = claimsWithPositions.find(c => c.id === activeClaimId)
+      const claim = claims.find(c => c.id === activeClaimId)
       if (claim && claim.page !== currentPage) {
         setCurrentPage(claim.page)
       }
     }
-  }, [activeClaimId, claimsWithPositions, currentPage])
+  }, [activeClaimId, claims, currentPage])
 
   const handlePrevPage = () => {
     setCurrentPage(prev => Math.max(1, prev - 1))
