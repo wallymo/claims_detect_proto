@@ -378,7 +378,7 @@ export default function MKGClaimsDetector() {
                     </div>
                     <div className="divider" />
                     <div className="resultRow totalCost">
-                      <span className="resultLabel">Total to Date</span>
+                      <span className="resultLabel">Tracked Spend</span>
                       <span className="resultValue">${totalCost.toFixed(4)}</span>
                     </div>
                   </div>
