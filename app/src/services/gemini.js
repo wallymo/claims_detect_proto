@@ -43,112 +43,32 @@ export async function fileToBase64(file) {
   })
 }
 
-// Claim Detection Prompt - Category checklist approach for exhaustive, consistent detection
-const CLAIM_DETECTION_PROMPT = `You are a veteran MLR (Medical, Legal, Regulatory) reviewer. Your job is to surface EVERY potential claim for human review - you'd rather flag 20 borderline phrases than let 1 real claim slip through.
+// Claim Detection Prompt - Pure expert mode for natural claim discovery
+const CLAIM_DETECTION_PROMPT = `You are a veteran MLR (Medical, Legal, Regulatory) reviewer analyzing pharmaceutical promotional materials. Your job is to surface EVERY statement that could require substantiation - you'd rather flag 20 borderline phrases than let 1 real claim slip through.
 
-## MANDATORY CATEGORY CHECKLIST
+Scan this document and identify all claims. A claim is any statement that:
+- Makes a verifiable assertion about efficacy, safety, or outcomes
+- Uses statistics, percentages, or quantitative data
+- Implies superiority or comparison
+- References studies, endorsements, or authority
+- Promises benefits or quality of life improvements
 
-You MUST check each category below and report ALL instances found. Do not skip categories. If a category has no claims, explicitly state "None found."
+For each claim, rate your confidence (0-100):
+- 90-100: Definite claim - explicit stats, direct efficacy statements, specific numbers that clearly need substantiation
+- 70-89: Strong implication - benefit promises, implicit comparisons, authoritative language
+- 50-69: Borderline - suggestive phrasing that a cautious reviewer might flag
+- 30-49: Weak signal - could be promotional in certain contexts, worth a second look
 
-### CATEGORY 1: EFFICACY CLAIMS
-Statements about how well something works: "reduces," "improves," "relieves," "treats," "prevents," speed of action, duration of effect, magnitude of benefit.
-**Examples that ARE claims:**
-- "Reduces symptoms by 47%" → 95% confidence
-- "Fast-acting relief" → 80% confidence
-- "Improvement in 2 weeks" → 90% confidence
-
-### CATEGORY 2: SAFETY CLAIMS
-Statements about tolerability, side effects, or risk: "well-tolerated," "gentle," "safe," "low risk," "minimal side effects," "natural."
-**Examples that ARE claims:**
-- "Well-tolerated in clinical trials" → 92% confidence
-- "Gentle on your system" → 75% confidence
-- "Natural ingredients" → 70% confidence
-
-### CATEGORY 3: STATISTICAL/QUANTITATIVE CLAIMS
-Any number, percentage, duration, or measurable assertion - these ALWAYS need substantiation.
-**Examples that ARE claims:**
-- "47% reduction in events" → 98% confidence
-- "24-hour protection" → 85% confidence
-- "3 out of 4 doctors recommend" → 95% confidence
-- "17% mortality rate" → 95% confidence (disease stat)
-
-### CATEGORY 4: COMPARATIVE CLAIMS
-Statements comparing to alternatives, competitors, or standard of care - even implicit comparisons.
-**Examples that ARE claims:**
-- "Superior to placebo" → 95% confidence
-- "Advanced formula" → 65% confidence
-- "Next-generation treatment" → 70% confidence
-- "Unlike other treatments" → 80% confidence
-
-### CATEGORY 5: QUALITY OF LIFE CLAIMS
-Promises about returning to normal, lifestyle benefits, freedom from symptoms.
-**Examples that ARE claims:**
-- "Feel like yourself again" → 82% confidence
-- "Get back to what you love" → 78% confidence
-- "Live without limits" → 75% confidence
-- "Reclaim your life" → 80% confidence
-
-### CATEGORY 6: AUTHORITY/ENDORSEMENT CLAIMS
-References to studies, doctors, FDA, awards, rankings, expert opinions.
-**Examples that ARE claims:**
-- "Clinically proven" → 90% confidence
-- "#1 prescribed" → 92% confidence
-- "Doctor recommended" → 88% confidence
-- "FDA approved for..." → 85% confidence
-
-### CATEGORY 7: MECHANISM OF ACTION CLAIMS
-Statements about how a treatment works biologically or chemically.
-**Examples that ARE claims:**
-- "Blocks the enzyme responsible for..." → 85% confidence
-- "Targets inflammation at the source" → 80% confidence
-- "Key mediator of tissue damage" → 75% confidence
-
-### CATEGORY 8: DISEASE/EPIDEMIOLOGY CLAIMS
-Statistics about disease prevalence, incidence, mortality, or patient populations.
-**Examples that ARE claims:**
-- "Affects 1 in 4 adults" → 90% confidence
-- "Leading cause of death" → 88% confidence
-- "50,000 new cases annually" → 92% confidence
-
-## CONFIDENCE SCORING
-
-| Score | Meaning | When to use |
-|-------|---------|-------------|
-| 90-100 | Definite claim, needs substantiation | Direct stats, explicit efficacy, specific numbers |
-| 70-89 | Strong implication | Quality of life promises, implicit comparisons |
-| 50-69 | Suggestive language | Vague benefits, "support," "help" |
-| 30-49 | Borderline | Context-dependent phrases |
-
-## YOUR PROCESS
-
-1. **Inventory**: List every text element on each page (headlines, stats, bullets, body text, footnotes, graph labels)
-2. **Category sweep**: Go through each of the 8 categories above and find ALL matching phrases
-3. **No early stopping**: Even if you found 15 claims, keep checking remaining categories
-
-## OUTPUT FORMAT
+Trust your judgment. If you're unsure whether something is a claim, include it with a lower confidence score rather than omitting it.
 
 Return ONLY this JSON:
 {
-  "inventory": [
-    { "page": 1, "elements": ["Headline: ...", "Stat: ...", "Body: ..."] },
-    { "page": 2, "elements": ["..."] }
-  ],
-  "categoryFindings": {
-    "efficacy": ["list of claims found or 'None found'"],
-    "safety": ["..."],
-    "statistical": ["..."],
-    "comparative": ["..."],
-    "qualityOfLife": ["..."],
-    "authority": ["..."],
-    "mechanism": ["..."],
-    "diseaseStats": ["..."]
-  },
   "claims": [
-    { "claim": "[Exact phrase from document]", "confidence": 85, "page": 1, "category": "efficacy" }
+    { "claim": "[Exact phrase from document]", "confidence": 85, "page": 1 }
   ]
 }
 
-Now analyze the document. Check EVERY category. Find EVERYTHING.`
+Now analyze the document. Find everything that could require substantiation.`
 
 /**
  * Analyze a PDF document and detect claims
@@ -196,36 +116,13 @@ export async function analyzeDocument(pdfFile, onProgress) {
     const text = response.candidates?.[0]?.content?.parts?.[0]?.text || response.text
     const result = JSON.parse(text)
 
-    // Log inventory for debugging
-    if (result.inventory) {
-      console.log('📋 Document Inventory:')
-      result.inventory.forEach(page => {
-        console.log(`  Page ${page.page}: ${page.elements?.length || 0} elements`)
-        page.elements?.forEach(el => console.log(`    - ${el}`))
-      })
-      const totalElements = result.inventory.reduce((sum, p) => sum + (p.elements?.length || 0), 0)
-      console.log(`  Total elements inventoried: ${totalElements}`)
-    }
-
-    // Log category findings for debugging (shows exhaustive category sweep)
-    if (result.categoryFindings) {
-      console.log('📊 Category Findings:')
-      Object.entries(result.categoryFindings).forEach(([category, findings]) => {
-        const count = Array.isArray(findings) ? findings.length : 0
-        const status = findings === 'None found' || (Array.isArray(findings) && findings[0] === 'None found') ? '∅' : `${count} found`
-        console.log(`  ${category}: ${status}`)
-      })
-    }
-
     // Transform to frontend format
-    // Note: position is NOT included here - it's added later by PDF.js text matching
     const claims = (result.claims || []).map((claim, index) => ({
       id: `claim_${String(index + 1).padStart(3, '0')}`,
       text: claim.claim,
       confidence: claim.confidence / 100, // Convert 0-100 to 0-1 for frontend
       status: 'pending',
-      page: claim.page || 1, // Page number from Gemini, fallback to 1
-      category: claim.category || 'unknown' // Claim category from checklist
+      page: claim.page || 1 // Page number from Gemini, fallback to 1
     }))
 
     onProgress?.(95, 'Finalizing...')
