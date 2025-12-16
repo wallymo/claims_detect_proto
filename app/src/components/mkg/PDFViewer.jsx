@@ -42,13 +42,6 @@ export default function PDFViewer({
   const canvasRef = useRef(null)
   const containerRef = useRef(null)
 
-  // Helper for confidence-based marker colors
-  const getConfidenceClass = (confidence) => {
-    if (confidence >= 0.8) return styles.markerHigh
-    if (confidence >= 0.5) return styles.markerMedium
-    return styles.markerLow
-  }
-
   // Extract text positions when PDF loads (for claim marker placement)
   useEffect(() => {
     if (!pdf) {
@@ -73,9 +66,6 @@ export default function PDFViewer({
     console.log('📍 Positioned claims:', positioned.map(c => ({ id: c.id, position: c.position })))
     return positioned
   }, [claims, pageTextCache])
-
-  // Filter claims for current page
-  const currentPageClaims = claimsWithPositions.filter(c => c.page === currentPage)
 
   // Load PDF when file changes
   useEffect(() => {
@@ -240,11 +230,6 @@ export default function PDFViewer({
     setIsDragging(false)
   }
 
-  const handleMarkerClick = (e, claimId) => {
-    e.stopPropagation()
-    onClaimSelect?.(claimId)
-  }
-
   const handleCanvasClick = (e) => {
     // Clear selection when clicking canvas (not a marker)
     if (e.target === canvasRef.current || e.target.classList.contains(styles.content)) {
@@ -339,11 +324,6 @@ export default function PDFViewer({
       {/* Footer - page navigation */}
       {totalPages > 0 && (
         <div className={styles.footer}>
-          {currentPageClaims.length > 0 && (
-            <span className={styles.claimCount}>
-              {currentPageClaims.length} claim{currentPageClaims.length !== 1 ? 's' : ''} on this page
-            </span>
-          )}
           <div className={styles.pageNav}>
             <Button variant="ghost" size="small" onClick={handlePrevPage} disabled={currentPage <= 1}>
               <Icon name="chevronLeft" size={14} />
