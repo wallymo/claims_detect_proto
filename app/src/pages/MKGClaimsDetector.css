@@ -119,6 +119,19 @@
 .resultRow.medConf .resultLabel { color: var(--amber-7, #F57C00); }
 .resultRow.lowConf .resultLabel { color: var(--red-7, #D32F2F); }
 
+/* Model Performance */
+.modelPerformance {
+  font-size: 13px;
+}
+
+.resultRow.totalCost {
+  font-weight: 600;
+}
+
+.resultRow.totalCost .resultValue {
+  color: var(--blue-7, #1976D2);
+}
+
 /* Master Prompt Section */
 .masterPromptContent {
   font-size: 12px;

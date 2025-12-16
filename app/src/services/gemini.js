@@ -27,6 +27,35 @@ const getGeminiClient = () => {
 // Model configuration - SSOT for model selection
 export const GEMINI_MODEL = 'gemini-3-pro-preview'
 
+// Friendly display names for models
+export const MODEL_DISPLAY_NAMES = {
+  'gemini-3-pro-preview': 'Gemini 3 Pro',
+  'gemini-2.0-flash': 'Gemini 2.0 Flash',
+  'gemini-2.0-flash-exp': 'Gemini 2.0 Flash',
+  'gemini-1.5-flash': 'Gemini 1.5 Flash',
+  'gemini-1.5-pro': 'Gemini 1.5 Pro'
+}
+
+// Pricing per 1M tokens (USD) - approximate rates for Gemini Pro
+// Update these based on current Google AI pricing
+const PRICING = {
+  'gemini-3-pro-preview': { input: 1.25, output: 5.00 },  // $/1M tokens
+  'gemini-2.0-flash': { input: 0.075, output: 0.30 },
+  'gemini-1.5-flash': { input: 0.075, output: 0.30 },
+  'gemini-1.5-pro': { input: 1.25, output: 5.00 },
+  'default': { input: 1.25, output: 5.00 }
+}
+
+/**
+ * Calculate cost from token usage
+ */
+function calculateCost(model, inputTokens, outputTokens) {
+  const pricing = PRICING[model] || PRICING['default']
+  const inputCost = (inputTokens / 1_000_000) * pricing.input
+  const outputCost = (outputTokens / 1_000_000) * pricing.output
+  return inputCost + outputCost
+}
+
 /**
  * Convert a File object to base64 for Gemini API
  */
@@ -129,18 +158,33 @@ export async function analyzeDocument(pdfFile, onProgress) {
 
     onProgress?.(95, 'Finalizing...')
 
+    // Extract usage metadata for cost tracking
+    const usageMetadata = response.usageMetadata || {}
+    const inputTokens = usageMetadata.promptTokenCount || 0
+    const outputTokens = usageMetadata.candidatesTokenCount || 0
+    const cost = calculateCost(GEMINI_MODEL, inputTokens, outputTokens)
+
     console.log(`✅ Detected ${claims.length} claims`)
+    console.log(`💰 Usage: ${inputTokens} input + ${outputTokens} output tokens = $${cost.toFixed(4)}`)
 
     return {
       success: true,
-      claims
+      claims,
+      usage: {
+        model: GEMINI_MODEL,
+        modelDisplayName: MODEL_DISPLAY_NAMES[GEMINI_MODEL] || GEMINI_MODEL,
+        inputTokens,
+        outputTokens,
+        cost
+      }
     }
   } catch (error) {
     console.error('Gemini analysis error:', error)
     return {
       success: false,
       error: error.message,
-      claims: []
+      claims: [],
+      usage: null
     }
   }
 }

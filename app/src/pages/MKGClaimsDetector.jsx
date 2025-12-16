@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import '../App.css'
 import './MKGClaimsDetector.css'
 import Button from '@/components/atoms/Button/Button'
@@ -40,8 +40,19 @@ export default function MKGClaimsDetector() {
   const [searchQuery, setSearchQuery] = useState('')
   const [sortOrder, setSortOrder] = useState('high-low')
 
+  // Cost tracking state
+  const [lastUsage, setLastUsage] = useState(null) // { model, modelDisplayName, inputTokens, outputTokens, cost }
+  const [totalCost, setTotalCost] = useState(0)
 
   const claimsListRef = useRef(null)
+
+  // Load total cost from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('gemini_total_cost')
+    if (saved) {
+      setTotalCost(parseFloat(saved))
+    }
+  }, [])
 
   // Handle real file upload
   const handleFileSelect = async (event) => {
@@ -113,6 +124,15 @@ export default function MKGClaimsDetector() {
 
       setClaims(result.claims)
       setProcessingTime(Date.now() - startTime)
+
+      // Track usage and cost
+      if (result.usage) {
+        setLastUsage(result.usage)
+        const newTotal = totalCost + result.usage.cost
+        setTotalCost(newTotal)
+        localStorage.setItem('gemini_total_cost', newTotal.toString())
+      }
+
       setAnalysisProgress(100)
       setAnalysisStatus('Complete')
       setAnalysisComplete(true)
@@ -311,43 +331,60 @@ export default function MKGClaimsDetector() {
           )}
 
           {analysisComplete && (
-            <AccordionItem
-              title="Results Summary"
-              defaultOpen={true}
-              size="small"
-              content={
-                <div className="resultsSummary">
-                  <div className="resultRow">
-                    <span className="resultLabel">Total Claims Found</span>
-                    <span className="resultValue">{claims.length}</span>
+            <>
+              <AccordionItem
+                title="Results Summary"
+                defaultOpen={true}
+                size="small"
+                content={
+                  <div className="resultsSummary">
+                    <div className="resultRow">
+                      <span className="resultLabel">Total Claims Found</span>
+                      <span className="resultValue">{claims.length}</span>
+                    </div>
+                    <div className="divider" />
+                    <div className="resultRow highConf">
+                      <span className="resultLabel">High Confidence (90-100%)</span>
+                      <span className="resultValue">{highConfidenceClaims.length}</span>
+                    </div>
+                    <div className="resultRow medConf">
+                      <span className="resultLabel">Medium (70-89%)</span>
+                      <span className="resultValue">{mediumConfidenceClaims.length}</span>
+                    </div>
+                    <div className="resultRow lowConf">
+                      <span className="resultLabel">Low (&lt;70%)</span>
+                      <span className="resultValue">{lowConfidenceClaims.length}</span>
+                    </div>
                   </div>
-                  <div className="divider" />
-                  <div className="resultRow highConf">
-                    <span className="resultLabel">High Confidence (90-100%)</span>
-                    <span className="resultValue">{highConfidenceClaims.length}</span>
+                }
+              />
+              <AccordionItem
+                title="Model Performance"
+                defaultOpen={true}
+                size="small"
+                content={
+                  <div className="modelPerformance">
+                    <div className="resultRow">
+                      <span className="resultLabel">Model</span>
+                      <span className="resultValue">{lastUsage?.modelDisplayName || 'Gemini 3 Pro'}</span>
+                    </div>
+                    <div className="resultRow">
+                      <span className="resultLabel">Time</span>
+                      <span className="resultValue">{(processingTime / 1000).toFixed(1)}s</span>
+                    </div>
+                    <div className="resultRow">
+                      <span className="resultLabel">Run Cost</span>
+                      <span className="resultValue">${lastUsage?.cost?.toFixed(4) || '0.0000'}</span>
+                    </div>
+                    <div className="divider" />
+                    <div className="resultRow totalCost">
+                      <span className="resultLabel">Total to Date</span>
+                      <span className="resultValue">${totalCost.toFixed(4)}</span>
+                    </div>
                   </div>
-                  <div className="resultRow medConf">
-                    <span className="resultLabel">Medium (70-89%)</span>
-                    <span className="resultValue">{mediumConfidenceClaims.length}</span>
-                  </div>
-                  <div className="resultRow lowConf">
-                    <span className="resultLabel">Low (&lt;70%)</span>
-                    <span className="resultValue">{lowConfidenceClaims.length}</span>
-                  </div>
-                  <div className="divider" />
-                  <div className="metaRow">
-                    <span className="metaItem">
-                      <Icon name="zap" size={14} />
-                      {(processingTime / 1000).toFixed(1)}s
-                    </span>
-                    <span className="metaDot">•</span>
-                    <span className="metaItem">
-                      {MODEL_OPTIONS.find(m => m.id === selectedModel)?.label}
-                    </span>
-                  </div>
-                </div>
-              }
-            />
+                }
+              />
+            </>
           )}
         </div>
 
