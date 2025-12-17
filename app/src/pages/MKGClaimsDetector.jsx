@@ -11,6 +11,7 @@ import DropdownMenu from '@/components/molecules/DropdownMenu/DropdownMenu'
 import PDFViewer from '@/components/mkg/PDFViewer'
 import ClaimCard from '@/components/claims-detector/ClaimCard'
 import { analyzeDocument, checkGeminiConnection } from '@/services/gemini'
+import { enrichClaimsWithPositions } from '@/utils/textMatcher'
 
 // AI Model options - SSOT
 const MODEL_OPTIONS = [
@@ -44,7 +45,11 @@ export default function MKGClaimsDetector() {
   const [lastUsage, setLastUsage] = useState(null) // { model, modelDisplayName, inputTokens, outputTokens, cost }
   const [totalCost, setTotalCost] = useState(0)
 
+  // Text extraction state
+  const [extractedPages, setExtractedPages] = useState([])
+
   const claimsListRef = useRef(null)
+  const claimsPanelRef = useRef(null)
 
   // Load total cost from localStorage on mount
   useEffect(() => {
@@ -53,6 +58,11 @@ export default function MKGClaimsDetector() {
       setTotalCost(parseFloat(saved))
     }
   }, [])
+
+  // Handle text extraction from PDFViewer
+  const handleTextExtracted = (pages) => {
+    setExtractedPages(pages)
+  }
 
   // Handle real file upload
   const handleFileSelect = async (event) => {
@@ -122,7 +132,12 @@ export default function MKGClaimsDetector() {
         throw new Error(result.error || 'Analysis failed')
       }
 
-      setClaims(result.claims)
+      // Enrich claims with positions from extracted text
+      const claimsWithPositions = extractedPages.length > 0
+        ? enrichClaimsWithPositions(result.claims, extractedPages)
+        : result.claims
+
+      setClaims(claimsWithPositions)
       setProcessingTime(Date.now() - startTime)
 
       // Track usage and cost
@@ -400,11 +415,13 @@ export default function MKGClaimsDetector() {
             claims={claims}
             activeClaimId={activeClaimId}
             onClaimSelect={handleClaimSelect}
+            onTextExtracted={handleTextExtracted}
+            claimsPanelRef={claimsPanelRef}
           />
         </div>
 
         {/* Claims Panel */}
-        <div className="claimsPanel">
+        <div className="claimsPanel" ref={claimsPanelRef}>
           <div className="claimsPanelHeader">
             <h2 className="claimsPanelTitle">
               Claims
