@@ -82,7 +82,11 @@ Scan this document and identify all claims. A claim is any statement that:
 - References studies, endorsements, or authority
 - Promises benefits or quality of life improvements
 
-Evaluate each sentence independently. A paragraph may contain multiple claims across different sentences, or mix claims with non-claims. Every statistic requires substantiation - whether it appears as a headline callout or embedded in descriptive text.
+IMPORTANT - Claim boundaries:
+- Combine related sentences that support the SAME assertion into ONE claim (e.g., a statistic followed by its context)
+- Only split into separate claims when statements make DISTINCT assertions requiring DIFFERENT substantiation
+- A claim should be the complete, self-contained statement - not sentence fragments
+- Every statistic requires substantiation - whether it appears as a headline or embedded in text
 
 For each claim, rate your confidence (0-100):
 - 90-100: Definite claim - explicit stats, direct efficacy statements, specific numbers that clearly need substantiation
