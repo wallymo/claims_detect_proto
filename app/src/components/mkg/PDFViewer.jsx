@@ -5,6 +5,8 @@ import Icon from '@/components/atoms/Icon/Icon'
 import Button from '@/components/atoms/Button/Button'
 import Spinner from '@/components/atoms/Spinner/Spinner'
 import ScannerOverlay from '@/components/claims-detector/ScannerOverlay'
+import ClaimPinsOverlay from './ClaimPinsOverlay'
+import { extractTextWithPositions } from '@/utils/pdfTextExtractor'
 
 // Use unpkg CDN for worker (cdnjs doesn't have v5)
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.min.mjs`
@@ -19,7 +21,9 @@ export default function PDFViewer({
   onScanComplete,
   claims = [],
   activeClaimId = null,
-  onClaimSelect
+  onClaimSelect,
+  claimsPanelRef,
+  onTextExtracted
 }) {
   const [pdf, setPdf] = useState(null)
   const [currentPage, setCurrentPage] = useState(1)
@@ -34,6 +38,7 @@ export default function PDFViewer({
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [canvasDimensions, setCanvasDimensions] = useState({ width: 0, height: 0 })
+  const [extractedPages, setExtractedPages] = useState([])
 
   const canvasRef = useRef(null)
   const containerRef = useRef(null)
@@ -76,6 +81,27 @@ export default function PDFViewer({
 
     loadPDF()
   }, [file])
+
+  // Extract text from all pages when PDF loads
+  useEffect(() => {
+    if (!pdf) {
+      setExtractedPages([])
+      return
+    }
+
+    const extract = async () => {
+      try {
+        const pages = await extractTextWithPositions(pdf)
+        setExtractedPages(pages)
+        onTextExtracted?.(pages)
+        console.log(`✅ Extracted text from ${pages.length} pages`)
+      } catch (err) {
+        console.error('Text extraction error:', err)
+      }
+    }
+
+    extract()
+  }, [pdf, onTextExtracted])
 
   // Render current page
   useEffect(() => {
@@ -270,7 +296,7 @@ export default function PDFViewer({
             </div>
           )}
 
-          {!isLoading && !error && (
+          {!isLoading && !error && pdf && (
             <>
               <canvas
                 ref={canvasRef}
@@ -278,6 +304,16 @@ export default function PDFViewer({
                 style={{
                   transform: `translate(${panX}px, ${panY}px)`
                 }}
+              />
+              <ClaimPinsOverlay
+                claims={claims}
+                activeClaimId={activeClaimId}
+                currentPage={currentPage}
+                canvasDimensions={canvasDimensions}
+                panOffset={{ x: panX, y: panY }}
+                scale={scale}
+                onClaimSelect={onClaimSelect}
+                claimsPanelRef={claimsPanelRef}
               />
             </>
           )}
