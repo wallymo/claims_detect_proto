@@ -3,6 +3,8 @@ import styles from './ClaimPinsOverlay.module.css'
 
 const DOT_RADIUS = 14
 const DOT_RADIUS_ACTIVE = 18
+const OVERLAP_TOLERANCE = 10
+const OVERLAP_SEPARATION = 14
 
 /**
  * Get color based on confidence score
@@ -20,6 +22,83 @@ function confidenceColor(confidence) {
  *
  * Adapted from connect-pins standalone app
  */
+const labelFromClaim = (claim) => {
+  if (claim.globalIndex) return claim.globalIndex
+  const digits = claim.id?.match(/\d+/)?.[0]
+  return digits ? Number(digits) : claim.id
+}
+
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
+
+// When Gemini returns only a single (x,y) point, put the pin to the **left** of the text
+// so the numeral does not sit on top of the claim copy. If we have a bounding box, we
+// place the pin just outside the box on the left side.
+const FALLBACK_LATERAL_OFFSET_PCT = 4  // % of page width to shift left when no bbox
+const MIN_LATERAL_OFFSET_PX = DOT_RADIUS_ACTIVE + 8
+
+const computeAnchor = (dot, canvasDimensions) => {
+  const widthPx = (dot.boxWidthPct || 0) * canvasDimensions.width / 100
+  const heightPx = (dot.boxHeightPct || 0) * canvasDimensions.height / 100
+  const centerX = (dot.centerXPct / 100) * canvasDimensions.width
+  const centerY = (dot.centerYPct / 100) * canvasDimensions.height
+
+  // No bounding box (Gemini simple x/y) – push pin left of the point
+  if (!widthPx || !heightPx) {
+    const pctOffset = (FALLBACK_LATERAL_OFFSET_PCT / 100) * canvasDimensions.width
+    const defaultOffset = Math.max(MIN_LATERAL_OFFSET_PX, pctOffset)
+    const x = Math.max(DOT_RADIUS_ACTIVE, centerX - defaultOffset)
+    const y = clamp(centerY, DOT_RADIUS_ACTIVE, canvasDimensions.height - DOT_RADIUS_ACTIVE)
+    return { x, y }
+  }
+
+  // With bounding box – place pin just outside the left edge
+  const lateralOffset = Math.min(16, Math.max(10, widthPx * 0.15))
+  const leftX = centerX - widthPx / 2 - lateralOffset
+  const x = clamp(leftX, DOT_RADIUS_ACTIVE, canvasDimensions.width - DOT_RADIUS_ACTIVE)
+  const y = clamp(centerY, DOT_RADIUS_ACTIVE, canvasDimensions.height - DOT_RADIUS_ACTIVE)
+
+  return { x, y }
+}
+
+// Spread dots that land on (nearly) identical coords so numbers don't stack
+const resolveOverlaps = (dots, canvasDimensions) => {
+  const adjusted = []
+
+  for (const dot of dots) {
+    let attempt = 0
+    let candidate = dot
+
+    // Try alternating small vertical shifts to preserve proximity to text line
+    const shifts = [0, 1, -1, 2, -2, 3, -3].map(s => s * OVERLAP_SEPARATION)
+
+    for (const shift of shifts) {
+      const shifted = {
+        ...dot,
+        y: clamp(dot.y + shift, DOT_RADIUS_ACTIVE, canvasDimensions.height - DOT_RADIUS_ACTIVE)
+      }
+      const overlaps = adjusted.some(d => Math.hypot(d.x - shifted.x, d.y - shifted.y) <= OVERLAP_TOLERANCE)
+      if (!overlaps) {
+        candidate = shifted
+        break
+      }
+      attempt++
+    }
+
+    // Last resort: nudge horizontally a bit
+    if (attempt === shifts.length) {
+      const bumped = {
+        ...candidate,
+        x: clamp(candidate.x + OVERLAP_SEPARATION, DOT_RADIUS_ACTIVE, canvasDimensions.width - DOT_RADIUS_ACTIVE)
+      }
+      candidate = bumped
+    }
+
+    adjusted.push(candidate)
+  }
+
+  return adjusted
+}
+
 export default function ClaimPinsOverlay({
   claims = [],
   activeClaimId = null,
@@ -28,7 +107,8 @@ export default function ClaimPinsOverlay({
   panOffset = { x: 0, y: 0 },
   scale = 1,
   onClaimSelect,
-  claimsPanelRef  // Ref to the claims panel for connector positioning
+  claimsPanelRef,  // Ref to the claims panel for connector positioning
+  showBoxes = false
 }) {
   const canvasRef = useRef(null)
   const svgRef = useRef(null)
@@ -36,14 +116,66 @@ export default function ClaimPinsOverlay({
 
   // Filter claims for current page and compute pixel positions
   const dots = claims
-    .filter(claim => claim.page === currentPage && claim.position)
-    .map(claim => ({
+    .filter(claim => Number(claim.page) === currentPage && claim.position)
+    .map(claim => {
+      const centerXPct = Number(claim.position.x) || 0
+      const centerYPct = Number(claim.position.y) || 0
+      const boxWidthPct = Number(claim.position.width) || 0
+      const boxHeightPct = Number(claim.position.height) || 0
+
+      const anchor = computeAnchor(
+        { centerXPct, centerYPct, boxWidthPct, boxHeightPct },
+        canvasDimensions
+      )
+
+      return {
       id: claim.id,
-      x: (claim.position.x / 100) * canvasDimensions.width,
-      y: (claim.position.y / 100) * canvasDimensions.height,
+      x: anchor.x,
+      y: anchor.y,
+      centerXPct,
+      centerYPct,
+      boxWidthPct,
+      boxHeightPct,
       confidence: claim.confidence,
-      text: claim.text
-    }))
+      text: claim.text,
+      label: labelFromClaim(claim),
+      positionSource: claim.position?.source || 'unknown'
+      }
+    })
+
+  const displayDots = resolveOverlaps(dots, canvasDimensions)
+  const activeDot = displayDots.find(d => d.id === activeClaimId)
+  const activeBox = activeDot && activeDot.boxWidthPct > 0 && activeDot.boxHeightPct > 0
+    ? {
+        x: (activeDot.centerXPct / 100) * canvasDimensions.width - (activeDot.boxWidthPct / 100) * canvasDimensions.width / 2,
+        y: (activeDot.centerYPct / 100) * canvasDimensions.height - (activeDot.boxHeightPct / 100) * canvasDimensions.height / 2,
+        width: (activeDot.boxWidthPct / 100) * canvasDimensions.width,
+        height: (activeDot.boxHeightPct / 100) * canvasDimensions.height,
+        id: activeDot.id,
+        isActive: true
+      }
+    : null
+
+  const boxList = showBoxes
+    ? displayDots
+        .filter(d => d.boxWidthPct > 0 && d.boxHeightPct > 0)
+        .map(d => ({
+          x: (d.centerXPct / 100) * canvasDimensions.width - (d.boxWidthPct / 100) * canvasDimensions.width / 2,
+          y: (d.centerYPct / 100) * canvasDimensions.height - (d.boxHeightPct / 100) * canvasDimensions.height / 2,
+          width: (d.boxWidthPct / 100) * canvasDimensions.width,
+          height: (d.boxHeightPct / 100) * canvasDimensions.height,
+          id: d.id,
+          isActive: d.id === activeClaimId
+        }))
+    : activeBox
+      ? [activeBox]
+      : []
+
+  // Debug: log filtering results
+  console.log(`🎯 ClaimPins: page=${currentPage}, dims=${canvasDimensions.width}x${canvasDimensions.height}, claims=${claims.length}, dots=${dots.length}`)
+  if (dots.length === 0 && claims.length > 0) {
+    console.log('Claims pages:', claims.map(c => c.page))
+  }
 
   // Draw dots on canvas
   useEffect(() => {
@@ -64,7 +196,7 @@ export default function ClaimPinsOverlay({
     ctx.clearRect(0, 0, canvasDimensions.width, canvasDimensions.height)
 
     // Draw each dot
-    dots.forEach((dot, index) => {
+    displayDots.forEach((dot, index) => {
       const isActive = activeClaimId === dot.id
       const isHovered = hoveredDot === dot.id
       const radius = isActive || isHovered ? DOT_RADIUS_ACTIVE : DOT_RADIUS
@@ -101,10 +233,10 @@ export default function ClaimPinsOverlay({
       ctx.fillStyle = 'white'
       ctx.shadowColor = 'rgba(0, 0, 0, 0.5)'
       ctx.shadowBlur = 2
-      ctx.fillText(String(index + 1), dot.x, dot.y)
+      ctx.fillText(String(dot.label), dot.x, dot.y)
       ctx.restore()
     })
-  }, [dots, activeClaimId, hoveredDot, canvasDimensions])
+  }, [displayDots, activeClaimId, hoveredDot, canvasDimensions])
 
   // Draw connector SVG
   useEffect(() => {
@@ -114,7 +246,7 @@ export default function ClaimPinsOverlay({
       return
     }
 
-    const activeDot = dots.find(d => d.id === activeClaimId)
+    const activeDot = displayDots.find(d => d.id === activeClaimId)
     if (!activeDot) {
       svg.innerHTML = ''
       return
@@ -167,7 +299,7 @@ export default function ClaimPinsOverlay({
         filter="url(#connectorShadow)"
       />
     `
-  }, [dots, activeClaimId, panOffset, claimsPanelRef])
+  }, [displayDots, activeClaimId, panOffset, claimsPanelRef])
 
   // Hit detection for dot clicks
   const findDotAt = useCallback((clientX, clientY) => {
@@ -182,7 +314,7 @@ export default function ClaimPinsOverlay({
     let closest = null
     let closestDist = Infinity
 
-    for (const dot of dots) {
+    for (const dot of displayDots) {
       const dist = Math.hypot(dot.x - x, dot.y - y)
       if (dist < closestDist) {
         closest = dot
@@ -192,7 +324,7 @@ export default function ClaimPinsOverlay({
 
     // Check if within hit radius (dot radius + tolerance)
     return closestDist <= DOT_RADIUS + 8 ? closest : null
-  }, [dots])
+  }, [displayDots])
 
   const handleCanvasClick = useCallback((e) => {
     const dot = findDotAt(e.clientX, e.clientY)
@@ -216,6 +348,22 @@ export default function ClaimPinsOverlay({
 
   return (
     <div className={styles.overlay}>
+      {boxList.length > 0 && (
+        <svg className={styles.highlight} style={{ width: '100%', height: '100%' }}>
+          {boxList.map(box => (
+            <rect
+              key={box.id}
+              x={box.x}
+              y={box.y}
+              width={box.width}
+              height={box.height}
+              rx="4"
+              ry="4"
+              className={`${styles.highlightBox} ${box.isActive ? styles.highlightBoxActive : ''}`}
+            />
+          ))}
+        </svg>
+      )}
       <canvas
         ref={canvasRef}
         className={`${styles.dotsCanvas} ${hoveredDot ? styles.hasHover : ''}`}
