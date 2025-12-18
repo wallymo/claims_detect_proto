@@ -1,5 +1,7 @@
 *.DS_Store
-*.DS_Store
+
+# Local knowledge base assets (large binaries) – keep out of repo
+MKG Knowledge Base/
 Prototype Design System
 
 # Git worktrees
