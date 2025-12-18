@@ -10,7 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@google/genai": "^1.33.0",
     "framer-motion": "^12.23.25",
+    "pdfjs-dist": "^5.4.449",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.10.0"
@@ -25,6 +27,8 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
-    "vite": "^7.2.4"
+    "obs-websocket-js": "^5.0.7",
+    "vite": "^7.2.4",
+    "yaml": "^2.8.2"
   }
 }

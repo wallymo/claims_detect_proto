@@ -1,0 +1,167 @@
+[
+  {
+    "id": "1",
+    "type": "SEO",
+    "severity": 5,
+    "body": {
+      "issue": "Headline could include a clearer keyword phrase.",
+      "reasoning": "Including a phrase like “Chikungunya awareness campaign” strengthens topical relevance in the visible copy.",
+      "recommendation": "Revise to include a concise keyword, e.g., “Outnumbered: A Chikungunya Awareness Campaign.”"
+    },
+    "position": { "x": 50.0, "y": 4.68 }
+  },
+  {
+    "id": "2",
+    "type": "Readability",
+    "severity": 5,
+    "body": {
+      "issue": "“The Ask” paragraph reads dense.",
+      "reasoning": "Shorter sentences improve scanning on long-scroll pages.",
+      "recommendation": "Split into 2–3 shorter lines and front-load the key point."
+    },
+    "position": { "x": 25.0, "y": 13.59 }
+  },
+  {
+    "id": "3",
+    "type": "Accessibility",
+    "severity": 5,
+    "body": {
+      "issue": "Small text in “The Ask” sits on a light gradient and looks low-contrast.",
+      "reasoning": "Low visual contrast makes body text harder to read, especially on mobile.",
+      "recommendation": "Darken the text or background and bump font size/line height."
+    },
+    "position": { "x": 25.0, "y": 14.6 }
+  },
+  {
+    "id": "4",
+    "type": "Readability",
+    "severity": 4,
+    "body": {
+      "issue": "“The Insight” copy feels like one long sentence.",
+      "reasoning": "Long sentences increase cognitive load.",
+      "recommendation": "Break into shorter sentences and surface the key stat first."
+    },
+    "position": { "x": 52.0, "y": 18.67 }
+  },
+  {
+    "id": "5",
+    "type": "Content",
+    "severity": 4,
+    "body": {
+      "issue": "Brand mention near “The Idea” could be reinforced in visible copy.",
+      "reasoning": "Clear brand association in text helps readers connect the work to Valneva.",
+      "recommendation": "Add a short line that names the partner and objective in plain language."
+    },
+    "position": { "x": 45.0, "y": 26.48 }
+  },
+  {
+    "id": "6",
+    "type": "Readability",
+    "severity": 4,
+    "body": {
+      "issue": "“The Idea” paragraph feels tight for body size.",
+      "reasoning": "Small type with tight leading reduces legibility.",
+      "recommendation": "Increase font size and line height slightly."
+    },
+    "position": { "x": 25.0, "y": 25.69 }
+  },
+  {
+    "id": "7",
+    "type": "Content",
+    "severity": 4,
+    "body": {
+      "issue": "The first large grayscale visual lacks a visible caption.",
+      "reasoning": "Captions help readers understand what the visual proves.",
+      "recommendation": "Add a one-line caption with the insight the visual illustrates."
+    },
+    "position": { "x": 33.0, "y": 35.52 }
+  },
+  {
+    "id": "8",
+    "type": "Content",
+    "severity": 4,
+    "body": {
+      "issue": "The second large grayscale visual also has no visible caption.",
+      "reasoning": "Readers benefit from a quick takeaway under major visuals.",
+      "recommendation": "Add a concise caption that states the point of the image."
+    },
+    "position": { "x": 50.0, "y": 46.82 }
+  },
+  {
+    "id": "9",
+    "type": "SEO",
+    "severity": 4,
+    "body": {
+      "issue": "Thumbnail row lacks visible descriptive labels.",
+      "reasoning": "Descriptive labels help users and reinforce topical keywords.",
+      "recommendation": "Add short titles under each thumbnail, e.g., “Pyramid Concept,” “Taj Mahal Concept,” etc."
+    },
+    "position": { "x": 33.0, "y": 54.64 }
+  },
+  {
+    "id": "10",
+    "type": "Content",
+    "severity": 4,
+    "body": {
+      "issue": "“The Activation” section opens without a quick summary line.",
+      "reasoning": "A single lead sentence helps skimmers grasp the value fast.",
+      "recommendation": "Add a one-sentence headline-style summary above the bullets."
+    },
+    "position": { "x": 18.0, "y": 57.18 }
+  },
+  {
+    "id": "11",
+    "type": "Clarity",
+    "severity": 3,
+    "body": {
+      "issue": "Icon row communicates ideas, but labels are subtle.",
+      "reasoning": "Clear, short labels improve immediate comprehension.",
+      "recommendation": "Strengthen or enlarge the visible labels beneath each icon."
+    },
+    "position": { "x": 50.0, "y": 59.73 }
+  },
+  {
+    "id": "12",
+    "type": "Content",
+    "severity": 6,
+    "body": {
+      "issue": "“The Results” section doesn’t show a concrete metric.",
+      "reasoning": "Case studies feel more credible with measurable outcomes.",
+      "recommendation": "Add at least one KPI (reach, engagement lift, attendance, etc.)."
+    },
+    "position": { "x": 40.0, "y": 66.6 }
+  },
+  {
+    "id": "13",
+    "type": "UX",
+    "severity": 4,
+    "body": {
+      "issue": "“The Takeaway” is thoughtful but not action-oriented.",
+      "reasoning": "A next step converts interest into exploration.",
+      "recommendation": "Add a visible button linking to related work or contact."
+    },
+    "position": { "x": 50.0, "y": 69.19 }
+  },
+  {
+    "id": "14",
+    "type": "SEO",
+    "severity": 3,
+    "body": {
+      "issue": "“Next Up” cards could show clearer titles in the visible copy.",
+      "reasoning": "Explicit titles reinforce topical keywords and help scanning.",
+      "recommendation": "Use short, descriptive titles that include campaign or topic names."
+    },
+    "position": { "x": 50.0, "y": 74.43 }
+  },
+  {
+    "id": "15",
+    "type": "Content",
+    "severity": 3,
+    "body": {
+      "issue": "Footer contact block lacks a concise positioning line.",
+      "reasoning": "A short value line clarifies who you are at a glance.",
+      "recommendation": "Add one sentence describing your focus, e.g., “We build science-forward campaigns that drive awareness.”"
+    },
+    "position": { "x": 50.0, "y": 77.93 }
+  }
+]

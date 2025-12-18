@@ -1,0 +1,263 @@
+.claimCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: white;
+  border: 1px solid var(--gray-4);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: 8px;
+}
+
+.claimCard:hover {
+  border-color: var(--gray-5);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.claimCard.active {
+  border-color: var(--blue-6);
+  box-shadow: 0 0 0 3px var(--blue-2);
+}
+
+.claimCard.matched {
+  border-left: 3px solid var(--green-6);
+}
+
+.claimCard.unmatched {
+  border-left: 3px solid var(--amber-6);
+}
+
+.claimCard.approved {
+  background: var(--green-1);
+  border-color: var(--green-4);
+}
+
+.claimCard.rejected {
+  background: var(--red-1);
+  border-color: var(--red-4);
+}
+
+/* Header */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.confidenceSection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.progressWrapper {
+  flex: 1;
+  max-width: 120px;
+}
+
+.confidenceValue {
+  font-size: 14px;
+  font-weight: 600;
+  min-width: 40px;
+}
+
+.badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pageBadge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: var(--gray-2);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--gray-7);
+}
+
+/* Claim text */
+.claimText {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--gray-9);
+}
+
+/* Reference section */
+.referenceSection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  background: var(--green-1);
+  border: 1px solid var(--green-3);
+  border-radius: 6px;
+}
+
+.referenceHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--green-8);
+}
+
+.referenceLabel {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.referenceName {
+  flex: 1;
+  font-size: 12px;
+  color: var(--green-9);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.infoButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: var(--green-2);
+  border-radius: 50%;
+  color: var(--green-7);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.infoButton:hover {
+  background: var(--green-3);
+}
+
+.referenceLocation {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--green-7);
+  padding-left: 20px;
+}
+
+/* Reference preview popup */
+.referencePreview {
+  margin-top: 8px;
+  background: white;
+  border: 1px solid var(--green-4);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.previewHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--green-2);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--green-8);
+}
+
+.previewHeader button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--green-7);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+}
+
+.previewHeader button:hover {
+  background: var(--green-3);
+}
+
+.previewContent {
+  padding: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--gray-8);
+  font-style: italic;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+/* Unmatched warning */
+.unmatchedWarning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  background: var(--amber-1);
+  border: 1px solid var(--amber-3);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--amber-8);
+}
+
+/* Actions */
+.actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--gray-3);
+}
+
+/* Feedback form */
+.feedbackForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--gray-3);
+}
+
+.feedbackLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--gray-7);
+}
+
+.feedbackInput {
+  padding: 8px 10px;
+  border: 1px solid var(--gray-4);
+  border-radius: 6px;
+  font-size: 13px;
+  resize: none;
+  font-family: inherit;
+}
+
+.feedbackInput:focus {
+  outline: none;
+  border-color: var(--blue-6);
+}
+
+.feedbackActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Rejection reason */
+.rejectionReason {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px;
+  background: var(--red-1);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--red-8);
+}

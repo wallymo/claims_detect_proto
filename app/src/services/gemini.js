@@ -73,6 +73,7 @@ export async function fileToBase64(file) {
 }
 
 // Claim Detection Prompt - Pure expert mode for natural claim discovery
+// IMPORTANT: Gemini receives the PDF visually (multimodal) - it can see layout and return coordinates
 const CLAIM_DETECTION_PROMPT = `You are a veteran MLR (Medical, Legal, Regulatory) reviewer analyzing pharmaceutical promotional materials. Your job is to surface EVERY statement that could require substantiation - you'd rather flag 20 borderline phrases than let 1 real claim slip through.
 
 Scan this document and identify all claims. A claim is any statement that:
@@ -94,12 +95,21 @@ For each claim, rate your confidence (0-100):
 - 50-69: Borderline - suggestive phrasing that a cautious reviewer might flag
 - 30-49: Weak signal - could be promotional in certain contexts, worth a second look
 
+POSITION: Return the x/y coordinates where a marker pin should be placed for each claim:
+- x: LEFT EDGE of the claim text as percentage (0 = page left, 100 = page right)
+- y: vertical center of the claim text as percentage (0 = page top, 100 = page bottom)
+- The pin will appear AT these exact coordinates, so position at the LEFT EDGE of text, not center
+- For charts/images: position at the LEFT EDGE of the visual element
+- Example: text starting 20% from left at 30% down the page = x:20, y:30
+
+IMPORTANT: Charts, graphs, and infographics that display statistics or make comparative claims MUST be flagged. The visual nature doesn't exempt them from substantiation requirements.
+
 Trust your judgment. If you're unsure whether something is a claim, include it with a lower confidence score rather than omitting it.
 
 Return ONLY this JSON:
 {
   "claims": [
-    { "claim": "[Exact phrase from document]", "confidence": 85, "page": 1 }
+    { "claim": "[Exact phrase from document]", "confidence": 85, "page": 1, "x": 25.0, "y": 14.5 }
   ]
 }
 
@@ -152,13 +162,25 @@ export async function analyzeDocument(pdfFile, onProgress) {
     const result = JSON.parse(text)
 
     // Transform to frontend format
-    const claims = (result.claims || []).map((claim, index) => ({
-      id: `claim_${String(index + 1).padStart(3, '0')}`,
-      text: claim.claim,
-      confidence: claim.confidence / 100, // Convert 0-100 to 0-1 for frontend
-      status: 'pending',
-      page: claim.page || 1 // Page number from Gemini, fallback to 1
-    }))
+    const claims = (result.claims || []).map((claim, index) => {
+      const pageNumber = Math.max(1, Number(claim.page) || 1)
+      // Position from Gemini (x/y as % of page), with fallback for older responses
+      const position = (claim.x !== undefined && claim.y !== undefined)
+        ? { x: Number(claim.x) || 0, y: Number(claim.y) || 0 }
+        : null
+
+      // Debug: log what Gemini returned for each claim
+      console.log(`📍 Claim ${index + 1}: x=${claim.x}, y=${claim.y}, text="${claim.claim?.slice(0, 50)}..."`)
+
+      return {
+        id: `claim_${String(index + 1).padStart(3, '0')}`,
+        text: claim.claim,
+        confidence: claim.confidence / 100, // Convert 0-100 to 0-1 for frontend
+        status: 'pending',
+        page: pageNumber,
+        position // { x, y } as % of page, or null if not provided
+      }
+    })
 
     onProgress?.(95, 'Finalizing...')
 

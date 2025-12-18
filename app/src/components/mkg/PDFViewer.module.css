@@ -81,10 +81,15 @@
   user-select: none;
 }
 
+.canvasWrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
 .pdfCanvas {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   background: white;
-  flex-shrink: 0;
+  display: block;
 }
 
 .footer {

@@ -15,7 +15,9 @@ export default function ClaimCard({
   onReject,
   onSelect,
   onFeedbackSubmit,
-  onTypeChange
+  onTypeChange,
+  hideType = false,
+  hideSource = false
 }) {
   const [showFeedback, setShowFeedback] = useState(false)
   const [showSuccess, setShowSuccess] = useState(false)
@@ -120,7 +122,7 @@ export default function ClaimCard({
         </div>
 
         <div className={styles.badges}>
-          {claim.type && (
+          {claim.type && !hideType && (
             <div className={styles.typeWrapper} ref={typeDropdownRef}>
               <button
                 className={styles.typeBadge}
@@ -154,9 +156,23 @@ export default function ClaimCard({
               )}
             </div>
           )}
-          <span className={`${styles.sourceBadge} ${claim.source === 'core' ? styles.sourceCore : styles.sourceAI}`}>
-            {claim.source === 'core' ? 'Core' : 'AI Found'}
-          </span>
+          {(() => {
+            const digits = claim.id?.match(/\d+/)?.[0]
+            const label = claim.globalIndex ?? (digits ? Number(digits) : null)
+            if (!label) return null
+            return <Badge variant="neutral" size="small">#{label}</Badge>
+          })()}
+          {!hideSource && (
+            <span className={`${styles.sourceBadge} ${claim.source === 'core' ? styles.sourceCore : styles.sourceAI}`}>
+              {claim.source === 'core' ? 'Core' : 'AI Found'}
+            </span>
+          )}
+          {claim.page && (
+            <span className={styles.pageBadge}>
+              <Icon name="fileText" size={12} />
+              Pg {claim.page}
+            </span>
+          )}
           {claim.status !== 'pending' && (
             <Badge variant={claim.status === 'approved' ? 'success' : 'error'} size="small">
               {claim.status}

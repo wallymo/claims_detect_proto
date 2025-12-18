@@ -5,6 +5,24 @@
   z-index: 10;
 }
 
+.highlight {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.highlightBox {
+  fill: rgba(80, 140, 255, 0.15);
+  stroke: rgba(80, 140, 255, 0.8);
+  stroke-width: 1.5;
+}
+
+.highlightBoxActive {
+  fill: rgba(80, 140, 255, 0.2);
+  stroke-width: 2;
+}
+
 .dotsCanvas {
   position: absolute;
   top: 0;

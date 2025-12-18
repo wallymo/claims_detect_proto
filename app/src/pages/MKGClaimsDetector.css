@@ -223,3 +223,18 @@
   padding: 12px;
   border-bottom: 1px solid var(--gray-4);
 }
+
+/* Pin QA bar */
+.pinMetaBar {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0 10px 0;
+  font-size: 12px;
+  color: var(--gray-7);
+}
+
+.pinMetaText {
+  font-weight: 600;
+}

@@ -1,0 +1,41 @@
+name: "Upload and Analyze Document"
+url: "http://localhost:5173"
+output: "./recordings/"
+
+timing:
+  think_time: 300ms
+  action_time: 40ms
+  pause_after: 250ms
+
+steps:
+  # Step 1: Click upload area
+  - action: click
+    target: "Click to upload"
+    highlight: true
+
+  - action: pause
+    duration: 500ms
+
+  # Step 2: Click Brand Guidelines dropdown
+  - action: click
+    target: "Select brand..."
+    highlight: true
+
+  - action: pause
+    duration: 400ms
+
+  # Step 3: Select Pfizer
+  - action: click
+    target: "Pfizer"
+    highlight: true
+
+  - action: pause
+    duration: 500ms
+
+  # Step 4: Click Analyze Document
+  - action: click
+    target: "Analyze Document"
+    highlight: true
+
+  - action: pause
+    duration: 800ms

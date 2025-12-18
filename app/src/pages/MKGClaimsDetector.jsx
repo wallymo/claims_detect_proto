@@ -11,7 +11,7 @@ import DropdownMenu from '@/components/molecules/DropdownMenu/DropdownMenu'
 import PDFViewer from '@/components/mkg/PDFViewer'
 import ClaimCard from '@/components/claims-detector/ClaimCard'
 import { analyzeDocument, checkGeminiConnection } from '@/services/gemini'
-import { enrichClaimsWithPositions } from '@/utils/textMatcher'
+import { enrichClaimsWithPositions, addGlobalIndices } from '@/utils/textMatcher'
 
 // AI Model options - SSOT
 const MODEL_OPTIONS = [
@@ -40,6 +40,8 @@ export default function MKGClaimsDetector() {
   const [statusFilter, setStatusFilter] = useState('all') // all, pending, approved, rejected
   const [searchQuery, setSearchQuery] = useState('')
   const [sortOrder, setSortOrder] = useState('high-low')
+  const [showClaimPins, setShowClaimPins] = useState(true)
+  const [showPinHighlights, setShowPinHighlights] = useState(false)
 
   // Cost tracking state
   const [lastUsage, setLastUsage] = useState(null) // { model, modelDisplayName, inputTokens, outputTokens, cost }
@@ -57,6 +59,16 @@ export default function MKGClaimsDetector() {
     if (saved) {
       setTotalCost(parseFloat(saved))
     }
+  }, [])
+
+  // Ensure any externally-set claims always carry stable global indices
+  useEffect(() => {
+    setClaims(prev => {
+      if (!prev.length) return prev
+      const missing = prev.some(c => !c.globalIndex)
+      if (!missing) return prev
+      return addGlobalIndices(prev)
+    })
   }, [])
 
   // Handle text extraction from PDFViewer
@@ -132,12 +144,20 @@ export default function MKGClaimsDetector() {
         throw new Error(result.error || 'Analysis failed')
       }
 
-      // Enrich claims with positions from extracted text
-      const claimsWithPositions = extractedPages.length > 0
+      // Gemini now returns positions directly (x/y as % of page)
+      // Only fall back to text matching if positions are missing
+      const claimsNeedingPositions = result.claims.filter(c => !c.position)
+      const claimsWithPositions = claimsNeedingPositions.length > 0 && extractedPages.length > 0
         ? enrichClaimsWithPositions(result.claims, extractedPages)
         : result.claims
 
-      setClaims(claimsWithPositions)
+      setClaims(addGlobalIndices(claimsWithPositions))
+
+      if (claimsNeedingPositions.length === 0) {
+        console.log('✅ All claims have positions from Gemini - no text matching needed')
+      } else {
+        console.log(`⚠️ ${claimsNeedingPositions.length}/${result.claims.length} claims missing positions, using text matching fallback`)
+      }
       setProcessingTime(Date.now() - startTime)
 
       // Track usage and cost
@@ -158,6 +178,32 @@ export default function MKGClaimsDetector() {
       setIsAnalyzing(false)
     }
   }
+
+  // Fallback: If Gemini didn't return positions, enrich when text extraction completes
+  useEffect(() => {
+    if (!analysisComplete || extractedPages.length === 0) return
+
+    setClaims(prev => {
+      if (!prev.length) return prev
+      // Only re-enrich if claims are missing positions or have fallback positions
+      // Skip if positions came from Gemini (they won't have a 'source' property)
+      const needsReposition = prev.some(c => !c.position || c.position?.source === 'fallback')
+      if (!needsReposition) return prev
+
+      console.log('🔄 Re-enriching claim positions from text extraction...')
+
+      // Preserve existing globalIndex, only refresh positions
+      const refreshed = enrichClaimsWithPositions(prev, extractedPages)
+      const withIndexes = refreshed.map(claim => {
+        const existing = prev.find(c => c.id === claim.id)
+        return { ...claim, globalIndex: existing?.globalIndex }
+      })
+
+      // If any claim still lacks a globalIndex, assign fresh sequential indices
+      const missingIndex = withIndexes.some(c => !c.globalIndex)
+      return missingIndex ? addGlobalIndices(withIndexes) : withIndexes
+    })
+  }, [analysisComplete, extractedPages])
 
   // Claim actions
   const handleClaimApprove = (claimId) => {
@@ -192,6 +238,8 @@ export default function MKGClaimsDetector() {
   const pendingCount = claims.filter(c => c.status === 'pending').length
   const approvedCount = claims.filter(c => c.status === 'approved').length
   const rejectedCount = claims.filter(c => c.status === 'rejected').length
+  const anchoredCount = claims.filter(c => c.position?.source === 'extracted').length
+  const fallbackCount = claims.filter(c => c.position?.source === 'fallback').length
 
   // Filter and sort claims
   const displayedClaims = claims
@@ -410,6 +458,11 @@ export default function MKGClaimsDetector() {
 
         {/* Document Viewer Panel */}
         <div className="documentPanel">
+          {claims.length > 0 && (
+            <div className="pinMetaBar">
+              <span className="pinMetaText">Pins: {anchoredCount} anchored • {fallbackCount} fallback</span>
+            </div>
+          )}
           <PDFViewer
             file={uploadedFile}
             onClose={handleRemoveDocument}
@@ -422,6 +475,10 @@ export default function MKGClaimsDetector() {
             onClaimSelect={handleClaimSelect}
             onTextExtracted={handleTextExtracted}
             claimsPanelRef={claimsPanelRef}
+            showPins={showClaimPins}
+            onTogglePins={() => setShowClaimPins(prev => !prev)}
+            showBoxes={showPinHighlights}
+            onToggleBoxes={() => setShowPinHighlights(prev => !prev)}
           />
         </div>
 

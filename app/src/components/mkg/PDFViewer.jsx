@@ -23,7 +23,11 @@ export default function PDFViewer({
   activeClaimId = null,
   onClaimSelect,
   claimsPanelRef,
-  onTextExtracted
+  onTextExtracted,
+  showPins = true,
+  onTogglePins,
+  showBoxes = false,
+  onToggleBoxes
 }) {
   const [pdf, setPdf] = useState(null)
   const [currentPage, setCurrentPage] = useState(1)
@@ -151,13 +155,17 @@ export default function PDFViewer({
         setCurrentPage(claim.page)
       }
     }
-  }, [activeClaimId, claims, currentPage])
+  }, [activeClaimId, claims])
 
   const handlePrevPage = () => {
+    console.log('⬅️ Prev clicked, currentPage:', currentPage)
+    onClaimSelect?.(null) // allow manual navigation without snapping back
     setCurrentPage(prev => Math.max(1, prev - 1))
   }
 
   const handleNextPage = () => {
+    console.log('➡️ Next clicked, currentPage:', currentPage, 'totalPages:', totalPages)
+    onClaimSelect?.(null)
     setCurrentPage(prev => Math.min(totalPages, prev + 1))
   }
 
@@ -297,25 +305,32 @@ export default function PDFViewer({
           )}
 
           {!isLoading && !error && pdf && (
-            <>
+            <div
+              className={styles.canvasWrapper}
+              style={{
+                width: canvasDimensions.width,
+                height: canvasDimensions.height,
+                transform: `translate(${panX}px, ${panY}px)`
+              }}
+            >
               <canvas
                 ref={canvasRef}
                 className={styles.pdfCanvas}
-                style={{
-                  transform: `translate(${panX}px, ${panY}px)`
-                }}
               />
-              <ClaimPinsOverlay
-                claims={claims}
-                activeClaimId={activeClaimId}
-                currentPage={currentPage}
-                canvasDimensions={canvasDimensions}
-                panOffset={{ x: panX, y: panY }}
-                scale={scale}
-                onClaimSelect={onClaimSelect}
-                claimsPanelRef={claimsPanelRef}
-              />
-            </>
+              {showPins && (
+                <ClaimPinsOverlay
+                  claims={claims}
+                  activeClaimId={activeClaimId}
+                  currentPage={currentPage}
+                  canvasDimensions={canvasDimensions}
+                  panOffset={{ x: 0, y: 0 }}
+                  scale={scale}
+                  onClaimSelect={onClaimSelect}
+                  claimsPanelRef={claimsPanelRef}
+                  showBoxes={showBoxes}
+                />
+              )}
+            </div>
           )}
         </div>
 
@@ -340,6 +355,15 @@ export default function PDFViewer({
             </span>
             <Button variant="ghost" size="small" onClick={handleNextPage} disabled={currentPage >= totalPages}>
               <Icon name="chevronRight" size={14} />
+            </Button>
+          </div>
+          <div className={styles.pageNav}>
+            <Button variant="ghost" size="small" onClick={() => onTogglePins?.()}>
+              <Icon name={showPins ? 'eye' : 'eyeOff'} size={14} />
+              {showPins ? 'Hide numerals' : 'Show numerals'}
+            </Button>
+            <Button variant="ghost" size="small" onClick={() => onToggleBoxes?.()}>
+              {showBoxes ? 'Hide highlights' : 'Show highlights'}
             </Button>
           </div>
         </div>
