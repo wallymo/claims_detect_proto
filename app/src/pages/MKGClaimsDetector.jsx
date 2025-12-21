@@ -43,6 +43,7 @@ export default function MKGClaimsDetector() {
   const [selectedModel, setSelectedModel] = useState('gemini-3-pro')
   const [selectedPrompt, setSelectedPrompt] = useState('all-claims')
   const [editablePrompt, setEditablePrompt] = useState('')
+  const [isEditingPrompt, setIsEditingPrompt] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [analysisComplete, setAnalysisComplete] = useState(false)
   const [analysisError, setAnalysisError] = useState(null)
@@ -91,7 +92,19 @@ export default function MKGClaimsDetector() {
   useEffect(() => {
     const promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
     setEditablePrompt(PROMPT_DISPLAY_TEXT[promptKey] || PROMPT_DISPLAY_TEXT['all'])
+    setIsEditingPrompt(false) // Exit edit mode on dropdown change
   }, [selectedPrompt])
+
+  // Get default prompt for current selection (for cancel/reset)
+  const getDefaultPrompt = () => {
+    const promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
+    return PROMPT_DISPLAY_TEXT[promptKey] || PROMPT_DISPLAY_TEXT['all']
+  }
+
+  const handleCancelEdit = () => {
+    setEditablePrompt(getDefaultPrompt())
+    setIsEditingPrompt(false)
+  }
 
   // Handle text extraction from PDFViewer
   const handleTextExtracted = (pages) => {
@@ -364,15 +377,50 @@ export default function MKGClaimsDetector() {
             size="small"
             content={
               <div className="masterPromptContent">
-                <textarea
-                  className="promptTextarea"
-                  value={editablePrompt}
-                  onChange={(e) => setEditablePrompt(e.target.value)}
-                  rows={16}
-                />
-                <p className="promptHint">
-                  Edit prompt above. Reverts on dropdown change or refresh.
-                </p>
+                {!isEditingPrompt ? (
+                  <>
+                    <div className="promptPreview">
+                      {editablePrompt}
+                    </div>
+                    <Button
+                      variant="secondary"
+                      size="small"
+                      onClick={() => setIsEditingPrompt(true)}
+                    >
+                      <Icon name="edit" size={14} />
+                      Edit Prompt
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <textarea
+                      className="promptTextarea"
+                      value={editablePrompt}
+                      onChange={(e) => setEditablePrompt(e.target.value)}
+                      rows={16}
+                      autoFocus
+                    />
+                    <div className="promptActions">
+                      <Button
+                        variant="primary"
+                        size="small"
+                        onClick={() => setIsEditingPrompt(false)}
+                      >
+                        Save
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="small"
+                        onClick={handleCancelEdit}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                    <p className="promptHint">
+                      Reverts on dropdown change or refresh.
+                    </p>
+                  </>
+                )}
               </div>
             }
           />
