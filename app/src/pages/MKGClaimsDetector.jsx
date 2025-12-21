@@ -340,6 +340,25 @@ export default function MKGClaimsDetector() {
           />
 
           <AccordionItem
+            title="Claim Focus"
+            defaultOpen={true}
+            size="small"
+            content={
+              <div className="settingsContent">
+                <DropdownMenu
+                  trigger="button"
+                  triggerLabel={PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.label || 'All Claims'}
+                  items={PROMPT_OPTIONS.map(item => ({
+                    ...item,
+                    onClick: () => setSelectedPrompt(item.id)
+                  }))}
+                  size="medium"
+                />
+              </div>
+            }
+          />
+
+          <AccordionItem
             title="Master Prompt"
             defaultOpen={false}
             size="small"
