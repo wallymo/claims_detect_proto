@@ -367,35 +367,6 @@ export default function MKGClaimsDetector() {
                   }))}
                   size="medium"
                 />
-                <div className="promptActions">
-                  {!isEditingPrompt ? (
-                    <Button
-                      variant="secondary"
-                      size="small"
-                      onClick={() => setIsEditingPrompt(true)}
-                    >
-                      <Icon name="edit" size={14} />
-                      Edit Prompt
-                    </Button>
-                  ) : (
-                    <>
-                      <Button
-                        variant="primary"
-                        size="small"
-                        onClick={() => setIsEditingPrompt(false)}
-                      >
-                        Save
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="small"
-                        onClick={handleCancelEdit}
-                      >
-                        Cancel
-                      </Button>
-                    </>
-                  )}
-                </div>
               </div>
             }
           />
@@ -406,17 +377,46 @@ export default function MKGClaimsDetector() {
             size="small"
             content={
               <div className="masterPromptContent">
-                {isEditingPrompt ? (
-                  <textarea
-                    className="promptTextarea"
-                    value={editablePrompt}
-                    onChange={(e) => setEditablePrompt(e.target.value)}
-                    rows={16}
-                    autoFocus
-                  />
-                ) : (
-                  <pre className="promptPreview">{editablePrompt}</pre>
-                )}
+                <div className="promptHeader">
+                  {!isEditingPrompt ? (
+                    <button
+                      className="promptEditLink"
+                      onClick={() => setIsEditingPrompt(true)}
+                    >
+                      Edit
+                    </button>
+                  ) : (
+                    <div className="promptEditActions">
+                      <button
+                        className="promptSaveLink"
+                        onClick={() => setIsEditingPrompt(false)}
+                      >
+                        <Icon name="check" size={14} />
+                        Save
+                      </button>
+                      <button
+                        className="promptCancelLink"
+                        onClick={handleCancelEdit}
+                      >
+                        <Icon name="x" size={14} />
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div className="promptBody">
+                  {isEditingPrompt ? (
+                    <textarea
+                      className="promptTextarea"
+                      value={editablePrompt}
+                      onChange={(e) => setEditablePrompt(e.target.value)}
+                      rows={16}
+                      autoFocus
+                    />
+                  ) : (
+                    <pre className="promptPreview">{editablePrompt}</pre>
+                  )}
+                </div>
               </div>
             }
           />
