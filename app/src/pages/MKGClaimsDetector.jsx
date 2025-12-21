@@ -156,11 +156,14 @@ export default function MKGClaimsDetector() {
         throw new Error(`Gemini API not connected: ${connectionCheck.error}`)
       }
 
+      // Get promptKey from selected prompt
+      const promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
+
       // Analyze the document with progress tracking
       const result = await analyzeDocument(uploadedFile, (progress, status) => {
         setAnalysisProgress(progress)
         setAnalysisStatus(status)
-      })
+      }, promptKey, editablePrompt)
 
       if (!result.success) {
         throw new Error(result.error || 'Analysis failed')
