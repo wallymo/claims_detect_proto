@@ -198,51 +198,49 @@
 .promptHeader {
   display: flex;
   justify-content: flex-end;
-  padding-bottom: 8px;
+  padding-bottom: 4px;
+  margin-bottom: 6px;
   border-bottom: 1px solid var(--gray-2);
-  margin-bottom: 8px;
 }
 
-.promptEditLink,
-.promptSaveLink,
-.promptCancelLink {
+.promptIconBtn {
   background: none;
   border: none;
-  padding: 4px 8px;
-  font-size: 13px;
+  padding: 2px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  color: var(--gray-5);
+  border-radius: 4px;
 }
 
-.promptEditLink {
-  color: var(--gray-6);
+.promptIconBtn:hover {
+  color: var(--gray-8);
+  background: var(--gray-2);
 }
 
-.promptEditLink:hover {
-  color: var(--gray-9);
-}
-
-.promptSaveLink {
+.promptSaveBtn {
   color: var(--blue-6);
 }
 
-.promptSaveLink:hover {
+.promptSaveBtn:hover {
   color: var(--blue-7);
+  background: var(--blue-1);
 }
 
-.promptCancelLink {
+.promptCancelBtn {
   color: var(--gray-5);
 }
 
-.promptCancelLink:hover {
-  color: var(--gray-7);
+.promptCancelBtn:hover {
+  color: var(--red-6);
+  background: var(--red-1);
 }
 
 .promptEditActions {
   display: flex;
-  gap: 8px;
+  gap: 4px;
 }
 
 .promptBody {

@@ -380,26 +380,27 @@ export default function MKGClaimsDetector() {
                 <div className="promptHeader">
                   {!isEditingPrompt ? (
                     <button
-                      className="promptEditLink"
+                      className="promptIconBtn"
                       onClick={() => setIsEditingPrompt(true)}
+                      title="Edit prompt"
                     >
-                      Edit
+                      <Icon name="edit" size={14} />
                     </button>
                   ) : (
                     <div className="promptEditActions">
                       <button
-                        className="promptSaveLink"
+                        className="promptIconBtn promptSaveBtn"
                         onClick={() => setIsEditingPrompt(false)}
+                        title="Save"
                       >
                         <Icon name="check" size={14} />
-                        Save
                       </button>
                       <button
-                        className="promptCancelLink"
+                        className="promptIconBtn promptCancelBtn"
                         onClick={handleCancelEdit}
+                        title="Cancel"
                       >
                         <Icon name="x" size={14} />
-                        Cancel
                       </button>
                     </div>
                   )}
