@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1440">
+  <title>MKG Claims Detector - UI Guide</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: #1a1a2e;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px;
+    }
+
+    h1 {
+      color: #fff;
+      font-size: 24px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      color: #888;
+      font-size: 14px;
+      margin-bottom: 24px;
+    }
+
+    .guide-container {
+      position: relative;
+      width: 1440px;
+      height: 900px;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+
+    .screenshot {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* Overlay that dims the screenshot */
+    .overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      opacity: 0;
+      transition: opacity 0.25s ease;
+      pointer-events: none;
+    }
+
+    .overlay.active {
+      opacity: 1;
+    }
+
+    /* Hotspot markers */
+    .hotspot {
+      position: absolute;
+      width: 32px;
+      height: 32px;
+      transform: translate(-50%, -50%);
+      cursor: pointer;
+      z-index: 10;
+    }
+
+    .hotspot-dot {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 24px;
+      height: 24px;
+      background: #f97316;
+      border: 3px solid #fff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(249, 115, 22, 0.5);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .hotspot:hover .hotspot-dot {
+      transform: translate(-50%, -50%) scale(1.15);
+      box-shadow: 0 6px 20px rgba(249, 115, 22, 0.6);
+    }
+
+    .hotspot-pulse {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 24px;
+      height: 24px;
+      background: rgba(249, 115, 22, 0.4);
+      border-radius: 50%;
+      animation: pulse 2s ease-out infinite;
+    }
+
+    @keyframes pulse {
+      0% {
+        transform: translate(-50%, -50%) scale(1);
+        opacity: 0.6;
+      }
+      100% {
+        transform: translate(-50%, -50%) scale(2.5);
+        opacity: 0;
+      }
+    }
+
+    /* Spotlight cutout - shows the highlighted element */
+    .spotlight {
+      position: absolute;
+      background: transparent;
+      border: 3px solid #f97316;
+      border-radius: 8px;
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.7);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease, top 0.3s ease, left 0.3s ease, width 0.3s ease, height 0.3s ease;
+      z-index: 5;
+    }
+
+    .spotlight.active {
+      opacity: 1;
+    }
+
+    /* Tooltip card */
+    .tooltip {
+      position: absolute;
+      width: 320px;
+      background: #fff;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity 0.25s ease, transform 0.25s ease;
+      pointer-events: none;
+      z-index: 20;
+    }
+
+    .tooltip.active {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+
+    .tooltip-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      background: #f97316;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      border-radius: 50%;
+      margin-bottom: 12px;
+    }
+
+    .tooltip-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #1a1a2e;
+      margin-bottom: 8px;
+    }
+
+    .tooltip-description {
+      font-size: 14px;
+      line-height: 1.6;
+      color: #555;
+    }
+
+    .tooltip-close {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      width: 28px;
+      height: 28px;
+      background: #f3f4f6;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      color: #666;
+      transition: background 0.15s ease;
+    }
+
+    .tooltip-close:hover {
+      background: #e5e7eb;
+    }
+
+    /* Hide hotspots when spotlight is active */
+    .guide-container.spotlight-active .hotspot {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    /* Instructions */
+    .instructions {
+      color: #666;
+      font-size: 13px;
+      margin-top: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h1>MKG Claims Detector</h1>
+  <p class="subtitle">Interactive UI Guide — Click any numbered marker to learn more</p>
+
+  <div class="guide-container" id="guideContainer">
+    <img src="screenshot.png" alt="MKG Claims Detector Screenshot" class="screenshot">
+
+    <!-- Overlay for dimming -->
+    <div class="overlay" id="overlay"></div>
+
+    <!-- Spotlight cutout -->
+    <div class="spotlight" id="spotlight"></div>
+
+    <!-- Hotspots -->
+    <div class="hotspot" id="hotspot-1" data-index="0" style="left: 42%; top: 50%;">
+      <div class="hotspot-pulse"></div>
+      <div class="hotspot-dot">1</div>
+    </div>
+
+    <div class="hotspot" id="hotspot-2" data-index="1" style="left: 10%; top: 52%;">
+      <div class="hotspot-pulse"></div>
+      <div class="hotspot-dot">2</div>
+    </div>
+
+    <div class="hotspot" id="hotspot-3" data-index="2" style="left: 7%; top: 31%;">
+      <div class="hotspot-pulse"></div>
+      <div class="hotspot-dot">3</div>
+    </div>
+
+    <div class="hotspot" id="hotspot-4" data-index="3" style="left: 10%; top: 62%;">
+      <div class="hotspot-pulse"></div>
+      <div class="hotspot-dot">4</div>
+    </div>
+
+    <div class="hotspot" id="hotspot-5" data-index="4" style="left: 78%; top: 25%;">
+      <div class="hotspot-pulse"></div>
+      <div class="hotspot-dot">5</div>
+    </div>
+
+    <!-- Tooltip -->
+    <div class="tooltip" id="tooltip">
+      <button class="tooltip-close" id="tooltipClose">×</button>
+      <div class="tooltip-number" id="tooltipNumber">1</div>
+      <h3 class="tooltip-title" id="tooltipTitle">Title</h3>
+      <p class="tooltip-description" id="tooltipDescription">Description</p>
+    </div>
+  </div>
+
+  <p class="instructions">Press <kbd>Escape</kbd> or click outside to close tooltip</p>
+
+  <script>
+    const hotspots = [
+      {
+        id: 1,
+        title: 'PDF Viewer',
+        description: 'Your uploaded document appears here. Once analysis runs, colored pins mark each detected claim directly on the page. You can zoom in/out and navigate between pages.',
+        // Spotlight bounds (percentages)
+        bounds: { left: 21, top: 10, width: 45, height: 86 },
+        // Tooltip position
+        tooltipPos: { left: 68, top: 30 }
+      },
+      {
+        id: 2,
+        title: 'AI Model Selector',
+        description: 'Choose which AI model analyzes your document. Options include Google Gemini 3 Pro, Claude Sonnet 4.5, and GPT-4o — each with different strengths and pricing.',
+        bounds: { left: 1.5, top: 43, width: 18, height: 12 },
+        tooltipPos: { left: 21, top: 43 }
+      },
+      {
+        id: 3,
+        title: 'Claim Focus',
+        description: 'Filter what types of claims to detect: All Claims surfaces everything, Disease State focuses on epidemiology and burden, Medication focuses on drug efficacy and safety.',
+        bounds: { left: 1.5, top: 24, width: 18, height: 10 },
+        tooltipPos: { left: 21, top: 24 }
+      },
+      {
+        id: 4,
+        title: 'Analyze Document',
+        description: 'Runs AI analysis on the uploaded PDF. Processing typically takes 10-30 seconds depending on document length. Progress is shown during analysis.',
+        bounds: { left: 1.5, top: 58, width: 18, height: 7 },
+        tooltipPos: { left: 21, top: 52 }
+      },
+      {
+        id: 5,
+        title: 'Claims Panel',
+        description: 'Detected claims appear here after analysis. Each card shows the claim text, confidence score, and approval status. Click a claim to highlight it in the PDF.',
+        bounds: { left: 67, top: 10, width: 31, height: 86 },
+        tooltipPos: { left: 35, top: 30 }
+      }
+    ];
+
+    const container = document.getElementById('guideContainer');
+    const overlay = document.getElementById('overlay');
+    const spotlight = document.getElementById('spotlight');
+    const tooltip = document.getElementById('tooltip');
+    const tooltipNumber = document.getElementById('tooltipNumber');
+    const tooltipTitle = document.getElementById('tooltipTitle');
+    const tooltipDescription = document.getElementById('tooltipDescription');
+    const tooltipClose = document.getElementById('tooltipClose');
+
+    let activeHotspot = null;
+
+    function showSpotlight(index) {
+      const data = hotspots[index];
+      activeHotspot = index;
+
+      // Update spotlight position and size
+      spotlight.style.left = data.bounds.left + '%';
+      spotlight.style.top = data.bounds.top + '%';
+      spotlight.style.width = data.bounds.width + '%';
+      spotlight.style.height = data.bounds.height + '%';
+
+      // Update tooltip content and position
+      tooltipNumber.textContent = data.id;
+      tooltipTitle.textContent = data.title;
+      tooltipDescription.textContent = data.description;
+      tooltip.style.left = data.tooltipPos.left + '%';
+      tooltip.style.top = data.tooltipPos.top + '%';
+
+      // Activate
+      container.classList.add('spotlight-active');
+      spotlight.classList.add('active');
+      tooltip.classList.add('active');
+    }
+
+    function hideSpotlight() {
+      activeHotspot = null;
+      container.classList.remove('spotlight-active');
+      spotlight.classList.remove('active');
+      tooltip.classList.remove('active');
+    }
+
+    // Hotspot click handlers
+    document.querySelectorAll('.hotspot').forEach(hotspot => {
+      hotspot.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const index = parseInt(hotspot.dataset.index);
+        showSpotlight(index);
+      });
+    });
+
+    // Close handlers
+    tooltipClose.addEventListener('click', (e) => {
+      e.stopPropagation();
+      hideSpotlight();
+    });
+
+    container.addEventListener('click', (e) => {
+      if (activeHotspot !== null && !e.target.closest('.tooltip')) {
+        hideSpotlight();
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && activeHotspot !== null) {
+        hideSpotlight();
+      }
+    });
+  </script>
+</body>
+</html>
