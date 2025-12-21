@@ -146,58 +146,28 @@ Confidence Scoring:
 
 Now analyze the document. Find everything that could require substantiation.`
 
-// Claim Detection Prompt - Pure expert mode for natural claim discovery
-// IMPORTANT: Gemini receives the PDF visually (multimodal) - it can see layout and return coordinates
-const CLAIM_DETECTION_PROMPT = `You are a veteran MLR (Medical, Legal, Regulatory) reviewer analyzing pharmaceutical promotional materials. Your job is to surface EVERY statement that could require substantiation - you'd rather flag 20 borderline phrases than let 1 real claim slip through.
-
-Scan this document and identify all claims. A claim is any statement that:
-- Makes a verifiable assertion about efficacy, safety, or outcomes
-- Uses statistics, percentages, or quantitative data
-- Implies superiority or comparison
-- References studies, endorsements, or authority
-- Promises benefits or quality of life improvements
-
-IMPORTANT - Claim boundaries:
-- Combine related sentences that support the SAME assertion into ONE claim (e.g., a statistic followed by its context)
-- Only split into separate claims when statements make DISTINCT assertions requiring DIFFERENT substantiation
-- A claim should be the complete, self-contained statement - not sentence fragments
-- Every statistic requires substantiation - whether it appears as a headline or embedded in text
-
-For each claim, rate your confidence (0-100):
-- 90-100: Definite claim - explicit stats, direct efficacy statements, specific numbers that clearly need substantiation
-- 70-89: Strong implication - benefit promises, implicit comparisons, authoritative language
-- 50-69: Borderline - suggestive phrasing that a cautious reviewer might flag
-- 30-49: Weak signal - could be promotional in certain contexts, worth a second look
-
-POSITION: Return the x/y coordinates where a marker pin should be placed for each claim:
-- x: LEFT EDGE of the claim text as percentage (0 = page left, 100 = page right)
-- y: vertical center of the claim text as percentage (0 = page top, 100 = page bottom)
-- The pin will appear AT these exact coordinates, so position at the LEFT EDGE of text, not center
-- For charts/images: position at the LEFT EDGE of the visual element
-- Example: text starting 20% from left at 30% down the page = x:20, y:30
-
-IMPORTANT: Charts, graphs, and infographics that display statistics or make comparative claims MUST be flagged. The visual nature doesn't exempt them from substantiation requirements.
-
-Trust your judgment. If you're unsure whether something is a claim, include it with a lower confidence score rather than omitting it.
-
-Return ONLY this JSON:
-{
-  "claims": [
-    { "claim": "[Exact phrase from document]", "confidence": 85, "page": 1, "x": 25.0, "y": 14.5 }
-  ]
-}
-
-Now analyze the document. Find everything that could require substantiation.`
-
 /**
  * Analyze a PDF document and detect claims
  *
  * @param {File} pdfFile - The PDF file to analyze
  * @param {Function} onProgress - Optional progress callback
+ * @param {string} promptKey - Prompt selection key ('all', 'drug', etc.)
+ * @param {string|null} customPrompt - Optional custom prompt override
  * @returns {Promise<Object>} - Result with claims array
  */
-export async function analyzeDocument(pdfFile, onProgress) {
+export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null) {
   const client = getGeminiClient()
+
+  // Build final prompt: custom prompt (if provided) or default, plus position instructions
+  let userPrompt
+  if (customPrompt) {
+    userPrompt = customPrompt
+    console.log(`📋 Using custom prompt (${customPrompt.length} chars)`)
+  } else {
+    userPrompt = promptKey === 'drug' ? MEDICATION_PROMPT_USER : ALL_CLAIMS_PROMPT_USER
+    console.log(`📋 Using default prompt for: ${promptKey}`)
+  }
+  const finalPrompt = userPrompt + POSITION_INSTRUCTIONS
 
   onProgress?.(10, 'Preparing document...')
   const base64Data = await fileToBase64(pdfFile)
@@ -211,7 +181,7 @@ export async function analyzeDocument(pdfFile, onProgress) {
         {
           role: 'user',
           parts: [
-            { text: CLAIM_DETECTION_PROMPT },
+            { text: finalPrompt },
             {
               inlineData: {
                 mimeType: 'application/pdf',
