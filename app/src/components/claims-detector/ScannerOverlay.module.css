@@ -26,16 +26,28 @@
     0 0 20px var(--color-primary, #2196F3);
 }
 
-.progressContainer {
+.statusContainer {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--spacing-md, 16px);
+  justify-content: center;
   z-index: 11;
 }
 
 .statusText {
-  font-size: 0.875rem;
-  color: var(--color-text-secondary, #666);
+  font-size: 1.125rem;
+  font-weight: 500;
+  color: var(--color-text-primary, #333);
   margin: 0;
+}
+
+.elapsed {
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+  color: var(--color-text-secondary, #666);
+}
+
+.checkmark {
+  font-size: 2.5rem;
+  color: var(--color-success, #4CAF50);
 }

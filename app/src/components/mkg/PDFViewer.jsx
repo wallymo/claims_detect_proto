@@ -18,6 +18,7 @@ export default function PDFViewer({
   isAnalyzing = false,
   analysisProgress = 0,
   analysisStatus = 'Analyzing document...',
+  elapsedSeconds = 0,
   onScanComplete,
   claims = [],
   activeClaimId = null,
@@ -339,6 +340,7 @@ export default function PDFViewer({
           isScanning={isAnalyzing}
           progress={analysisProgress}
           statusText={analysisStatus}
+          elapsedSeconds={elapsedSeconds}
           onComplete={onScanComplete}
         />
       </div>

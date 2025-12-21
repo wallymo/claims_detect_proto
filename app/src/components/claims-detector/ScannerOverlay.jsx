@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import styles from './ScannerOverlay.module.css'
-import ProgressRing from './ProgressRing'
 import AIParticles from './AIParticles'
 
 export default function ScannerOverlay({
   isScanning = false,
   progress = 0, // External progress 0-100
   statusText = 'Analyzing document...',
+  elapsedSeconds = 0,
   onComplete
 }) {
   const [scanLineY, setScanLineY] = useState(0)
@@ -55,17 +55,16 @@ export default function ScannerOverlay({
       {/* AI Particles */}
       <AIParticles scanLineY={scanLineY} isActive={isScanning && !showComplete} />
 
-      {/* Progress Ring */}
-      <div className={styles.progressContainer}>
-        <ProgressRing
-          percentage={progress}
-          size={140}
-          strokeWidth={10}
-          showComplete={showComplete}
-        />
-        <p className={styles.statusText}>
-          {showComplete ? 'Analysis complete' : statusText}
-        </p>
+      {/* Status display */}
+      <div className={styles.statusContainer}>
+        {showComplete ? (
+          <span className={styles.checkmark}>✓</span>
+        ) : (
+          <p className={styles.statusText}>
+            {statusText}
+            {elapsedSeconds > 0 && <span className={styles.elapsed}> ({elapsedSeconds}s)</span>}
+          </p>
+        )}
       </div>
     </div>
   )

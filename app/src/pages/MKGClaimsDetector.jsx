@@ -51,6 +51,7 @@ export default function MKGClaimsDetector() {
   const [processingTime, setProcessingTime] = useState(0)
   const [analysisProgress, setAnalysisProgress] = useState(0)
   const [analysisStatus, setAnalysisStatus] = useState('')
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
 
   // Claims state
   const [claims, setClaims] = useState([])
@@ -95,6 +96,18 @@ export default function MKGClaimsDetector() {
     setEditablePrompt(PROMPT_DISPLAY_TEXT[promptKey] || PROMPT_DISPLAY_TEXT['all'])
     setIsEditingPrompt(false) // Exit edit mode on dropdown change
   }, [selectedPrompt])
+
+  // Track elapsed time during analysis
+  useEffect(() => {
+    if (!isAnalyzing) {
+      setElapsedSeconds(0)
+      return
+    }
+    const interval = setInterval(() => {
+      setElapsedSeconds(prev => prev + 1)
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [isAnalyzing])
 
   // Get default prompt for current selection (for cancel/reset)
   const getDefaultPrompt = () => {
@@ -531,17 +544,14 @@ export default function MKGClaimsDetector() {
 
         {/* Document Viewer Panel */}
         <div className="documentPanel">
-          {claims.length > 0 && (
-            <div className="pinMetaBar">
-              <span className="pinMetaText">Pins: {anchoredCount} anchored • {fallbackCount} fallback</span>
-            </div>
-          )}
-          <PDFViewer
+    
+      <PDFViewer
             file={uploadedFile}
             onClose={handleRemoveDocument}
             isAnalyzing={isAnalyzing}
             analysisProgress={analysisProgress}
             analysisStatus={analysisStatus}
+            elapsedSeconds={elapsedSeconds}
             onScanComplete={() => {}}
             claims={claims}
             activeClaimId={activeClaimId}
