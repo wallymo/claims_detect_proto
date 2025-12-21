@@ -168,8 +168,28 @@
   font-style: italic;
 }
 
+.promptTextarea {
+  width: 100%;
+  min-height: 300px;
+  padding: 12px;
+  font-family: var(--font-mono, 'SF Mono', 'Monaco', 'Inconsolata', monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  border: 1px solid var(--gray-3);
+  border-radius: 6px;
+  background: var(--gray-1);
+  color: var(--gray-9);
+  resize: vertical;
+}
+
+.promptTextarea:focus {
+  outline: none;
+  border-color: var(--blue-5);
+  box-shadow: 0 0 0 2px var(--blue-2);
+}
+
 .promptHint {
-  margin: 8px 0 0 0;
+  margin-top: 8px;
   font-size: 11px;
   color: var(--gray-6);
   font-style: italic;

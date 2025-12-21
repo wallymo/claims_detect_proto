@@ -342,32 +342,15 @@ export default function MKGClaimsDetector() {
             size="small"
             content={
               <div className="masterPromptContent">
-                <p className="promptSection"><strong>Role:</strong> Veteran MLR reviewer. Surface EVERY statement that could require substantiation - flag 20 borderline phrases rather than let 1 slip through.</p>
-
-                <p className="promptSection"><strong>What is a claim?</strong></p>
-                <ul className="promptList">
-                  <li>Verifiable assertion about efficacy, safety, or outcomes</li>
-                  <li>Statistics, percentages, or quantitative data</li>
-                  <li>Implies superiority or comparison</li>
-                  <li>References studies, endorsements, or authority</li>
-                  <li>Promises benefits or quality of life improvements</li>
-                </ul>
-                <p className="promptSection"><strong>Claim Boundaries:</strong></p>
-                <ul className="promptList">
-                  <li>Combine related sentences supporting the SAME assertion into ONE claim</li>
-                  <li>Only split when statements require DIFFERENT substantiation</li>
-                  <li>Claims should be complete, self-contained statements</li>
-                </ul>
-
-                <p className="promptSection"><strong>Confidence Scoring:</strong></p>
-                <ul className="promptList">
-                  <li><span className="confHigh">90-100%:</span> Definite claim - explicit stats, direct efficacy</li>
-                  <li><span className="confMed">70-89%:</span> Strong implication - benefit promises, comparisons</li>
-                  <li><span className="confLow">50-69%:</span> Borderline - suggestive phrasing</li>
-                  <li><span className="confVeryLow">30-49%:</span> Weak signal - worth a second look</li>
-                </ul>
-
-                <p className="promptHint">Source: docs/workflow/pharma_claims_persona.md</p>
+                <textarea
+                  className="promptTextarea"
+                  value={editablePrompt}
+                  onChange={(e) => setEditablePrompt(e.target.value)}
+                  rows={16}
+                />
+                <p className="promptHint">
+                  Edit prompt above. Reverts on dropdown change or refresh.
+                </p>
               </div>
             }
           />
