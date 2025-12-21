@@ -367,21 +367,8 @@ export default function MKGClaimsDetector() {
                   }))}
                   size="medium"
                 />
-              </div>
-            }
-          />
-
-          <AccordionItem
-            title="Master Prompt"
-            defaultOpen={false}
-            size="small"
-            content={
-              <div className="masterPromptContent">
-                {!isEditingPrompt ? (
-                  <>
-                    <div className="promptPreview">
-                      {editablePrompt}
-                    </div>
+                <div className="promptActions">
+                  {!isEditingPrompt ? (
                     <Button
                       variant="secondary"
                       size="small"
@@ -390,17 +377,8 @@ export default function MKGClaimsDetector() {
                       <Icon name="edit" size={14} />
                       Edit Prompt
                     </Button>
-                  </>
-                ) : (
-                  <>
-                    <textarea
-                      className="promptTextarea"
-                      value={editablePrompt}
-                      onChange={(e) => setEditablePrompt(e.target.value)}
-                      rows={16}
-                      autoFocus
-                    />
-                    <div className="promptActions">
+                  ) : (
+                    <>
                       <Button
                         variant="primary"
                         size="small"
@@ -415,11 +393,29 @@ export default function MKGClaimsDetector() {
                       >
                         Cancel
                       </Button>
-                    </div>
-                    <p className="promptHint">
-                      Reverts on dropdown change or refresh.
-                    </p>
-                  </>
+                    </>
+                  )}
+                </div>
+              </div>
+            }
+          />
+
+          <AccordionItem
+            title="Master Prompt"
+            defaultOpen={false}
+            size="small"
+            content={
+              <div className="masterPromptContent">
+                {isEditingPrompt ? (
+                  <textarea
+                    className="promptTextarea"
+                    value={editablePrompt}
+                    onChange={(e) => setEditablePrompt(e.target.value)}
+                    rows={16}
+                    autoFocus
+                  />
+                ) : (
+                  <pre className="promptPreview">{editablePrompt}</pre>
                 )}
               </div>
             }
