@@ -357,15 +357,13 @@ export default function PDFViewer({
               <Icon name="chevronRight" size={14} />
             </Button>
           </div>
-          <div className={styles.pageNav}>
-            <Button variant="ghost" size="small" onClick={() => onTogglePins?.()}>
-              <Icon name={showPins ? 'eye' : 'eyeOff'} size={14} />
-              {showPins ? 'Hide numerals' : 'Show numerals'}
-            </Button>
-            <Button variant="ghost" size="small" onClick={() => onToggleBoxes?.()}>
-              {showBoxes ? 'Hide highlights' : 'Show highlights'}
-            </Button>
-          </div>
+          {claims.length > 0 && (
+            <div className={styles.pageNav}>
+              <Button variant="ghost" size="small" onClick={() => onTogglePins?.()}>
+                {showPins ? 'Hide numerals' : 'Show numerals'}
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>
