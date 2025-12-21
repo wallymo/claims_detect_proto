@@ -19,6 +19,13 @@ const MODEL_OPTIONS = [
   { id: 'claude-sonnet-4.5', label: 'Claude Sonnet 4.5' }
 ]
 
+// Prompt options for Claim Focus dropdown
+const PROMPT_OPTIONS = [
+  { id: 'all-claims', label: 'All Claims', promptKey: 'all' },
+  { id: 'disease-state', label: 'Disease State', promptKey: 'disease' },
+  { id: 'medication', label: 'Medication', promptKey: 'drug' }
+]
+
 // Maps promptKey to user-facing prompt text
 const PROMPT_DISPLAY_TEXT = {
   'all': ALL_CLAIMS_PROMPT_USER,
@@ -34,6 +41,8 @@ export default function MKGClaimsDetector() {
 
   // Analysis state
   const [selectedModel, setSelectedModel] = useState('gemini-3-pro')
+  const [selectedPrompt, setSelectedPrompt] = useState('all-claims')
+  const [editablePrompt, setEditablePrompt] = useState('')
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [analysisComplete, setAnalysisComplete] = useState(false)
   const [analysisError, setAnalysisError] = useState(null)
@@ -77,6 +86,12 @@ export default function MKGClaimsDetector() {
       return addGlobalIndices(prev)
     })
   }, [])
+
+  // Sync editable prompt when Claim Focus changes
+  useEffect(() => {
+    const promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
+    setEditablePrompt(PROMPT_DISPLAY_TEXT[promptKey] || PROMPT_DISPLAY_TEXT['all'])
+  }, [selectedPrompt])
 
   // Handle text extraction from PDFViewer
   const handleTextExtracted = (pages) => {
