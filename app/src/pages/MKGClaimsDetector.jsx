@@ -10,7 +10,7 @@ import Input from '@/components/atoms/Input/Input'
 import DropdownMenu from '@/components/molecules/DropdownMenu/DropdownMenu'
 import PDFViewer from '@/components/mkg/PDFViewer'
 import ClaimCard from '@/components/claims-detector/ClaimCard'
-import { analyzeDocument, checkGeminiConnection } from '@/services/gemini'
+import { analyzeDocument, checkGeminiConnection, ALL_CLAIMS_PROMPT_USER, MEDICATION_PROMPT_USER } from '@/services/gemini'
 import { enrichClaimsWithPositions, addGlobalIndices } from '@/utils/textMatcher'
 
 // AI Model options - SSOT
@@ -18,6 +18,13 @@ const MODEL_OPTIONS = [
   { id: 'gemini-3-pro', label: 'Google Gemini 3 Pro' },
   { id: 'claude-sonnet-4.5', label: 'Claude Sonnet 4.5' }
 ]
+
+// Maps promptKey to user-facing prompt text
+const PROMPT_DISPLAY_TEXT = {
+  'all': ALL_CLAIMS_PROMPT_USER,
+  'disease': ALL_CLAIMS_PROMPT_USER, // Uses All Claims for now
+  'drug': MEDICATION_PROMPT_USER
+}
 
 export default function MKGClaimsDetector() {
   // Document state
