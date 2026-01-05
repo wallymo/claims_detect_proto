@@ -25,3 +25,8 @@ dist-ssr
 
 # Worktrees
 .worktrees/
+
+# Dev/debug folders
+vision-debug-pack/
+ui-guide/
+.taskmaster/
