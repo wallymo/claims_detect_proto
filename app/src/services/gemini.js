@@ -92,28 +92,45 @@ Return ONLY this JSON:
 }`
 
 // User-facing prompt for All Claims (shown in UI, editable)
-export const ALL_CLAIMS_PROMPT_USER = `You are a veteran MLR (Medical, Legal, Regulatory) reviewer analyzing pharmaceutical promotional materials. Your job is to surface EVERY statement that could require substantiation - you'd rather flag 20 borderline phrases than let 1 real claim slip through.
+export const ALL_CLAIMS_PROMPT_USER = `You are a veteran MLR (Medical, Legal, Regulatory) reviewer analyzing pharmaceutical promotional materials. Surface EVERY statement that could require substantiation — flag 20 borderline phrases rather than let 1 slip through.
 
-Scan this document and identify all claims. A claim is any statement that:
-- Makes a verifiable assertion about efficacy, safety, or outcomes
-- Uses statistics, percentages, or quantitative data
-- Implies superiority or comparison
-- References studies, endorsements, or authority
-- Promises benefits or quality of life improvements
+Identify ALL claims — any statement requiring substantiation:
 
-IMPORTANT - Claim boundaries:
-- Combine related sentences that support the SAME assertion into ONE claim (e.g., a statistic followed by its context)
-- Only split into separate claims when statements make DISTINCT assertions requiring DIFFERENT substantiation
-- A claim should be the complete, self-contained statement - not sentence fragments
-- Every statistic requires substantiation - whether it appears as a headline or embedded in text
+Disease & Condition:
+- Prevalence, burden, or progression statistics
+- Unmet need or treatment gap assertions
+- Risk factors, symptoms, or diagnostic criteria
 
-For each claim, rate your confidence (0-100):
-- 90-100: Definite claim - explicit stats, direct efficacy statements, specific numbers that clearly need substantiation
-- 70-89: Strong implication - benefit promises, implicit comparisons, authoritative language
-- 50-69: Borderline - suggestive phrasing that a cautious reviewer might flag
-- 30-49: Weak signal - could be promotional in certain contexts, worth a second look
+Product & Treatment:
+- Efficacy, onset, duration, or outcomes
+- Safety, tolerability, side effects, or interactions
+- Dosage, administration, or convenience
+- Mechanism of action
+- Formulation or delivery advantages
 
-Trust your judgment. If you're unsure whether something is a claim, include it with a lower confidence score rather than omitting it.
+Comparative & Authority:
+- Superiority or equivalence vs. alternatives
+- Clinical trial citations or study references
+- Regulatory status, approvals, or endorsements
+- Guidelines or expert recommendations
+
+Patient Impact:
+- Quality of life or lifestyle improvements
+- Statistics, percentages, or quantitative data
+
+Claim Boundaries:
+- Combine related statements supporting the SAME assertion into ONE claim
+- Split only when statements need DIFFERENT substantiation
+- Claims must be complete, self-contained statements
+- Every statistic requires substantiation regardless of visual treatment
+
+Confidence Scoring (0-100):
+- 90-100: Definite — explicit stats, direct efficacy claims, specific numbers
+- 70-89: Strong — benefit promises, implicit comparisons, authoritative language
+- 50-69: Borderline — suggestive phrasing a cautious reviewer might flag
+- 30-49: Weak signal — promotional in context, worth a second look
+
+When unsure, include it with lower confidence rather than omit.
 
 Now analyze the document. Find everything that could require substantiation.`
 
@@ -237,6 +254,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     console.log(`✅ Detected ${claims.length} claims`)
     console.log(`💰 Usage: ${inputTokens} input + ${outputTokens} output tokens = $${cost.toFixed(4)}`)
 
+    const pricing = PRICING[GEMINI_MODEL] || PRICING['default']
     return {
       success: true,
       claims,
@@ -245,7 +263,9 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
         modelDisplayName: MODEL_DISPLAY_NAMES[GEMINI_MODEL] || GEMINI_MODEL,
         inputTokens,
         outputTokens,
-        cost
+        cost,
+        inputRate: pricing.input,   // $/1M tokens
+        outputRate: pricing.output  // $/1M tokens
       }
     }
   } catch (error) {
