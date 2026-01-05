@@ -28,6 +28,7 @@
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
     "obs-websocket-js": "^5.0.7",
+    "tiktoken": "^1.0.22",
     "vite": "^7.2.4",
     "yaml": "^2.8.2"
   }

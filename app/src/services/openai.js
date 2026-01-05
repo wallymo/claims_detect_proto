@@ -1,0 +1,234 @@
+/**
+ * OpenAI API Service - GPT-4o for PDF/Vision analysis
+ *
+ * This service handles:
+ * - PDF document analysis and claim detection using GPT-4o vision
+ * - Maintains same interface as gemini.js for easy swapping
+ */
+
+import OpenAI from 'openai'
+import { pdfToImages } from '@/utils/pdfToImages'
+
+// Singleton client instance
+let openaiClient = null
+
+// Initialize the OpenAI client
+const getOpenAIClient = () => {
+  if (openaiClient) return openaiClient
+
+  const apiKey = import.meta.env.VITE_OPENAI_API_KEY
+  if (!apiKey) {
+    throw new Error('VITE_OPENAI_API_KEY is not set in .env.local')
+  }
+  openaiClient = new OpenAI({
+    apiKey,
+    dangerouslyAllowBrowser: true // Required for client-side usage
+  })
+  return openaiClient
+}
+
+// Model configuration
+export const OPENAI_MODEL = 'gpt-4o'
+
+// Friendly display names
+export const MODEL_DISPLAY_NAMES = {
+  'gpt-4o': 'GPT-4o',
+  'gpt-4o-mini': 'GPT-4o Mini'
+}
+
+// Pricing per 1M tokens (USD)
+const PRICING = {
+  'gpt-4o': { input: 2.50, output: 10.00 },
+  'gpt-4o-mini': { input: 0.15, output: 0.60 },
+  'default': { input: 2.50, output: 10.00 }
+}
+
+/**
+ * Calculate cost from token usage
+ */
+function calculateCost(model, inputTokens, outputTokens) {
+  const pricing = PRICING[model] || PRICING['default']
+  const inputCost = (inputTokens / 1_000_000) * pricing.input
+  const outputCost = (outputTokens / 1_000_000) * pricing.output
+  return inputCost + outputCost
+}
+
+/**
+ * Convert a File object to base64
+ */
+async function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const base64 = reader.result.split(',')[1]
+      resolve(base64)
+    }
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
+// Same claim detection prompt as Gemini for consistency
+const CLAIM_DETECTION_PROMPT = `You are a veteran MLR (Medical, Legal, Regulatory) reviewer analyzing pharmaceutical promotional materials. Your job is to surface EVERY statement that could require substantiation - you'd rather flag 20 borderline phrases than let 1 real claim slip through.
+
+Scan this document and identify all claims. A claim is any statement that:
+- Makes a verifiable assertion about efficacy, safety, or outcomes
+- Uses statistics, percentages, or quantitative data
+- Implies superiority or comparison
+- References studies, endorsements, or authority
+- Promises benefits or quality of life improvements
+
+IMPORTANT - Claim boundaries:
+- Combine related sentences that support the SAME assertion into ONE claim (e.g., a statistic followed by its context)
+- Only split into separate claims when statements make DISTINCT assertions requiring DIFFERENT substantiation
+- A claim should be the complete, self-contained statement - not sentence fragments
+- Every statistic requires substantiation - whether it appears as a headline or embedded in text
+
+For each claim, rate your confidence (0-100):
+- 90-100: Definite claim - explicit stats, direct efficacy statements, specific numbers that clearly need substantiation
+- 70-89: Strong implication - benefit promises, implicit comparisons, authoritative language
+- 50-69: Borderline - suggestive phrasing that a cautious reviewer might flag
+- 30-49: Weak signal - could be promotional in certain contexts, worth a second look
+
+POSITION: Return the x/y coordinates where a marker pin should be placed for each claim:
+- x: LEFT EDGE of the claim text as percentage (0 = page left, 100 = page right)
+- y: vertical center of the claim text as percentage (0 = page top, 100 = page bottom)
+- The pin will appear AT these exact coordinates, so position at the LEFT EDGE of text, not center
+- For charts/images: position at the LEFT EDGE of the visual element
+- Example: text starting 20% from left at 30% down the page = x:20, y:30
+
+IMPORTANT: Charts, graphs, and infographics that display statistics or make comparative claims MUST be flagged. The visual nature doesn't exempt them from substantiation requirements.
+
+Trust your judgment. If you're unsure whether something is a claim, include it with a lower confidence score rather than omitting it.
+
+Return ONLY this JSON:
+{
+  "claims": [
+    { "claim": "[Exact phrase from document]", "confidence": 85, "page": 1, "x": 25.0, "y": 14.5 }
+  ]
+}
+
+Now analyze the document. Find everything that could require substantiation.`
+
+/**
+ * Analyze a PDF document and detect claims using GPT-4o
+ *
+ * @param {File} pdfFile - The PDF file to analyze
+ * @param {Function} onProgress - Optional progress callback
+ * @param {string} promptKey - Optional prompt key ('all', 'disease', 'drug') - for future use
+ * @param {string|null} customPrompt - Optional custom prompt override
+ * @returns {Promise<Object>} - Result with claims array
+ */
+export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null) {
+  console.log(`📋 Using prompt focus: ${promptKey}${customPrompt ? ' (custom prompt)' : ''}`)
+  const client = getOpenAIClient()
+
+  onProgress?.(5, 'Converting PDF pages to images...')
+
+  try {
+    // Convert PDF to images for accurate visual positioning
+    // (GPT-4o's image vision is more spatially accurate than its PDF parsing)
+    const pageImages = await pdfToImages(pdfFile)
+
+    onProgress?.(25, 'Sending to OpenAI GPT-4o...')
+
+    const response = await client.chat.completions.create({
+      model: OPENAI_MODEL,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: CLAIM_DETECTION_PROMPT },
+            // Send each page as an image
+            ...pageImages.map(img => ({
+              type: 'image_url',
+              image_url: { url: `data:image/png;base64,${img.base64}` }
+            }))
+          ]
+        }
+      ],
+      max_tokens: 8192,
+      temperature: 0,
+      response_format: { type: 'json_object' }
+    })
+
+    onProgress?.(75, 'Processing results...')
+
+    const text = response.choices?.[0]?.message?.content || ''
+
+    console.log('🔍 Raw OpenAI response (first 500 chars):', text?.substring(0, 500))
+
+    const result = JSON.parse(text)
+
+    // Transform to frontend format
+    const claims = (result.claims || []).map((claim, index) => {
+      const pageNumber = Math.max(1, Number(claim.page) || 1)
+      const position = (claim.x !== undefined && claim.y !== undefined)
+        ? { x: Number(claim.x) || 0, y: Number(claim.y) || 0 }
+        : null
+
+      console.log(`📍 Claim ${index + 1}: x=${claim.x}, y=${claim.y}, text="${claim.claim?.slice(0, 50)}..."`)
+
+      return {
+        id: `claim_${String(index + 1).padStart(3, '0')}`,
+        text: claim.claim,
+        confidence: claim.confidence / 100,
+        status: 'pending',
+        page: pageNumber,
+        position
+      }
+    })
+
+    onProgress?.(95, 'Finalizing...')
+
+    // Extract usage metadata
+    const usage = response.usage || {}
+    const inputTokens = usage.prompt_tokens || 0
+    const outputTokens = usage.completion_tokens || 0
+    const cost = calculateCost(OPENAI_MODEL, inputTokens, outputTokens)
+
+    console.log(`✅ Detected ${claims.length} claims`)
+    console.log(`💰 Usage: ${inputTokens} input + ${outputTokens} output tokens = $${cost.toFixed(4)}`)
+
+    const pricing = PRICING[OPENAI_MODEL] || PRICING['default']
+    return {
+      success: true,
+      claims,
+      usage: {
+        model: OPENAI_MODEL,
+        modelDisplayName: MODEL_DISPLAY_NAMES[OPENAI_MODEL] || OPENAI_MODEL,
+        inputTokens,
+        outputTokens,
+        cost,
+        inputRate: pricing.input,   // $/1M tokens
+        outputRate: pricing.output  // $/1M tokens
+      }
+    }
+  } catch (error) {
+    console.error('OpenAI analysis error:', error)
+    return {
+      success: false,
+      error: error.message,
+      claims: [],
+      usage: null
+    }
+  }
+}
+
+/**
+ * Check if the OpenAI API is configured and working
+ */
+export async function checkOpenAIConnection() {
+  try {
+    const client = getOpenAIClient()
+    const response = await client.chat.completions.create({
+      model: OPENAI_MODEL,
+      messages: [{ role: 'user', content: 'Say "connected" if you can read this.' }],
+      max_tokens: 10
+    })
+    const text = response.choices?.[0]?.message?.content || 'connected'
+    return { connected: true, response: text }
+  } catch (error) {
+    return { connected: false, error: error.message }
+  }
+}

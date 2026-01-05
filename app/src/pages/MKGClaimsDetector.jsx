@@ -10,8 +10,18 @@ import Input from '@/components/atoms/Input/Input'
 import DropdownMenu from '@/components/molecules/DropdownMenu/DropdownMenu'
 import PDFViewer from '@/components/mkg/PDFViewer'
 import ClaimCard from '@/components/claims-detector/ClaimCard'
-import { analyzeDocument, checkGeminiConnection, ALL_CLAIMS_PROMPT_USER, MEDICATION_PROMPT_USER } from '@/services/gemini'
+import { analyzeDocument as analyzeWithGemini, checkGeminiConnection, ALL_CLAIMS_PROMPT_USER, MEDICATION_PROMPT_USER } from '@/services/gemini'
+import { analyzeDocument as analyzeWithOpenAI } from '@/services/openai'
+import { analyzeDocument as analyzeWithAnthropic } from '@/services/anthropic'
+
 import { enrichClaimsWithPositions, addGlobalIndices } from '@/utils/textMatcher'
+
+// Model routing map
+const MODEL_ANALYZERS = {
+  'gemini-3-pro': analyzeWithGemini,
+  'claude-sonnet-4.5': analyzeWithAnthropic,
+  'gpt-4o': analyzeWithOpenAI
+}
 
 // AI Model options - SSOT
 const MODEL_OPTIONS = [
@@ -65,6 +75,7 @@ export default function MKGClaimsDetector() {
   // Cost tracking state
   const [lastUsage, setLastUsage] = useState(null) // { model, modelDisplayName, inputTokens, outputTokens, cost }
   const [totalCost, setTotalCost] = useState(0)
+  const [sessionCost, setSessionCost] = useState(0)
 
   // Text extraction state
   const [extractedPages, setExtractedPages] = useState([])
@@ -186,7 +197,8 @@ export default function MKGClaimsDetector() {
       // Get promptKey from selected prompt
       const promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
 
-      // Analyze the document with progress tracking
+      // Analyze the document with the selected model
+      const analyzeDocument = MODEL_ANALYZERS[selectedModel] || analyzeWithGemini
       const result = await analyzeDocument(uploadedFile, (progress, status) => {
         setAnalysisProgress(progress)
         setAnalysisStatus(status)
@@ -215,7 +227,9 @@ export default function MKGClaimsDetector() {
       // Track usage and cost
       if (result.usage) {
         setLastUsage(result.usage)
-        const newTotal = totalCost + result.usage.cost
+        const runCost = result.usage.cost
+        setSessionCost(prev => prev + runCost)
+        const newTotal = totalCost + runCost
         setTotalCost(newTotal)
         localStorage.setItem('gemini_total_cost', newTotal.toString())
       }
@@ -523,16 +537,39 @@ export default function MKGClaimsDetector() {
                       <span className="resultValue">{lastUsage?.modelDisplayName || 'Gemini 3 Pro'}</span>
                     </div>
                     <div className="resultRow">
-                      <span className="resultLabel">Time</span>
+                      <span className="resultLabel">Latency</span>
                       <span className="resultValue">{(processingTime / 1000).toFixed(1)}s</span>
                     </div>
+                    <div className="divider" />
+                    <div className="resultRow">
+                      <span className="resultLabel">Tokens In</span>
+                      <span className="resultValue">{lastUsage?.inputTokens?.toLocaleString() || '0'}</span>
+                    </div>
+                    <div className="resultRow">
+                      <span className="resultLabel">Tokens Out</span>
+                      <span className="resultValue">{lastUsage?.outputTokens?.toLocaleString() || '0'}</span>
+                    </div>
+                    <div className="divider" />
                     <div className="resultRow">
                       <span className="resultLabel">Run Cost</span>
                       <span className="resultValue">${lastUsage?.cost?.toFixed(4) || '0.0000'}</span>
                     </div>
+                    <div className="resultRow">
+                      <span className="resultLabel">
+                        Session
+                        <button
+                          onClick={() => setSessionCost(0)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 0 4px', opacity: 0.6 }}
+                          title="Reset session cost"
+                        >
+                          <Icon name="refreshCw" size={12} />
+                        </button>
+                      </span>
+                      <span className="resultValue">${sessionCost.toFixed(4)}</span>
+                    </div>
                     <div className="divider" />
                     <div className="resultRow totalCost">
-                      <span className="resultLabel">Tracked Spend</span>
+                      <span className="resultLabel">Total</span>
                       <span className="resultValue">${totalCost.toFixed(4)}</span>
                     </div>
                   </div>
