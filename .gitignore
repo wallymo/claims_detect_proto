@@ -6,3 +6,11 @@ Prototype Design System
 
 # Git worktrees
 .worktrees/
+
+# TaskMaster
+.taskmaster/
+.env.example
+
+# Dev folders
+presentation/
+docs/ui-guide/node_modules/
