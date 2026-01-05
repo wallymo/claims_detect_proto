@@ -12,6 +12,7 @@
   "dependencies": {
     "@google/genai": "^1.33.0",
     "framer-motion": "^12.23.25",
+    "openai": "^6.15.0",
     "pdfjs-dist": "^5.4.449",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
