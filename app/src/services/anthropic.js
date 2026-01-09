@@ -9,7 +9,7 @@
  * with appropriate headers. If CORS issues occur, a backend proxy may be needed.
  */
 
-import { pdfToImages } from '@/utils/pdfToImages'
+import { MEDICATION_PROMPT_USER, ALL_CLAIMS_PROMPT_USER } from './gemini'
 
 // Model configuration
 export const ANTHROPIC_MODEL = 'claude-sonnet-4-5-20250929'
@@ -55,7 +55,9 @@ async function fileToBase64(file) {
 }
 
 // Same claim detection prompt as Gemini for consistency
-const CLAIM_DETECTION_PROMPT = `You are a veteran MLR (Medical, Legal, Regulatory) reviewer analyzing pharmaceutical promotional materials. Your job is to surface EVERY statement that could require substantiation - you'd rather flag 20 borderline phrases than let 1 real claim slip through.
+const CLAIM_DETECTION_PROMPT = `OUTPUT FORMAT: You must respond with ONLY a JSON object. No markdown, no commentary, no explanation - just valid JSON starting with { and ending with }.
+
+You are a veteran MLR (Medical, Legal, Regulatory) reviewer analyzing pharmaceutical promotional materials. Your job is to surface EVERY statement that could require substantiation - you'd rather flag 20 borderline phrases than let 1 real claim slip through.
 
 Scan this document and identify all claims. A claim is any statement that:
 - Makes a verifiable assertion about efficacy, safety, or outcomes
@@ -87,39 +89,44 @@ IMPORTANT: Charts, graphs, and infographics that display statistics or make comp
 
 Trust your judgment. If you're unsure whether something is a claim, include it with a lower confidence score rather than omitting it.
 
-Return ONLY this JSON:
-{
-  "claims": [
-    { "claim": "[Exact phrase from document]", "confidence": 85, "page": 1, "x": 25.0, "y": 14.5 }
-  ]
-}
-
-Now analyze the document. Find everything that could require substantiation.`
+Respond with this exact JSON structure (no other text):
+{"claims": [{"claim": "[Exact phrase]", "confidence": 85, "page": 1, "x": 25.0, "y": 14.5}]}`
 
 /**
  * Analyze a PDF document and detect claims using Claude Sonnet 4.5
  *
- * @param {File} pdfFile - The PDF file to analyze
+ * @param {Array} pageImages - Pre-rendered page images from normalizer
  * @param {Function} onProgress - Optional progress callback
- * @param {string} promptKey - Optional prompt key ('all', 'disease', 'drug') - for future use
+ * @param {string} promptKey - Prompt key ('all', 'disease', 'drug')
  * @param {string|null} customPrompt - Optional custom prompt override
  * @returns {Promise<Object>} - Result with claims array
  */
-export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null) {
-  console.log(`📋 Using prompt focus: ${promptKey}${customPrompt ? ' (custom prompt)' : ''}`)
+export async function analyzeDocument(pageImages, onProgress, promptKey = 'all', customPrompt = null) {
+  // Select the appropriate prompt
+  let selectedPrompt
+  if (customPrompt) {
+    selectedPrompt = customPrompt
+    console.log(`📋 Using custom prompt (${customPrompt.length} chars)`)
+  } else {
+    if (promptKey === 'drug') {
+      selectedPrompt = MEDICATION_PROMPT_USER
+    } else if (promptKey === 'disease') {
+      selectedPrompt = ALL_CLAIMS_PROMPT_USER // Uses All Claims for disease state
+    } else {
+      selectedPrompt = CLAIM_DETECTION_PROMPT
+    }
+    console.log(`📋 Using ${promptKey} prompt for Claude analysis`)
+  }
+
   const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY
   if (!apiKey) {
     throw new Error('VITE_ANTHROPIC_API_KEY is not set in .env.local')
   }
 
-  onProgress?.(5, 'Converting PDF pages to images...')
+  onProgress?.(25, 'Sending to Claude Sonnet 4.5...')
 
   try {
-    // Convert PDF to images for accurate visual positioning
-    // (Claude's image vision is more spatially accurate than its PDF parsing)
-    const pageImages = await pdfToImages(pdfFile)
-
-    onProgress?.(25, 'Sending to Claude Sonnet 4.5...')
+    // Images already provided - no need to convert PDF
 
     // Anthropic API call using fetch (SDK has CORS issues in browser)
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -133,6 +140,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
       body: JSON.stringify({
         model: ANTHROPIC_MODEL,
         max_tokens: 8192,
+        temperature: 0,
         messages: [
           {
             role: 'user',
@@ -148,9 +156,14 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
               })),
               {
                 type: 'text',
-                text: CLAIM_DETECTION_PROMPT
+                text: selectedPrompt
               }
             ]
+          },
+          {
+            // Assistant prefill to force JSON output
+            role: 'assistant',
+            content: '{"claims": ['
           }
         ]
       })
@@ -170,14 +183,17 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
 
     console.log('🔍 Raw Claude response (first 500 chars):', text?.substring(0, 500))
 
-    // Parse JSON from response (Claude may wrap in markdown code blocks)
-    let jsonText = text
-    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/)
-    if (jsonMatch) {
-      jsonText = jsonMatch[1].trim()
-    }
+    // We used assistant prefill '{"claims": [' so prepend it to complete the JSON
+    const jsonText = '{"claims": [' + text
 
-    const result = JSON.parse(jsonText)
+    let result
+    try {
+      result = JSON.parse(jsonText)
+    } catch (parseError) {
+      console.error('❌ JSON parse failed:', parseError.message)
+      console.error('❌ Attempted to parse:', jsonText?.substring(0, 500))
+      throw new Error(`Failed to parse Claude response as JSON: ${parseError.message}`)
+    }
 
     // Transform to frontend format
     const claims = (result.claims || []).map((claim, index) => {

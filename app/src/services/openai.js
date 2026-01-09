@@ -7,7 +7,7 @@
  */
 
 import OpenAI from 'openai'
-import { pdfToImages } from '@/utils/pdfToImages'
+import { MEDICATION_PROMPT_USER, ALL_CLAIMS_PROMPT_USER } from './gemini'
 
 // Singleton client instance
 let openaiClient = null
@@ -113,24 +113,35 @@ Now analyze the document. Find everything that could require substantiation.`
 /**
  * Analyze a PDF document and detect claims using GPT-4o
  *
- * @param {File} pdfFile - The PDF file to analyze
+ * @param {Array} pageImages - Pre-rendered page images from normalizer
  * @param {Function} onProgress - Optional progress callback
- * @param {string} promptKey - Optional prompt key ('all', 'disease', 'drug') - for future use
+ * @param {string} promptKey - Prompt key ('all', 'disease', 'drug')
  * @param {string|null} customPrompt - Optional custom prompt override
  * @returns {Promise<Object>} - Result with claims array
  */
-export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null) {
-  console.log(`📋 Using prompt focus: ${promptKey}${customPrompt ? ' (custom prompt)' : ''}`)
+export async function analyzeDocument(pageImages, onProgress, promptKey = 'all', customPrompt = null) {
+  // Select the appropriate prompt
+  let selectedPrompt
+  if (customPrompt) {
+    selectedPrompt = customPrompt
+    console.log(`📋 Using custom prompt (${customPrompt.length} chars)`)
+  } else {
+    if (promptKey === 'drug') {
+      selectedPrompt = MEDICATION_PROMPT_USER
+    } else if (promptKey === 'disease') {
+      selectedPrompt = ALL_CLAIMS_PROMPT_USER // Uses All Claims for disease state
+    } else {
+      selectedPrompt = CLAIM_DETECTION_PROMPT
+    }
+    console.log(`📋 Using ${promptKey} prompt for GPT-4o analysis`)
+  }
+
   const client = getOpenAIClient()
 
-  onProgress?.(5, 'Converting PDF pages to images...')
+  onProgress?.(25, 'Sending to OpenAI GPT-4o...')
 
   try {
-    // Convert PDF to images for accurate visual positioning
-    // (GPT-4o's image vision is more spatially accurate than its PDF parsing)
-    const pageImages = await pdfToImages(pdfFile)
-
-    onProgress?.(25, 'Sending to OpenAI GPT-4o...')
+    // Images already provided - no need to convert PDF
 
     const response = await client.chat.completions.create({
       model: OPENAI_MODEL,
@@ -138,7 +149,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
         {
           role: 'user',
           content: [
-            { type: 'text', text: CLAIM_DETECTION_PROMPT },
+            { type: 'text', text: selectedPrompt },
             // Send each page as an image
             ...pageImages.map(img => ({
               type: 'image_url',
