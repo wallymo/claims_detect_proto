@@ -139,7 +139,7 @@ export async function analyzeDocument(pageImages, onProgress, promptKey = 'all',
       },
       body: JSON.stringify({
         model: ANTHROPIC_MODEL,
-        max_tokens: 8192,
+        max_tokens: 32768, // Increased to handle documents with many claims
         temperature: 0,
         messages: [
           {

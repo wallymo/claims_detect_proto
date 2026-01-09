@@ -158,7 +158,7 @@ export async function analyzeDocument(pageImages, onProgress, promptKey = 'all',
           ]
         }
       ],
-      max_tokens: 8192,
+      max_tokens: 16384, // Increased to handle documents with many claims (GPT-4o max)
       temperature: 0,
       response_format: { type: 'json_object' }
     })
