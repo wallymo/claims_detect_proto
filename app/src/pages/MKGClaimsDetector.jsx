@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import '../App.css'
 import './MKGClaimsDetector.css'
 import Button from '@/components/atoms/Button/Button'
@@ -13,8 +13,10 @@ import ClaimCard from '@/components/claims-detector/ClaimCard'
 import { analyzeDocument as analyzeWithGemini, checkGeminiConnection, ALL_CLAIMS_PROMPT_USER, MEDICATION_PROMPT_USER } from '@/services/gemini'
 import { analyzeDocument as analyzeWithOpenAI } from '@/services/openai'
 import { analyzeDocument as analyzeWithAnthropic } from '@/services/anthropic'
+import { normalizeDocument, base64ToBlob } from '@/services/normalizer'
 
 import { enrichClaimsWithPositions, addGlobalIndices } from '@/utils/textMatcher'
+import { pdfToImages } from '@/utils/pdfToImages'
 
 // Model routing map
 const MODEL_ANALYZERS = {
@@ -132,18 +134,25 @@ export default function MKGClaimsDetector() {
   }
 
   // Handle text extraction from PDFViewer
-  const handleTextExtracted = (pages) => {
+  // Memoized to prevent infinite re-render loop (callback identity must be stable)
+  const handleTextExtracted = useCallback((pages) => {
     setExtractedPages(pages)
-  }
+  }, [])
 
   // Handle real file upload
   const handleFileSelect = async (event) => {
     const file = event.target.files?.[0]
     if (!file) return
 
-    // Validate file type
-    if (!file.type.includes('pdf')) {
-      setAnalysisError('Please upload a PDF file')
+    // Accept PDF, DOCX, PPTX
+    const validTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    ]
+
+    if (!validTypes.includes(file.type)) {
+      setAnalysisError('Please upload a PDF, DOCX, or PPTX file')
       return
     }
 
@@ -174,7 +183,7 @@ export default function MKGClaimsDetector() {
     }
   }
 
-  // Analyze document with Gemini
+  // Analyze document with AI
   const handleAnalyze = async () => {
     if (!uploadedFile) return
 
@@ -186,30 +195,65 @@ export default function MKGClaimsDetector() {
     const startTime = Date.now()
 
     try {
-      // First check connection
-      setAnalysisProgress(5)
-      setAnalysisStatus('Checking connection...')
-      const connectionCheck = await checkGeminiConnection()
-      if (!connectionCheck.connected) {
-        throw new Error(`Gemini API not connected: ${connectionCheck.error}`)
+      const analyzeDocument = MODEL_ANALYZERS[selectedModel] || analyzeWithGemini
+      const promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
+      let result
+
+      // Check if file needs normalization (DOCX/PPTX) or can be processed directly (PDF)
+      const isPDF = uploadedFile.type === 'application/pdf'
+      const isGemini = selectedModel === 'gemini-3-pro'
+
+      // Get the PDF file (either original or converted from DOCX/PPTX)
+      let pdfFile = uploadedFile
+
+      if (!isPDF) {
+        // DOCX/PPTX need conversion via normalizer
+        setAnalysisStatus('Converting document to PDF...')
+        const normalized = await normalizeDocument(uploadedFile, (progress, status) => {
+          setAnalysisProgress(progress)
+          setAnalysisStatus(status)
+        })
+
+        if (!normalized.success) {
+          throw new Error(normalized.error)
+        }
+
+        console.log(`✅ Document converted: ${normalized.document.page_count} pages`)
+        pdfFile = base64ToBlob(normalized.document.canonical_pdf)
       }
 
-      // Get promptKey from selected prompt
-      const promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
+      // Now we have a PDF - route to appropriate AI model
+      if (isGemini) {
+        // Gemini handles PDFs directly (multimodal)
+        setAnalysisProgress(5)
+        setAnalysisStatus('Checking connection...')
+        const connectionCheck = await checkGeminiConnection()
+        if (!connectionCheck.connected) {
+          throw new Error(`Gemini API not connected: ${connectionCheck.error}`)
+        }
 
-      // Analyze the document with the selected model
-      const analyzeDocument = MODEL_ANALYZERS[selectedModel] || analyzeWithGemini
-      const result = await analyzeDocument(uploadedFile, (progress, status) => {
-        setAnalysisProgress(progress)
-        setAnalysisStatus(status)
-      }, promptKey, editablePrompt)
+        result = await analyzeDocument(pdfFile, (progress, status) => {
+          setAnalysisProgress(progress)
+          setAnalysisStatus(status)
+        }, promptKey, editablePrompt)
+      } else {
+        // Claude/OpenAI need page images - convert PDF to images client-side
+        setAnalysisStatus('Converting PDF to images...')
+        setAnalysisProgress(15)
+        const pageImages = await pdfToImages(pdfFile)
+        console.log(`✅ Converted PDF to ${pageImages.length} images`)
+
+        result = await analyzeDocument(pageImages, (progress, status) => {
+          setAnalysisProgress(progress)
+          setAnalysisStatus(status)
+        }, promptKey, editablePrompt)
+      }
 
       if (!result.success) {
         throw new Error(result.error || 'Analysis failed')
       }
 
-      // Gemini now returns positions directly (x/y as % of page)
-      // Only fall back to text matching if positions are missing
+      // STEP 3: Process claims (existing logic, unchanged)
       const claimsNeedingPositions = result.claims.filter(c => !c.position)
       const claimsWithPositions = claimsNeedingPositions.length > 0 && extractedPages.length > 0
         ? enrichClaimsWithPositions(result.claims, extractedPages)
@@ -218,7 +262,7 @@ export default function MKGClaimsDetector() {
       setClaims(addGlobalIndices(claimsWithPositions))
 
       if (claimsNeedingPositions.length === 0) {
-        console.log('✅ All claims have positions from Gemini - no text matching needed')
+        console.log('✅ All claims have positions from AI - no text matching needed')
       } else {
         console.log(`⚠️ ${claimsNeedingPositions.length}/${result.claims.length} claims missing positions, using text matching fallback`)
       }
@@ -347,7 +391,7 @@ export default function MKGClaimsDetector() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".pdf"
+                  accept=".pdf,.docx,.pptx"
                   onChange={handleFileSelect}
                   style={{ display: 'none' }}
                 />
@@ -355,8 +399,8 @@ export default function MKGClaimsDetector() {
                 {uploadState === 'empty' && (
                   <div className="uploadDropzone" onClick={handleUploadClick}>
                     <Icon name="upload" size={32} />
-                    <p>Click to upload PDF</p>
-                    <span className="uploadHint">or drag and drop</span>
+                    <p>Click to upload document</p>
+                    <span className="uploadHint">PDF, DOCX, or PPTX</span>
                   </div>
                 )}
 
