@@ -134,6 +134,37 @@ When unsure, include it with lower confidence rather than omit.
 
 Now analyze the document. Find everything that could require substantiation.`
 
+// User-facing prompt for Disease State claims (shown in UI, editable)
+export const DISEASE_STATE_PROMPT_USER = `You are a veteran MLR (Medical, Legal, Regulatory) reviewer analyzing pharmaceutical promotional materials. Surface EVERY statement about disease states and medical conditions that could require substantiation — flag 20 borderline phrases rather than let 1 slip through.
+
+Identify ALL disease and condition claims — any statement requiring substantiation:
+
+Disease & Condition:
+- Prevalence, burden, or progression statistics
+- Unmet need or treatment gap assertions
+- Risk factors, symptoms, or diagnostic criteria
+- Epidemiological data or population statistics
+- Disease impact on quality of life
+- Natural history or disease trajectory
+- Diagnostic challenges or delays
+- Healthcare utilization or economic burden
+
+Claim Boundaries:
+- Combine related statements supporting the SAME assertion into ONE claim
+- Split only when statements need DIFFERENT substantiation
+- Claims must be complete, self-contained statements
+- Every statistic requires substantiation regardless of visual treatment
+
+Confidence Scoring (0-100):
+- 90-100: Definite — explicit stats, specific numbers, prevalence data
+- 70-89: Strong — burden assertions, unmet need statements, authoritative language
+- 50-69: Borderline — suggestive phrasing a cautious reviewer might flag
+- 30-49: Weak signal — contextual statements worth a second look
+
+When unsure, include it with lower confidence rather than omit.
+
+Now analyze the document. Find everything about disease states and conditions that could require substantiation.`
+
 // User-facing prompt for Medication claims (shown in UI, editable)
 export const MEDICATION_PROMPT_USER = `Role: Veteran MLR reviewer. Surface EVERY statement that could require substantiation — better to flag 20 borderline phrases than let 1 slip through.
 
@@ -161,6 +192,8 @@ Confidence Scoring:
 - 50-69: Suggestive or borderline — "Helps patients feel better faster"
 - 30-49: Weak signal, worth second look — "New era in diabetes management"
 
+When unsure, include it with lower confidence rather than omit.
+
 Now analyze the document. Find everything that could require substantiation.`
 
 /**
@@ -181,7 +214,13 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     userPrompt = customPrompt
     console.log(`📋 Using custom prompt (${customPrompt.length} chars)`)
   } else {
-    userPrompt = promptKey === 'drug' ? MEDICATION_PROMPT_USER : ALL_CLAIMS_PROMPT_USER
+    if (promptKey === 'drug') {
+      userPrompt = MEDICATION_PROMPT_USER
+    } else if (promptKey === 'disease') {
+      userPrompt = DISEASE_STATE_PROMPT_USER
+    } else {
+      userPrompt = ALL_CLAIMS_PROMPT_USER
+    }
     console.log(`📋 Using default prompt for: ${promptKey}`)
   }
   const finalPrompt = userPrompt + POSITION_INSTRUCTIONS
@@ -211,7 +250,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
       config: {
         temperature: 0, // Zero temperature for deterministic, reproducible output
         topP: 1,
-        maxOutputTokens: 65536, // Increased to handle documents with many claims
+        maxOutputTokens: 64000, // Max output tokens
         responseMimeType: 'application/json'
       }
     })
@@ -395,7 +434,7 @@ Return a JSON object with:
       ],
       config: {
         temperature: 0,
-        maxOutputTokens: 65536,
+        maxOutputTokens: 64000,
         responseMimeType: 'application/json'
       }
     })

@@ -9,7 +9,7 @@
  * with appropriate headers. If CORS issues occur, a backend proxy may be needed.
  */
 
-import { MEDICATION_PROMPT_USER, ALL_CLAIMS_PROMPT_USER } from './gemini'
+import { MEDICATION_PROMPT_USER, ALL_CLAIMS_PROMPT_USER, DISEASE_STATE_PROMPT_USER } from './gemini'
 
 // Model configuration
 export const ANTHROPIC_MODEL = 'claude-sonnet-4-5-20250929'
@@ -54,6 +54,17 @@ async function fileToBase64(file) {
   })
 }
 
+// JSON output instructions - appended to imported prompts that don't have position/output format
+const JSON_OUTPUT_INSTRUCTIONS = `
+
+POSITION: Return the x/y coordinates where a marker pin should be placed for each claim:
+- x: LEFT EDGE of the claim text as percentage (0 = page left, 100 = page right)
+- y: vertical center of the claim text as percentage (0 = page top, 100 = page bottom)
+- The pin will appear AT these exact coordinates, so position at the LEFT EDGE of text, not center
+
+Respond with this exact JSON structure (no other text):
+{"claims": [{"claim": "[Exact phrase]", "confidence": 85, "page": 1, "x": 25.0, "y": 14.5}]}`
+
 // Same claim detection prompt as Gemini for consistency
 const CLAIM_DETECTION_PROMPT = `OUTPUT FORMAT: You must respond with ONLY a JSON object. No markdown, no commentary, no explanation - just valid JSON starting with { and ending with }.
 
@@ -93,27 +104,32 @@ Respond with this exact JSON structure (no other text):
 {"claims": [{"claim": "[Exact phrase]", "confidence": 85, "page": 1, "x": 25.0, "y": 14.5}]}`
 
 /**
- * Analyze a PDF document and detect claims using Claude Sonnet 4.5
+ * Analyze a document and detect claims using Claude Sonnet 4.5
  *
- * @param {File|Blob} pdfFile - PDF file to analyze
+ * @param {File|Blob} pdfFile - PDF file (unused when pageImages provided)
  * @param {Function} onProgress - Optional progress callback
  * @param {string} promptKey - Prompt key ('all', 'disease', 'drug')
  * @param {string|null} customPrompt - Optional custom prompt override
+ * @param {Array|null} pageImages - Pre-rendered page images [{page, base64}] for vision analysis
  * @returns {Promise<Object>} - Result with claims array
  */
-export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null) {
+export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null, pageImages = null) {
   // Select the appropriate prompt
+  // The imported prompts don't have position/JSON instructions, so we append them
   let selectedPrompt
   if (customPrompt) {
-    selectedPrompt = customPrompt
+    // Ensure custom prompts include JSON output format
+    selectedPrompt = customPrompt.toLowerCase().includes('json')
+      ? customPrompt
+      : customPrompt + JSON_OUTPUT_INSTRUCTIONS
     console.log(`📋 Using custom prompt (${customPrompt.length} chars)`)
   } else {
     if (promptKey === 'drug') {
-      selectedPrompt = MEDICATION_PROMPT_USER
+      selectedPrompt = MEDICATION_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
     } else if (promptKey === 'disease') {
-      selectedPrompt = ALL_CLAIMS_PROMPT_USER // Uses All Claims for disease state
+      selectedPrompt = DISEASE_STATE_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
     } else {
-      selectedPrompt = CLAIM_DETECTION_PROMPT
+      selectedPrompt = ALL_CLAIMS_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
     }
     console.log(`📋 Using ${promptKey} prompt for Claude analysis`)
   }
@@ -126,8 +142,44 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
   onProgress?.(25, 'Sending to Claude Sonnet 4.5...')
 
   try {
-    // Convert PDF to base64
-    const pdfBase64 = await fileToBase64(pdfFile)
+    // Build content array - use page images if provided, otherwise fall back to PDF
+    let contentParts
+    if (pageImages && pageImages.length > 0) {
+      console.log(`🖼️ Using ${pageImages.length} pre-rendered page images for Claude`)
+      contentParts = [
+        // Send each page as an image
+        ...pageImages.map(img => ({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: 'image/png',
+            data: img.base64
+          }
+        })),
+        {
+          type: 'text',
+          text: selectedPrompt
+        }
+      ]
+    } else {
+      // Fallback to native PDF (may have issues with some documents)
+      console.log('📄 Using native PDF for Claude (no page images provided)')
+      const pdfBase64 = await fileToBase64(pdfFile)
+      contentParts = [
+        {
+          type: 'document',
+          source: {
+            type: 'base64',
+            media_type: 'application/pdf',
+            data: pdfBase64
+          }
+        },
+        {
+          type: 'text',
+          text: selectedPrompt
+        }
+      ]
+    }
 
     // Anthropic API call using fetch (SDK has CORS issues in browser)
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -140,26 +192,12 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
       },
       body: JSON.stringify({
         model: ANTHROPIC_MODEL,
-        max_tokens: 65536, // 64K max for Claude Sonnet 4.5
+        max_tokens: 64000, // Max for Claude Sonnet 4.5
         temperature: 0,
         messages: [
           {
             role: 'user',
-            content: [
-              // Send PDF directly as document
-              {
-                type: 'document',
-                source: {
-                  type: 'base64',
-                  media_type: 'application/pdf',
-                  data: pdfBase64
-                }
-              },
-              {
-                type: 'text',
-                text: selectedPrompt
-              }
-            ]
+            content: contentParts
           },
           {
             // Assistant prefill to force JSON output

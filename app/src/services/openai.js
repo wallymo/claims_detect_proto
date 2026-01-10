@@ -7,7 +7,7 @@
  */
 
 import OpenAI from 'openai'
-import { MEDICATION_PROMPT_USER, ALL_CLAIMS_PROMPT_USER } from './gemini'
+import { MEDICATION_PROMPT_USER, ALL_CLAIMS_PROMPT_USER, DISEASE_STATE_PROMPT_USER } from './gemini'
 
 // Singleton client instance
 let openaiClient = null
@@ -68,6 +68,21 @@ async function fileToBase64(file) {
   })
 }
 
+// JSON output instructions - OpenAI requires "json" in the prompt when using response_format
+const JSON_OUTPUT_INSTRUCTIONS = `
+
+POSITION: Return the x/y coordinates where a marker pin should be placed for each claim:
+- x: LEFT EDGE of the claim text as percentage (0 = page left, 100 = page right)
+- y: vertical center of the claim text as percentage (0 = page top, 100 = page bottom)
+- The pin will appear AT these exact coordinates, so position at the LEFT EDGE of text, not center
+
+Return ONLY valid JSON in this format:
+{
+  "claims": [
+    { "claim": "[Exact phrase from document]", "confidence": 85, "page": 1, "x": 25.0, "y": 14.5 }
+  ]
+}`
+
 // Same claim detection prompt as Gemini for consistency
 const CLAIM_DETECTION_PROMPT = `You are a veteran MLR (Medical, Legal, Regulatory) reviewer analyzing pharmaceutical promotional materials. Your job is to surface EVERY statement that could require substantiation - you'd rather flag 20 borderline phrases than let 1 real claim slip through.
 
@@ -111,27 +126,34 @@ Return ONLY this JSON:
 Now analyze the document. Find everything that could require substantiation.`
 
 /**
- * Analyze a PDF document and detect claims using GPT-4o
+ * Analyze a document and detect claims using GPT-4o
  *
- * @param {File|Blob} pdfFile - PDF file to analyze
+ * @param {File|Blob} pdfFile - PDF file (unused when pageImages provided)
  * @param {Function} onProgress - Optional progress callback
  * @param {string} promptKey - Prompt key ('all', 'disease', 'drug')
  * @param {string|null} customPrompt - Optional custom prompt override
+ * @param {Array|null} pageImages - Pre-rendered page images [{page, base64}] for vision analysis
  * @returns {Promise<Object>} - Result with claims array
  */
-export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null) {
+export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null, pageImages = null) {
   // Select the appropriate prompt
+  // OpenAI requires "json" in the prompt when using response_format: { type: 'json_object' }
+  // The imported prompts (MEDICATION_PROMPT_USER, ALL_CLAIMS_PROMPT_USER) don't have JSON instructions,
+  // so we append them here
   let selectedPrompt
   if (customPrompt) {
-    selectedPrompt = customPrompt
+    // Ensure custom prompts include "json" for OpenAI compatibility
+    selectedPrompt = customPrompt.toLowerCase().includes('json')
+      ? customPrompt
+      : customPrompt + JSON_OUTPUT_INSTRUCTIONS
     console.log(`📋 Using custom prompt (${customPrompt.length} chars)`)
   } else {
     if (promptKey === 'drug') {
-      selectedPrompt = MEDICATION_PROMPT_USER
+      selectedPrompt = MEDICATION_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
     } else if (promptKey === 'disease') {
-      selectedPrompt = ALL_CLAIMS_PROMPT_USER // Uses All Claims for disease state
+      selectedPrompt = DISEASE_STATE_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
     } else {
-      selectedPrompt = CLAIM_DETECTION_PROMPT
+      selectedPrompt = ALL_CLAIMS_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
     }
     console.log(`📋 Using ${promptKey} prompt for GPT-4o analysis`)
   }
@@ -141,26 +163,44 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
   onProgress?.(25, 'Sending to OpenAI GPT-4o...')
 
   try {
-    // Convert PDF to base64 with data URI prefix
-    const pdfBase64 = await fileToBase64(pdfFile)
-    const filename = pdfFile.name || 'document.pdf'
+    // Build content array - use page images if provided, otherwise fall back to PDF
+    let contentParts
+    if (pageImages && pageImages.length > 0) {
+      console.log(`🖼️ Using ${pageImages.length} pre-rendered page images for GPT-4o`)
+      contentParts = [
+        { type: 'text', text: selectedPrompt },
+        // Send each page as an image
+        ...pageImages.map(img => ({
+          type: 'image_url',
+          image_url: {
+            url: `data:image/png;base64,${img.base64}`,
+            detail: 'high'
+          }
+        }))
+      ]
+    } else {
+      // Fallback to native PDF (may have issues with some documents)
+      console.log('📄 Using native PDF for GPT-4o (no page images provided)')
+      const pdfBase64 = await fileToBase64(pdfFile)
+      const filename = pdfFile.name || 'document.pdf'
+      contentParts = [
+        { type: 'text', text: selectedPrompt },
+        {
+          type: 'file',
+          file: {
+            filename: filename,
+            file_data: `data:application/pdf;base64,${pdfBase64}`
+          }
+        }
+      ]
+    }
 
     const response = await client.chat.completions.create({
       model: OPENAI_MODEL,
       messages: [
         {
           role: 'user',
-          content: [
-            { type: 'text', text: selectedPrompt },
-            // Send PDF directly as file
-            {
-              type: 'file',
-              file: {
-                filename: filename,
-                file_data: `data:application/pdf;base64,${pdfBase64}`
-              }
-            }
-          ]
+          content: contentParts
         }
       ],
       max_tokens: 16384, // Increased to handle documents with many claims (GPT-4o max)
