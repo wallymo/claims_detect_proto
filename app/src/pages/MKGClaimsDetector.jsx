@@ -16,7 +16,6 @@ import { analyzeDocument as analyzeWithAnthropic } from '@/services/anthropic'
 import { normalizeDocument, base64ToBlob } from '@/services/normalizer'
 
 import { enrichClaimsWithPositions, addGlobalIndices } from '@/utils/textMatcher'
-import { pdfToImages } from '@/utils/pdfToImages'
 
 // Model routing map
 const MODEL_ANALYZERS = {
@@ -222,32 +221,20 @@ export default function MKGClaimsDetector() {
         pdfFile = base64ToBlob(normalized.document.canonical_pdf)
       }
 
-      // Now we have a PDF - route to appropriate AI model
+      // All models accept PDFs directly - no conversion needed
       if (isGemini) {
-        // Gemini handles PDFs directly (multimodal)
         setAnalysisProgress(5)
         setAnalysisStatus('Checking connection...')
         const connectionCheck = await checkGeminiConnection()
         if (!connectionCheck.connected) {
           throw new Error(`Gemini API not connected: ${connectionCheck.error}`)
         }
-
-        result = await analyzeDocument(pdfFile, (progress, status) => {
-          setAnalysisProgress(progress)
-          setAnalysisStatus(status)
-        }, promptKey, editablePrompt)
-      } else {
-        // Claude/OpenAI need page images - convert PDF to images client-side
-        setAnalysisStatus('Converting PDF to images...')
-        setAnalysisProgress(15)
-        const pageImages = await pdfToImages(pdfFile)
-        console.log(`✅ Converted PDF to ${pageImages.length} images`)
-
-        result = await analyzeDocument(pageImages, (progress, status) => {
-          setAnalysisProgress(progress)
-          setAnalysisStatus(status)
-        }, promptKey, editablePrompt)
       }
+
+      result = await analyzeDocument(pdfFile, (progress, status) => {
+        setAnalysisProgress(progress)
+        setAnalysisStatus(status)
+      }, promptKey, editablePrompt)
 
       if (!result.success) {
         throw new Error(result.error || 'Analysis failed')

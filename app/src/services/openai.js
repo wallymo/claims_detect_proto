@@ -113,13 +113,13 @@ Now analyze the document. Find everything that could require substantiation.`
 /**
  * Analyze a PDF document and detect claims using GPT-4o
  *
- * @param {Array} pageImages - Pre-rendered page images from normalizer
+ * @param {File|Blob} pdfFile - PDF file to analyze
  * @param {Function} onProgress - Optional progress callback
  * @param {string} promptKey - Prompt key ('all', 'disease', 'drug')
  * @param {string|null} customPrompt - Optional custom prompt override
  * @returns {Promise<Object>} - Result with claims array
  */
-export async function analyzeDocument(pageImages, onProgress, promptKey = 'all', customPrompt = null) {
+export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null) {
   // Select the appropriate prompt
   let selectedPrompt
   if (customPrompt) {
@@ -141,7 +141,9 @@ export async function analyzeDocument(pageImages, onProgress, promptKey = 'all',
   onProgress?.(25, 'Sending to OpenAI GPT-4o...')
 
   try {
-    // Images already provided - no need to convert PDF
+    // Convert PDF to base64 with data URI prefix
+    const pdfBase64 = await fileToBase64(pdfFile)
+    const filename = pdfFile.name || 'document.pdf'
 
     const response = await client.chat.completions.create({
       model: OPENAI_MODEL,
@@ -150,11 +152,14 @@ export async function analyzeDocument(pageImages, onProgress, promptKey = 'all',
           role: 'user',
           content: [
             { type: 'text', text: selectedPrompt },
-            // Send each page as an image
-            ...pageImages.map(img => ({
-              type: 'image_url',
-              image_url: { url: `data:image/png;base64,${img.base64}` }
-            }))
+            // Send PDF directly as file
+            {
+              type: 'file',
+              file: {
+                filename: filename,
+                file_data: `data:application/pdf;base64,${pdfBase64}`
+              }
+            }
           ]
         }
       ],

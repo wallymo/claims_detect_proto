@@ -95,13 +95,13 @@ Respond with this exact JSON structure (no other text):
 /**
  * Analyze a PDF document and detect claims using Claude Sonnet 4.5
  *
- * @param {Array} pageImages - Pre-rendered page images from normalizer
+ * @param {File|Blob} pdfFile - PDF file to analyze
  * @param {Function} onProgress - Optional progress callback
  * @param {string} promptKey - Prompt key ('all', 'disease', 'drug')
  * @param {string|null} customPrompt - Optional custom prompt override
  * @returns {Promise<Object>} - Result with claims array
  */
-export async function analyzeDocument(pageImages, onProgress, promptKey = 'all', customPrompt = null) {
+export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null) {
   // Select the appropriate prompt
   let selectedPrompt
   if (customPrompt) {
@@ -126,7 +126,8 @@ export async function analyzeDocument(pageImages, onProgress, promptKey = 'all',
   onProgress?.(25, 'Sending to Claude Sonnet 4.5...')
 
   try {
-    // Images already provided - no need to convert PDF
+    // Convert PDF to base64
+    const pdfBase64 = await fileToBase64(pdfFile)
 
     // Anthropic API call using fetch (SDK has CORS issues in browser)
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -145,15 +146,15 @@ export async function analyzeDocument(pageImages, onProgress, promptKey = 'all',
           {
             role: 'user',
             content: [
-              // Send each page as an image
-              ...pageImages.map(img => ({
-                type: 'image',
+              // Send PDF directly as document
+              {
+                type: 'document',
                 source: {
                   type: 'base64',
-                  media_type: 'image/png',
-                  data: img.base64
+                  media_type: 'application/pdf',
+                  data: pdfBase64
                 }
-              })),
+              },
               {
                 type: 'text',
                 text: selectedPrompt
