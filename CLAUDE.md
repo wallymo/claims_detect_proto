@@ -72,6 +72,26 @@ The `/mkg` route uses real AI analysis via `src/services/gemini.js`:
 
 Cost tracking is stored in localStorage (`gemini_total_cost`).
 
+### AI Model Comparison
+
+The `/mkg` route supports three AI models for claim detection:
+
+| | Gemini 3 Pro | Claude Sonnet 4.5 | GPT-4o |
+|---|---|---|---|
+| **Max Input (Context)** | ~1M tokens | 200K tokens | 128K tokens |
+| **Max Output** | 64K tokens | 64K tokens | 16,384 tokens |
+| **Input Pricing** | $2.00 / 1M (<200K) | $3.00 / 1M | $2.50 / 1M |
+| **Output Pricing** | $12.00 / 1M (<200K) | $15.00 / 1M | $10.00 / 1M |
+| **PDF API Support** | ✅ Native | ✅ Native | ✅ Native |
+| **PDF Processing** | Native vision | Text + page images | Text + page images |
+| **DOCX/PPTX Direct** | ❌ | ❌ | ❌ |
+
+**Notes:**
+- All three APIs accept PDFs directly—no manual conversion required
+- Claude and OpenAI internally convert PDF pages to images + extracted text
+- Gemini uses native vision for document understanding
+- DOCX/PPTX require conversion to PDF via our normalizer service (LibreOffice)
+
 ### IMPORTANT: Gemini Receives PDFs Visually (Multimodal)
 
 **Gemini sees the PDF as a visual document, not just extracted text.**

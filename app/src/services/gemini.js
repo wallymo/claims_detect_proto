@@ -211,7 +211,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
       config: {
         temperature: 0, // Zero temperature for deterministic, reproducible output
         topP: 1,
-        maxOutputTokens: 8192,
+        maxOutputTokens: 65536, // Increased to handle documents with many claims
         responseMimeType: 'application/json'
       }
     })
@@ -220,7 +220,24 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
 
     // Extract text from response
     const text = response.candidates?.[0]?.content?.parts?.[0]?.text || response.text
-    const result = JSON.parse(text)
+
+    console.log('🔍 Raw Gemini response (first 500 chars):', text?.substring(0, 500))
+
+    // Parse JSON from response (Gemini may wrap in markdown code blocks despite responseMimeType)
+    let jsonText = text
+    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/)
+    if (jsonMatch) {
+      console.log('📦 Extracted JSON from markdown code block')
+      jsonText = jsonMatch[1].trim()
+    }
+
+    let result
+    try {
+      result = JSON.parse(jsonText)
+    } catch (parseError) {
+      console.error('❌ JSON parse failed. Raw text:', jsonText?.substring(0, 1000))
+      throw new Error(`Failed to parse AI response as JSON: ${parseError.message}`)
+    }
 
     // Transform to frontend format
     const claims = (result.claims || []).map((claim, index) => {
@@ -321,7 +338,7 @@ Only match if the reference actually substantiates the claim. A low confidence m
       model: GEMINI_MODEL,
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
-        temperature: 0.1,
+        temperature: 0,
         maxOutputTokens: 2048,
         responseMimeType: 'application/json'
       }
@@ -378,7 +395,7 @@ Return a JSON object with:
       ],
       config: {
         temperature: 0,
-        maxOutputTokens: 32768,
+        maxOutputTokens: 65536,
         responseMimeType: 'application/json'
       }
     })

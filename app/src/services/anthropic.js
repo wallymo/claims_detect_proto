@@ -139,7 +139,7 @@ export async function analyzeDocument(pageImages, onProgress, promptKey = 'all',
       },
       body: JSON.stringify({
         model: ANTHROPIC_MODEL,
-        max_tokens: 32768, // Increased to handle documents with many claims
+        max_tokens: 65536, // 64K max for Claude Sonnet 4.5
         temperature: 0,
         messages: [
           {
