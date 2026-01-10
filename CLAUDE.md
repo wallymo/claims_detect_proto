@@ -87,10 +87,15 @@ The `/mkg` route supports three AI models for claim detection:
 | **DOCX/PPTX Direct** | ❌ | ❌ | ❌ |
 
 **Notes:**
-- All three APIs accept PDFs directly—no manual conversion required
+- All three APIs accept PDFs directly—we send PDFs to all models with no client-side conversion
 - Claude and OpenAI internally convert PDF pages to images + extracted text
 - Gemini uses native vision for document understanding
 - DOCX/PPTX require conversion to PDF via our normalizer service (LibreOffice)
+
+**API Content Blocks:**
+- Gemini: `inlineData` with `mimeType: 'application/pdf'`
+- Claude: `document` with `source.media_type: 'application/pdf'`
+- OpenAI: `file` with `file_data: 'data:application/pdf;base64,...'`
 
 ### IMPORTANT: Gemini Receives PDFs Visually (Multimodal)
 
