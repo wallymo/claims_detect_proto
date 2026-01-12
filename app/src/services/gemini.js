@@ -51,10 +51,8 @@ const PRICING = {
   'default': { input: 1.25, output: 5.00 }
 }
 
-// MLR Reviewer persona - included in all prompts for consistency across AI services
-const MLR_PERSONA = `You are a veteran MLR (Medical, Legal, Regulatory) reviewer for pharmaceutical promotional materials. Your mission: surface EVERY statement that could require substantiation. Flag 20 borderline phrases rather than let 1 slip through. When unsure, include it with lower confidence rather than omit.
-
-`
+// System instruction (moved out of user prompt for efficiency)
+const SYSTEM_INSTRUCTION = `You are a veteran MLR (Medical, Legal, Regulatory) reviewer for pharmaceutical promotional materials. Your mission: surface EVERY statement that could require substantiation. Flag 20 borderline phrases rather than let 1 slip through. When unsure, include it with lower confidence rather than omit.`
 
 // JSON Schema for strict output validation
 const CLAIMS_JSON_SCHEMA = {
@@ -137,7 +135,7 @@ const POSITION_INSTRUCTIONS = `
 - Charts/graphs: position at LEFT EDGE of visual element`
 
 // User-facing prompt for All Claims (shown in UI, editable)
-export const ALL_CLAIMS_PROMPT_USER = MLR_PERSONA + `# Task
+export const ALL_CLAIMS_PROMPT_USER = `# Task
 Extract ALL claims requiring MLR substantiation from this pharmaceutical document.
 
 # Claim Types
@@ -158,7 +156,7 @@ Extract ALL claims requiring MLR substantiation from this pharmaceutical documen
 Analyze now. Find everything requiring substantiation.`
 
 // User-facing prompt for Disease State claims (shown in UI, editable)
-export const DISEASE_STATE_PROMPT_USER = MLR_PERSONA + `# Task
+export const DISEASE_STATE_PROMPT_USER = `# Task
 Extract DISEASE STATE claims requiring MLR substantiation.
 
 # Claim Types
@@ -182,7 +180,7 @@ Extract DISEASE STATE claims requiring MLR substantiation.
 Analyze now. Find all disease/condition claims.`
 
 // User-facing prompt for Medication claims (shown in UI, editable)
-export const MEDICATION_PROMPT_USER = MLR_PERSONA + `# Task
+export const MEDICATION_PROMPT_USER = `# Task
 Extract MEDICATION claims requiring MLR substantiation.
 
 # Claim Types
@@ -262,6 +260,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
         }
       ],
       config: {
+        systemInstruction: SYSTEM_INSTRUCTION,
         temperature: 0, // Zero temperature for deterministic, reproducible output
         topP: 1,
         maxOutputTokens: 64000,

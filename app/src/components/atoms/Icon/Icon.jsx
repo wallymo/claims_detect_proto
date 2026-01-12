@@ -1,5 +1,6 @@
 import { cloneElement } from 'react'
 import styles from './Icon.module.css'
+import { logger } from '@/utils/logger'
 
 // Size map for named sizes (in pixels)
 const SIZE_MAP = {
@@ -286,7 +287,7 @@ export default function Icon({
   const iconContent = icons[name]
 
   if (!iconContent) {
-    console.warn(`Icon "${name}" not found. Available icons: ${Object.keys(icons).join(', ')}`)
+    logger.warn(`Icon "${name}" not found. Available icons: ${Object.keys(icons).join(', ')}`)
     return null
   }
 

@@ -8,6 +8,7 @@
     "dev:app": "vite",
     "normalizer": "cd ../normalizer-service && npm run dev",
     "build": "vite build",
+    "test": "node --test test/**/*.test.js",
     "lint": "eslint .",
     "preview": "vite preview"
   },

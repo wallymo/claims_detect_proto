@@ -7,10 +7,11 @@ import Spinner from '@/components/atoms/Spinner/Spinner'
 import ScannerOverlay from '@/components/claims-detector/ScannerOverlay'
 import ClaimPinsOverlay from './ClaimPinsOverlay'
 import { extractTextWithPositions } from '@/utils/pdfTextExtractor'
+import { logger } from '@/utils/logger'
 
 // Use unpkg CDN for worker (cdnjs doesn't have v5)
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.min.mjs`
-console.log('PDF.js legacy build, version:', pdfjsLib.version)
+logger.debug('PDF.js legacy build, version:', pdfjsLib.version)
 
 export default function PDFViewer({
   file,
@@ -60,24 +61,24 @@ export default function PDFViewer({
     }
 
     const loadPDF = async () => {
-      console.log('Loading PDF:', file.name, file.size, 'bytes')
+      logger.info('Loading PDF:', file.name, file.size, 'bytes')
       setIsLoading(true)
       setError(null)
 
       try {
         const arrayBuffer = await file.arrayBuffer()
-        console.log('Got arrayBuffer, size:', arrayBuffer.byteLength)
+        logger.debug('Got arrayBuffer, size:', arrayBuffer.byteLength)
         const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
-        console.log('Created loading task')
+        logger.debug('Created loading task')
         const loadedPdf = await loadingTask.promise
-        console.log('PDF loaded, pages:', loadedPdf.numPages)
+        logger.info('PDF loaded, pages:', loadedPdf.numPages)
         setPdf(loadedPdf)
         setTotalPages(loadedPdf.numPages)
         setCurrentPage(1)
         setPanX(0)
         setPanY(0)
       } catch (err) {
-        console.error('PDF load error:', err)
+        logger.error('PDF load error:', err)
         setError(`Failed to load PDF: ${err.message}`)
       } finally {
         setIsLoading(false)
@@ -99,9 +100,9 @@ export default function PDFViewer({
         const pages = await extractTextWithPositions(pdf)
         setExtractedPages(pages)
         onTextExtracted?.(pages)
-        console.log(`✅ Extracted text from ${pages.length} pages`)
+        logger.info(`Extracted text from ${pages.length} pages`)
       } catch (err) {
-        console.error('Text extraction error:', err)
+        logger.error('Text extraction error:', err)
       }
     }
 
@@ -135,7 +136,7 @@ export default function PDFViewer({
           viewport: scaledViewport
         }).promise
       } catch (err) {
-        console.error('Page render error:', err)
+        logger.error('Page render error:', err)
       }
     }
 
@@ -159,13 +160,13 @@ export default function PDFViewer({
   }, [activeClaimId, claims])
 
   const handlePrevPage = () => {
-    console.log('⬅️ Prev clicked, currentPage:', currentPage)
+    logger.debug('Prev clicked, currentPage:', currentPage)
     onClaimSelect?.(null) // allow manual navigation without snapping back
     setCurrentPage(prev => Math.max(1, prev - 1))
   }
 
   const handleNextPage = () => {
-    console.log('➡️ Next clicked, currentPage:', currentPage, 'totalPages:', totalPages)
+    logger.debug('Next clicked, currentPage:', currentPage, 'totalPages:', totalPages)
     onClaimSelect?.(null)
     setCurrentPage(prev => Math.min(totalPages, prev + 1))
   }

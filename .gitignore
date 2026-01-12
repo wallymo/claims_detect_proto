@@ -1,4 +1,33 @@
-*.DS_Store
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+.vite/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Test artifacts
+coverage/
+playwright-report/
+test-results/
+
+# Tooling
+.serena/
 
 # Local knowledge base assets (large binaries) – keep out of repo
 MKG Knowledge Base/
@@ -9,7 +38,6 @@ Prototype Design System
 
 # TaskMaster
 .taskmaster/
-.env.example
 
 # Dev folders
 presentation/

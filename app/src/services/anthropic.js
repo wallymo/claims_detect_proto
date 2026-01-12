@@ -10,6 +10,7 @@
  */
 
 import { MEDICATION_PROMPT_USER, ALL_CLAIMS_PROMPT_USER, DISEASE_STATE_PROMPT_USER } from './gemini'
+import { logger } from '@/utils/logger'
 
 // Model configuration
 export const ANTHROPIC_MODEL = 'claude-sonnet-4-5-20250929'
@@ -122,7 +123,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     selectedPrompt = customPrompt.toLowerCase().includes('json')
       ? customPrompt
       : customPrompt + JSON_OUTPUT_INSTRUCTIONS
-    console.log(`📋 Using custom prompt (${customPrompt.length} chars)`)
+    logger.debug(`Using custom prompt (${customPrompt.length} chars)`)
   } else {
     if (promptKey === 'drug') {
       selectedPrompt = MEDICATION_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
@@ -131,7 +132,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     } else {
       selectedPrompt = ALL_CLAIMS_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
     }
-    console.log(`📋 Using ${promptKey} prompt for Claude analysis`)
+    logger.info(`Using ${promptKey} prompt for Claude analysis`)
   }
 
   const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY
@@ -145,7 +146,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     // Build content array - use page images if provided, otherwise fall back to PDF
     let contentParts
     if (pageImages && pageImages.length > 0) {
-      console.log(`🖼️ Using ${pageImages.length} pre-rendered page images for Claude`)
+      logger.info(`Using ${pageImages.length} pre-rendered page images for Claude`)
       contentParts = [
         // Send each page as an image
         ...pageImages.map(img => ({
@@ -163,7 +164,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
       ]
     } else {
       // Fallback to native PDF (may have issues with some documents)
-      console.log('📄 Using native PDF for Claude (no page images provided)')
+      logger.info('Using native PDF for Claude (no page images provided)')
       const pdfBase64 = await fileToBase64(pdfFile)
       contentParts = [
         {
@@ -220,7 +221,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     // Extract text from Claude response
     const text = data.content?.[0]?.text || ''
 
-    console.log('🔍 Raw Claude response (first 500 chars):', text?.substring(0, 500))
+    logger.debug('Raw Claude response (first 500 chars):', text?.substring(0, 500))
 
     // We used assistant prefill '{"claims": [' so prepend it to complete the JSON
     const jsonText = '{"claims": [' + text
@@ -229,8 +230,8 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     try {
       result = JSON.parse(jsonText)
     } catch (parseError) {
-      console.error('❌ JSON parse failed:', parseError.message)
-      console.error('❌ Attempted to parse:', jsonText?.substring(0, 500))
+      logger.error('Claude JSON parse failed:', parseError.message)
+      logger.error('Claude parse input (first 500 chars):', jsonText?.substring(0, 500))
       throw new Error(`Failed to parse Claude response as JSON: ${parseError.message}`)
     }
 
@@ -241,7 +242,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
         ? { x: Number(claim.x) || 0, y: Number(claim.y) || 0 }
         : null
 
-      console.log(`📍 Claim ${index + 1}: x=${claim.x}, y=${claim.y}, text="${claim.claim?.slice(0, 50)}..."`)
+      logger.debug(`Claim ${index + 1}: x=${claim.x}, y=${claim.y}, text="${claim.claim?.slice(0, 50)}..."`)
 
       return {
         id: `claim_${String(index + 1).padStart(3, '0')}`,
@@ -261,8 +262,8 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     const outputTokens = usage.output_tokens || 0
     const cost = calculateCost(ANTHROPIC_MODEL, inputTokens, outputTokens)
 
-    console.log(`✅ Detected ${claims.length} claims`)
-    console.log(`💰 Usage: ${inputTokens} input + ${outputTokens} output tokens = $${cost.toFixed(4)}`)
+    logger.info(`Detected ${claims.length} claims`)
+    logger.info(`Usage: ${inputTokens} input + ${outputTokens} output tokens = $${cost.toFixed(4)}`)
 
     const pricing = PRICING[ANTHROPIC_MODEL] || PRICING['default']
     return {
@@ -279,7 +280,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
       }
     }
   } catch (error) {
-    console.error('Claude analysis error:', error)
+    logger.error('Claude analysis error:', error)
     return {
       success: false,
       error: error.message,

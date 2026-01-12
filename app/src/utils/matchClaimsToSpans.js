@@ -8,6 +8,8 @@
  * 4. If no match, fall back to model's x/y coordinates (source: 'model')
  */
 
+import { logger } from './logger.js'
+
 /**
  * Normalize text for fuzzy matching
  */
@@ -118,7 +120,7 @@ export function matchClaimsToSpans(claims, extractedPages) {
       // Use span-based positioning
       const bbox = computeBboxFromLines(matches, pageData.width, pageData.height)
 
-      console.log(`📍 Span match for "${claim.text.slice(0, 40)}..." → score=${matches[0].score.toFixed(2)}, bbox=(${bbox.x.toFixed(1)}, ${bbox.y.toFixed(1)})`)
+      logger.debug(`Span match for "${claim.text.slice(0, 40)}..." score=${matches[0].score.toFixed(2)}, bbox=(${bbox.x.toFixed(1)}, ${bbox.y.toFixed(1)})`)
 
       return {
         ...claim,
@@ -134,7 +136,7 @@ export function matchClaimsToSpans(claims, extractedPages) {
     }
 
     // No match found, fall back to model coordinates
-    console.log(`📍 No span match for "${claim.text.slice(0, 40)}..." → using model coords`)
+    logger.debug(`No span match for "${claim.text.slice(0, 40)}..." using model coords`)
 
     return {
       ...claim,

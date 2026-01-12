@@ -5,6 +5,8 @@
  * DOCX/PPTX/PDF → canonical PDF + page images
  */
 
+import { logger } from '@/utils/logger'
+
 const NORMALIZER_API = import.meta.env.VITE_NORMALIZER_URL || 'http://localhost:3001'
 
 /**
@@ -28,19 +30,19 @@ export async function normalizeDocument(file, onProgress) {
     })
 
     // DEBUG: Log raw response status
-    console.log(`🔍 Normalizer response: status=${response.status}, ok=${response.ok}`)
+    logger.debug(`Normalizer response: status=${response.status}, ok=${response.ok}`)
 
     // Get raw text first to see what backend returned
     const rawText = await response.text()
-    console.log(`🔍 Normalizer raw response (first 500 chars):`, rawText?.substring(0, 500))
+    logger.debug(`Normalizer raw response (first 500 chars):`, rawText?.substring(0, 500))
 
     // Try to parse as JSON
     let result
     try {
       result = JSON.parse(rawText)
     } catch (parseError) {
-      console.error('❌ Normalizer JSON parse failed:', parseError.message)
-      console.error('❌ Raw response was:', rawText?.substring(0, 1000))
+      logger.error('Normalizer JSON parse failed:', parseError.message)
+      logger.error('Normalizer raw response:', rawText?.substring(0, 1000))
       throw new Error(`Backend returned invalid JSON: ${parseError.message}`)
     }
 
@@ -52,7 +54,7 @@ export async function normalizeDocument(file, onProgress) {
 
     return result
   } catch (error) {
-    console.error('Normalization error:', error)
+    logger.error('Normalization error:', error)
     throw new Error(error.message || 'Failed to connect to normalizer service')
   }
 }
@@ -86,7 +88,7 @@ export async function checkNormalizerHealth() {
     const data = await response.json()
     return data.status === 'ok'
   } catch (error) {
-    console.error('Normalizer health check failed:', error)
+    logger.error('Normalizer health check failed:', error)
     return false
   }
 }

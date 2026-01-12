@@ -13,6 +13,7 @@
 
 import OpenAI from 'openai'
 import { MEDICATION_PROMPT_USER, ALL_CLAIMS_PROMPT_USER, DISEASE_STATE_PROMPT_USER } from './gemini'
+import { logger } from '@/utils/logger'
 
 // Singleton client instance
 let openaiClient = null
@@ -151,7 +152,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
   let selectedPrompt
   if (customPrompt) {
     selectedPrompt = customPrompt + JSON_OUTPUT_INSTRUCTIONS
-    console.log(`📋 Using custom prompt (${customPrompt.length} chars)`)
+    logger.debug(`Using custom prompt (${customPrompt.length} chars)`)
   } else {
     if (promptKey === 'drug') {
       selectedPrompt = MEDICATION_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
@@ -160,7 +161,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     } else {
       selectedPrompt = ALL_CLAIMS_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
     }
-    console.log(`📋 Using ${promptKey} prompt for OpenAI analysis`)
+    logger.info(`Using ${promptKey} prompt for OpenAI analysis`)
   }
 
   const client = getOpenAIClient()
@@ -171,7 +172,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     // Build content array using new Responses API format
     let contentParts
     if (pageImages && pageImages.length > 0) {
-      console.log(`🖼️ Using ${pageImages.length} pre-rendered page images for OpenAI`)
+      logger.info(`Using ${pageImages.length} pre-rendered page images for OpenAI`)
       contentParts = [
         { type: 'input_text', text: selectedPrompt },
         // Send each page as an image using input_image type
@@ -183,7 +184,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
       ]
     } else {
       // Use native PDF with input_file type
-      console.log('📄 Using native PDF for OpenAI')
+      logger.info('Using native PDF for OpenAI')
       const pdfBase64 = await fileToBase64(pdfFile)
       const filename = pdfFile.name || 'document.pdf'
       contentParts = [
@@ -243,7 +244,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     // New API returns output_text directly
     const text = response.output_text || ''
 
-    console.log('🔍 Raw OpenAI response (first 500 chars):', text?.substring(0, 500))
+    logger.debug('Raw OpenAI response (first 500 chars):', text?.substring(0, 500))
 
     const result = JSON.parse(text)
 
@@ -254,7 +255,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
         ? { x: Number(claim.x) || 0, y: Number(claim.y) || 0 }
         : null
 
-      console.log(`📍 Claim ${index + 1}: x=${claim.x}, y=${claim.y}, text="${claim.claim?.slice(0, 50)}..."`)
+      logger.debug(`Claim ${index + 1}: x=${claim.x}, y=${claim.y}, text="${claim.claim?.slice(0, 50)}..."`)
 
       return {
         id: `claim_${String(index + 1).padStart(3, '0')}`,
@@ -274,8 +275,8 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     const outputTokens = usage.completion_tokens || usage.output_tokens || 0
     const cost = calculateCost(OPENAI_MODEL, inputTokens, outputTokens)
 
-    console.log(`✅ Detected ${claims.length} claims`)
-    console.log(`💰 Usage: ${inputTokens} input + ${outputTokens} output tokens = $${cost.toFixed(4)}`)
+    logger.info(`Detected ${claims.length} claims`)
+    logger.info(`Usage: ${inputTokens} input + ${outputTokens} output tokens = $${cost.toFixed(4)}`)
 
     const pricing = PRICING[OPENAI_MODEL] || PRICING['default']
     return {
@@ -292,7 +293,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
       }
     }
   } catch (error) {
-    console.error('OpenAI analysis error:', error)
+    logger.error('OpenAI analysis error:', error)
     return {
       success: false,
       error: error.message,

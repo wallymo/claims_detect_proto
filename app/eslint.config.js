@@ -23,7 +23,14 @@ export default defineConfig([
       },
     },
     rules: {
+      'no-console': 'error',
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+    },
+  },
+  {
+    files: ['src/utils/logger.js'],
+    rules: {
+      'no-console': 'off',
     },
   },
 ])

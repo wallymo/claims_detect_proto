@@ -4,6 +4,7 @@
  */
 
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
+import { logger } from './logger.js'
 
 // Use same worker setup as PDFViewer
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.min.mjs`
@@ -23,7 +24,7 @@ export async function pdfToImages(pdfFile, scale = 2) {
 
   const pageCount = Math.min(pdf.numPages, MAX_PAGES)
   if (pdf.numPages > MAX_PAGES) {
-    console.warn(`PDF has ${pdf.numPages} pages, converting first ${MAX_PAGES} only`)
+    logger.warn(`PDF has ${pdf.numPages} pages, converting first ${MAX_PAGES} only`)
   }
 
   const images = []
@@ -56,7 +57,7 @@ export async function pdfToImages(pdfFile, scale = 2) {
 
   // Log payload size for cost awareness
   const totalBytes = images.reduce((sum, img) => sum + img.base64.length, 0)
-  console.log(`📄 Converted ${images.length} pages to PNG (~${Math.round(totalBytes / 1024)}KB)`)
+  logger.info(`Converted ${images.length} pages to PNG (~${Math.round(totalBytes / 1024)}KB)`)
 
   return images
 }

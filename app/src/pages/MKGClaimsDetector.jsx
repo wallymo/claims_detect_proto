@@ -17,6 +17,7 @@ import { normalizeDocument, base64ToBlob } from '@/services/normalizer'
 import { pdfToImages } from '@/utils/pdfToImages'
 
 import { enrichClaimsWithPositions, addGlobalIndices } from '@/utils/textMatcher'
+import { logger } from '@/utils/logger'
 
 // Model routing map
 const MODEL_ANALYZERS = {
@@ -218,7 +219,7 @@ export default function MKGClaimsDetector() {
           throw new Error(normalized.error)
         }
 
-        console.log(`✅ Document converted: ${normalized.document.page_count} pages`)
+        logger.info(`Document converted: ${normalized.document.page_count} pages`)
         pdfFile = base64ToBlob(normalized.document.canonical_pdf)
       }
 
@@ -238,7 +239,7 @@ export default function MKGClaimsDetector() {
         setAnalysisStatus('Rendering pages for vision analysis...')
         setAnalysisProgress(15)
         pageImages = await pdfToImages(pdfFile)
-        console.log(`🖼️ Converted PDF to ${pageImages.length} images for ${selectedModel}`)
+        logger.info(`Converted PDF to ${pageImages.length} images for ${selectedModel}`)
       }
 
       result = await analyzeDocument(pdfFile, (progress, status) => {
@@ -259,9 +260,9 @@ export default function MKGClaimsDetector() {
       setClaims(addGlobalIndices(claimsWithPositions))
 
       if (claimsNeedingPositions.length === 0) {
-        console.log('✅ All claims have positions from AI - no text matching needed')
+        logger.info('All claims have positions from AI - no text matching needed')
       } else {
-        console.log(`⚠️ ${claimsNeedingPositions.length}/${result.claims.length} claims missing positions, using text matching fallback`)
+        logger.warn(`${claimsNeedingPositions.length}/${result.claims.length} claims missing positions, using text matching fallback`)
       }
       setProcessingTime(Date.now() - startTime)
 
@@ -279,7 +280,7 @@ export default function MKGClaimsDetector() {
       setAnalysisStatus('Complete')
       setAnalysisComplete(true)
     } catch (error) {
-      console.error('Analysis error:', error)
+      logger.error('Analysis error:', error)
       setAnalysisError(error.message)
     } finally {
       setIsAnalyzing(false)
@@ -297,7 +298,7 @@ export default function MKGClaimsDetector() {
       const needsReposition = prev.some(c => !c.position || c.position?.source === 'fallback')
       if (!needsReposition) return prev
 
-      console.log('🔄 Re-enriching claim positions from text extraction...')
+      logger.debug('Re-enriching claim positions from text extraction...')
 
       // Preserve existing globalIndex, only refresh positions
       const refreshed = enrichClaimsWithPositions(prev, extractedPages)
@@ -622,8 +623,7 @@ export default function MKGClaimsDetector() {
 
         {/* Document Viewer Panel */}
         <div className="documentPanel">
-    
-      <PDFViewer
+          <PDFViewer
             file={uploadedFile}
             onClose={handleRemoveDocument}
             isAnalyzing={isAnalyzing}

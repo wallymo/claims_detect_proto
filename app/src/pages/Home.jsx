@@ -17,50 +17,7 @@ import PromptEditor from '@/components/claims-detector/PromptEditor'
 import ModelComparison from '@/components/claims-detector/ModelComparison'
 import Toggle from '@/components/atoms/Toggle/Toggle'
 import { getDefaultDocument, getAIAnalysisDocument } from '@/mocks/documents'
-import { getClaimsForDocument, getCoreClaimsCount, getAIDiscoveredCount, getAIAnalysisClaims, CLAIM_TYPES } from '@/mocks/claims'
-
-const MOCK_CLAIMS = [
-  {
-    id: 'claim_001',
-    text: 'Reduces symptoms by 50% in clinical trials conducted over 12 weeks with 500 participants',
-    confidence: 0.92,
-    location: { paragraph: 3, charStart: 145, charEnd: 198 },
-    status: 'pending',
-    type: 'efficacy'
-  },
-  {
-    id: 'claim_002',
-    text: 'FDA approved for ages 18 and older with no major contraindications',
-    confidence: 0.88,
-    location: { paragraph: 5, charStart: 220, charEnd: 285 },
-    status: 'pending',
-    type: 'regulatory'
-  },
-  {
-    id: 'claim_003',
-    text: 'Outperforms leading competitor by 35% in efficacy measures',
-    confidence: 0.78,
-    location: { paragraph: 7, charStart: 340, charEnd: 395 },
-    status: 'pending',
-    type: 'comparative'
-  },
-  {
-    id: 'claim_004',
-    text: 'May cause mild side effects in less than 5% of patients',
-    confidence: 0.65,
-    location: { paragraph: 12, charStart: 580, charEnd: 635 },
-    status: 'pending',
-    type: 'safety'
-  },
-  {
-    id: 'claim_005',
-    text: 'Clinically proven to improve quality of life scores',
-    confidence: 0.54,
-    location: { paragraph: 15, charStart: 720, charEnd: 770 },
-    status: 'pending',
-    type: 'efficacy'
-  }
-]
+import { getClaimsForDocument, getAIAnalysisClaims, CLAIM_TYPES } from '@/mocks/claims'
 
 const BRAND_OPTIONS = [
   { label: 'Novartis' },
@@ -90,7 +47,6 @@ export default function Home() {
   const [claims, setClaims] = useState([])
   const [analysisComplete, setAnalysisComplete] = useState(false)
   const [processingTime, setProcessingTime] = useState(0)
-  const [masterPrompt, setMasterPrompt] = useState('')
   const [activeClaim, setActiveClaim] = useState(null)
   const [claimFilter, setClaimFilter] = useState('all')
   const [typeFilters, setTypeFilters] = useState([])
@@ -258,9 +214,6 @@ export default function Home() {
     setShouldFlashHighlight(true) // Clicked from card, flash to guide user
   }
 
-  const handlePromptSave = (prompt) => {
-    setMasterPrompt(prompt)
-  }
 
   const handleDocumentClose = () => {
     setDocument(null)
@@ -485,7 +438,7 @@ export default function Home() {
             />
           )}
 
-          <PromptEditor onSave={handlePromptSave} />
+          <PromptEditor />
         </div>
 
         {/* Document Viewer Panel */}
@@ -637,7 +590,7 @@ export default function Home() {
               </Button>
             </div>
             <ModelComparison
-              onRunAllModels={() => console.log('Running all models')}
+              onRunAllModels={() => {}}
               onSelectModel={(model) => {
                 setSelectedModel(model)
                 setShowModelComparison(false)
@@ -686,7 +639,7 @@ export default function Home() {
                 <FileUpload
                   accept=".pdf,.docx,.xlsx"
                   maxSize={10485760}
-                  onUpload={(file) => console.log('Claims doc uploaded:', file.name)}
+                  onUpload={() => {}}
                 />
               </div>
               <div className="modalActions">

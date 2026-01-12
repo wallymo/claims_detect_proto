@@ -6,6 +6,8 @@
  * and return a tight bounding box around just those words, not the entire claim.
  */
 
+import { logger } from './logger.js'
+
 /**
  * Normalize text for fuzzy matching
  */
@@ -412,7 +414,7 @@ export function enrichClaimsWithPositions(claims, extractedPages) {
     const score = match?.score ?? 0
 
     if (!position) {
-      console.debug('⚠️ Claim position fallback', { id: claim.id, pageHint: pageNumber, text: claim.text?.slice(0, 80) })
+      logger.debug('Claim position fallback', { id: claim.id, pageHint: pageNumber, text: claim.text?.slice(0, 80) })
     }
 
     return {

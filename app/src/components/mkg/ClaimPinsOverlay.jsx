@@ -1,5 +1,6 @@
 import { useRef, useEffect, useCallback, useState } from 'react'
 import styles from './ClaimPinsOverlay.module.css'
+import { logger } from '@/utils/logger'
 
 const DOT_RADIUS = 14
 const DOT_RADIUS_ACTIVE = 18
@@ -172,9 +173,9 @@ export default function ClaimPinsOverlay({
       : []
 
   // Debug: log filtering results
-  console.log(`🎯 ClaimPins: page=${currentPage}, dims=${canvasDimensions.width}x${canvasDimensions.height}, claims=${claims.length}, dots=${dots.length}`)
+  logger.debug(`ClaimPins: page=${currentPage}, dims=${canvasDimensions.width}x${canvasDimensions.height}, claims=${claims.length}, dots=${dots.length}`)
   if (dots.length === 0 && claims.length > 0) {
-    console.log('Claims pages:', claims.map(c => c.page))
+    logger.debug('Claims pages:', claims.map(c => c.page))
   }
 
   // Draw dots on canvas
