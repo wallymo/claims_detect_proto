@@ -6,8 +6,53 @@ on:
   pull_request:
 
 jobs:
+  # Security scanning job
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+
+      - name: Install dependencies (app)
+        run: npm ci
+        working-directory: app
+
+      - name: Install dependencies (normalizer)
+        run: npm ci
+        working-directory: normalizer-service
+
+      - name: Security audit (app)
+        run: npm audit --audit-level=high
+        working-directory: app
+
+      - name: Security audit (normalizer)
+        run: npm audit --audit-level=high
+        working-directory: normalizer-service
+
+  # CodeQL analysis for security vulnerabilities
+  codeql:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+
+  # Main build and test job
   build:
     runs-on: ubuntu-latest
+    needs: [security]
     defaults:
       run:
         working-directory: app
@@ -27,8 +72,61 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Test
-        run: npm test
+      - name: Type check
+        run: npm run typecheck --if-present
+        continue-on-error: true  # Don't fail until TypeScript migration complete
+
+      - name: Test with coverage
+        run: npm run test:coverage --if-present || npm test
+
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          directory: ./app/coverage
+          fail_ci_if_error: false
+        continue-on-error: true
 
       - name: Build
         run: npm run build
+
+  # Normalizer service tests
+  normalizer:
+    runs-on: ubuntu-latest
+    needs: [security]
+    defaults:
+      run:
+        working-directory: normalizer-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          cache: "npm"
+          cache-dependency-path: normalizer-service/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test
+        run: npm test --if-present
+        continue-on-error: true  # No tests yet
+
+  # Docker build verification
+  docker:
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build normalizer Docker image
+        run: docker build -t claims-detector-normalizer ./normalizer-service
+
+      - name: Verify Docker health check
+        run: |
+          docker run -d --name normalizer-test -p 3001:3001 claims-detector-normalizer
+          sleep 10
+          curl -f http://localhost:3001/health || exit 1
+          docker stop normalizer-test
