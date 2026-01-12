@@ -4,6 +4,11 @@
  * This service handles:
  * - PDF document analysis and claim detection using GPT-4o vision
  * - Maintains same interface as gemini.js for easy swapping
+ *
+ * Updated to use the new Responses API (2025):
+ * - Uses client.responses.create() instead of chat.completions.create()
+ * - Uses input[] array with input_text and input_file content types
+ * - Uses text.format for structured JSON output
  */
 
 import OpenAI from 'openai'
@@ -27,19 +32,21 @@ const getOpenAIClient = () => {
   return openaiClient
 }
 
-// Model configuration
+// Model configuration - using GPT-4o (gpt-5 available but keeping 4o for cost)
 export const OPENAI_MODEL = 'gpt-4o'
 
 // Friendly display names
 export const MODEL_DISPLAY_NAMES = {
   'gpt-4o': 'GPT-4o',
-  'gpt-4o-mini': 'GPT-4o Mini'
+  'gpt-4o-mini': 'GPT-4o Mini',
+  'gpt-5': 'GPT-5'
 }
 
 // Pricing per 1M tokens (USD)
 const PRICING = {
   'gpt-4o': { input: 2.50, output: 10.00 },
   'gpt-4o-mini': { input: 0.15, output: 0.60 },
+  'gpt-5': { input: 2.50, output: 10.00 }, // Placeholder - update when pricing confirmed
   'default': { input: 2.50, output: 10.00 }
 }
 
@@ -126,7 +133,11 @@ Return ONLY this JSON:
 Now analyze the document. Find everything that could require substantiation.`
 
 /**
- * Analyze a document and detect claims using GPT-4o
+ * Analyze a document and detect claims using OpenAI Responses API
+ *
+ * Uses the new Responses API (2025) with:
+ * - input[] array with input_text and input_file content types
+ * - text.format for structured JSON output
  *
  * @param {File|Blob} pdfFile - PDF file (unused when pageImages provided)
  * @param {Function} onProgress - Optional progress callback
@@ -136,16 +147,10 @@ Now analyze the document. Find everything that could require substantiation.`
  * @returns {Promise<Object>} - Result with claims array
  */
 export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null, pageImages = null) {
-  // Select the appropriate prompt
-  // OpenAI requires "json" in the prompt when using response_format: { type: 'json_object' }
-  // The imported prompts (MEDICATION_PROMPT_USER, ALL_CLAIMS_PROMPT_USER) don't have JSON instructions,
-  // so we append them here
+  // Select the appropriate prompt - no need for "json" keyword with text.format
   let selectedPrompt
   if (customPrompt) {
-    // Ensure custom prompts include "json" for OpenAI compatibility
-    selectedPrompt = customPrompt.toLowerCase().includes('json')
-      ? customPrompt
-      : customPrompt + JSON_OUTPUT_INSTRUCTIONS
+    selectedPrompt = customPrompt + JSON_OUTPUT_INSTRUCTIONS
     console.log(`📋 Using custom prompt (${customPrompt.length} chars)`)
   } else {
     if (promptKey === 'drug') {
@@ -155,62 +160,88 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     } else {
       selectedPrompt = ALL_CLAIMS_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
     }
-    console.log(`📋 Using ${promptKey} prompt for GPT-4o analysis`)
+    console.log(`📋 Using ${promptKey} prompt for OpenAI analysis`)
   }
 
   const client = getOpenAIClient()
 
-  onProgress?.(25, 'Sending to OpenAI GPT-4o...')
+  onProgress?.(25, 'Sending to OpenAI...')
 
   try {
-    // Build content array - use page images if provided, otherwise fall back to PDF
+    // Build content array using new Responses API format
     let contentParts
     if (pageImages && pageImages.length > 0) {
-      console.log(`🖼️ Using ${pageImages.length} pre-rendered page images for GPT-4o`)
+      console.log(`🖼️ Using ${pageImages.length} pre-rendered page images for OpenAI`)
       contentParts = [
-        { type: 'text', text: selectedPrompt },
-        // Send each page as an image
+        { type: 'input_text', text: selectedPrompt },
+        // Send each page as an image using input_image type
         ...pageImages.map(img => ({
-          type: 'image_url',
-          image_url: {
-            url: `data:image/png;base64,${img.base64}`,
-            detail: 'high'
-          }
+          type: 'input_image',
+          image_url: `data:image/png;base64,${img.base64}`,
+          detail: 'high'
         }))
       ]
     } else {
-      // Fallback to native PDF (may have issues with some documents)
-      console.log('📄 Using native PDF for GPT-4o (no page images provided)')
+      // Use native PDF with input_file type
+      console.log('📄 Using native PDF for OpenAI')
       const pdfBase64 = await fileToBase64(pdfFile)
       const filename = pdfFile.name || 'document.pdf'
       contentParts = [
-        { type: 'text', text: selectedPrompt },
+        { type: 'input_text', text: selectedPrompt },
         {
-          type: 'file',
-          file: {
-            filename: filename,
-            file_data: `data:application/pdf;base64,${pdfBase64}`
-          }
+          type: 'input_file',
+          filename: filename,
+          file_data: `data:application/pdf;base64,${pdfBase64}`
         }
       ]
     }
 
-    const response = await client.chat.completions.create({
+    // Use the new Responses API
+    const response = await client.responses.create({
       model: OPENAI_MODEL,
-      messages: [
+      input: [
         {
           role: 'user',
           content: contentParts
         }
       ],
-      max_tokens: 16384, // Increased to handle documents with many claims (GPT-4o max)
-      temperature: 0,
-      response_format: { type: 'json_object' }
+      // Structured output using text.format (replaces response_format)
+      text: {
+        format: {
+          type: 'json_schema',
+          name: 'claims_response',
+          schema: {
+            type: 'object',
+            properties: {
+              claims: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    claim: { type: 'string' },
+                    confidence: { type: 'number' },
+                    page: { type: 'number' },
+                    x: { type: 'number' },
+                    y: { type: 'number' }
+                  },
+                  required: ['claim', 'confidence', 'page', 'x', 'y'],
+                  additionalProperties: false
+                }
+              }
+            },
+            required: ['claims'],
+            additionalProperties: false
+          },
+          strict: true
+        }
+      },
+      temperature: 0
     })
 
     onProgress?.(75, 'Processing results...')
 
-    const text = response.choices?.[0]?.message?.content || ''
+    // New API returns output_text directly
+    const text = response.output_text || ''
 
     console.log('🔍 Raw OpenAI response (first 500 chars):', text?.substring(0, 500))
 
@@ -237,10 +268,10 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
 
     onProgress?.(95, 'Finalizing...')
 
-    // Extract usage metadata
+    // Extract usage metadata from new API format
     const usage = response.usage || {}
-    const inputTokens = usage.prompt_tokens || 0
-    const outputTokens = usage.completion_tokens || 0
+    const inputTokens = usage.prompt_tokens || usage.input_tokens || 0
+    const outputTokens = usage.completion_tokens || usage.output_tokens || 0
     const cost = calculateCost(OPENAI_MODEL, inputTokens, outputTokens)
 
     console.log(`✅ Detected ${claims.length} claims`)
@@ -277,12 +308,12 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
 export async function checkOpenAIConnection() {
   try {
     const client = getOpenAIClient()
-    const response = await client.chat.completions.create({
+    // Use the new Responses API for connection check
+    const response = await client.responses.create({
       model: OPENAI_MODEL,
-      messages: [{ role: 'user', content: 'Say "connected" if you can read this.' }],
-      max_tokens: 10
+      input: 'Say "connected" if you can read this.'
     })
-    const text = response.choices?.[0]?.message?.content || 'connected'
+    const text = response.output_text || 'connected'
     return { connected: true, response: text }
   } catch (error) {
     return { connected: false, error: error.message }

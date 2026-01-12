@@ -50,14 +50,14 @@ export default function ClaimCard({
   }
 
   const getConfidenceVariant = (confidence) => {
-    if (confidence >= 0.8) return 'success'
-    if (confidence >= 0.5) return 'warning'
+    if (confidence >= 0.9) return 'success'
+    if (confidence >= 0.7) return 'warning'
     return 'error'
   }
 
   const getConfidenceColor = (confidence) => {
-    if (confidence >= 0.8) return '#388E3C'
-    if (confidence >= 0.5) return '#F57C00'
+    if (confidence >= 0.9) return '#388E3C'
+    if (confidence >= 0.7) return '#F57C00'
     return '#D32F2F'
   }
 

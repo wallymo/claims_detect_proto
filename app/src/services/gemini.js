@@ -5,6 +5,10 @@
  * - PDF document analysis and claim detection
  * - Reference matching between claims and knowledge base
  * - Text extraction from documents
+ *
+ * Uses models.generateContent() with inlineData for PDF processing.
+ * NOTE: The newer interactions.create() API exists in docs but isn't yet
+ * available in the stable @google/genai SDK (as of v1.33.0).
  */
 
 import { GoogleGenAI } from '@google/genai'
@@ -46,6 +50,54 @@ const PRICING = {
   'default': { input: 1.25, output: 5.00 }
 }
 
+// System instruction (moved out of user prompt for efficiency)
+const SYSTEM_INSTRUCTION = `You are a veteran MLR (Medical, Legal, Regulatory) reviewer for pharmaceutical promotional materials. Your mission: surface EVERY statement that could require substantiation. Flag 20 borderline phrases rather than let 1 slip through. When unsure, include it with lower confidence rather than omit.`
+
+// JSON Schema for strict output validation
+const CLAIMS_JSON_SCHEMA = {
+  type: 'object',
+  properties: {
+    claims: {
+      type: 'array',
+      description: 'Array of detected claims requiring substantiation',
+      items: {
+        type: 'object',
+        properties: {
+          claim: {
+            type: 'string',
+            description: 'Exact phrase from document requiring substantiation'
+          },
+          confidence: {
+            type: 'integer',
+            description: 'Confidence score 0-100',
+            minimum: 0,
+            maximum: 100
+          },
+          page: {
+            type: 'integer',
+            description: 'Page number where claim appears',
+            minimum: 1
+          },
+          x: {
+            type: 'number',
+            description: 'X position as % from left edge (0-100)',
+            minimum: 0,
+            maximum: 100
+          },
+          y: {
+            type: 'number',
+            description: 'Y position as % from top (0-100)',
+            minimum: 0,
+            maximum: 100
+          }
+        },
+        required: ['claim', 'confidence', 'page', 'x', 'y']
+      }
+    }
+  },
+  required: ['claims']
+}
+
 /**
  * Calculate cost from token usage
  */
@@ -72,129 +124,82 @@ export async function fileToBase64(file) {
   })
 }
 
-// Backend-only instructions appended to all prompts
+// Leaner, markdown-structured prompts (role moved to systemInstruction)
+
+// Position instructions appended to all prompts
 const POSITION_INSTRUCTIONS = `
-
-POSITION: Return the x/y coordinates where a marker pin should be placed for each claim:
-- x: LEFT EDGE of the claim text as percentage (0 = page left, 100 = page right)
-- y: vertical center of the claim text as percentage (0 = page top, 100 = page bottom)
-- The pin will appear AT these exact coordinates, so position at the LEFT EDGE of text, not center
-- For charts/images: position at the LEFT EDGE of the visual element
-- Example: text starting 20% from left at 30% down the page = x:20, y:30
-
-IMPORTANT: Charts, graphs, and infographics that display statistics or make comparative claims MUST be flagged. The visual nature doesn't exempt them from substantiation requirements.
-
-Return ONLY this JSON:
-{
-  "claims": [
-    { "claim": "[Exact phrase from document]", "confidence": 85, "page": 1, "x": 25.0, "y": 14.5 }
-  ]
-}`
+# Position
+- x: LEFT EDGE of claim text as % (0=left, 100=right)
+- y: vertical CENTER of claim as % (0=top, 100=bottom)
+- Charts/graphs: position at LEFT EDGE of visual element`
 
 // User-facing prompt for All Claims (shown in UI, editable)
-export const ALL_CLAIMS_PROMPT_USER = `You are a veteran MLR (Medical, Legal, Regulatory) reviewer analyzing pharmaceutical promotional materials. Surface EVERY statement that could require substantiation — flag 20 borderline phrases rather than let 1 slip through.
+export const ALL_CLAIMS_PROMPT_USER = `# Task
+Extract ALL claims requiring MLR substantiation from this pharmaceutical document.
 
-Identify ALL claims — any statement requiring substantiation:
+# Claim Types
+**Disease/Condition:** prevalence, burden, progression stats, unmet needs, risk factors
+**Product/Treatment:** efficacy, safety, dosing, MOA, formulation advantages
+**Comparative:** vs alternatives, trial citations, regulatory status, guidelines
+**Patient Impact:** QOL improvements, outcomes, statistics
 
-Disease & Condition:
-- Prevalence, burden, or progression statistics
-- Unmet need or treatment gap assertions
-- Risk factors, symptoms, or diagnostic criteria
+# Rules
+- Combine related statements into ONE claim if same substantiation needed
+- Split only when DIFFERENT substantiation required
+- Include charts/graphs/infographics with statistical claims
+- Complete, self-contained statements only
 
-Product & Treatment:
-- Efficacy, onset, duration, or outcomes
-- Safety, tolerability, side effects, or interactions
-- Dosage, administration, or convenience
-- Mechanism of action
-- Formulation or delivery advantages
+# Confidence (0-100)
+90-100: Explicit stats, specific numbers | 70-89: Benefit promises, comparisons | 50-69: Borderline phrasing | 30-49: Weak promotional signal
 
-Comparative & Authority:
-- Superiority or equivalence vs. alternatives
-- Clinical trial citations or study references
-- Regulatory status, approvals, or endorsements
-- Guidelines or expert recommendations
-
-Patient Impact:
-- Quality of life or lifestyle improvements
-- Statistics, percentages, or quantitative data
-
-Claim Boundaries:
-- Combine related statements supporting the SAME assertion into ONE claim
-- Split only when statements need DIFFERENT substantiation
-- Claims must be complete, self-contained statements
-- Every statistic requires substantiation regardless of visual treatment
-
-Confidence Scoring (0-100):
-- 90-100: Definite — explicit stats, direct efficacy claims, specific numbers
-- 70-89: Strong — benefit promises, implicit comparisons, authoritative language
-- 50-69: Borderline — suggestive phrasing a cautious reviewer might flag
-- 30-49: Weak signal — promotional in context, worth a second look
-
-When unsure, include it with lower confidence rather than omit.
-
-Now analyze the document. Find everything that could require substantiation.`
+Analyze now. Find everything requiring substantiation.`
 
 // User-facing prompt for Disease State claims (shown in UI, editable)
-export const DISEASE_STATE_PROMPT_USER = `You are a veteran MLR (Medical, Legal, Regulatory) reviewer analyzing pharmaceutical promotional materials. Surface EVERY statement about disease states and medical conditions that could require substantiation — flag 20 borderline phrases rather than let 1 slip through.
+export const DISEASE_STATE_PROMPT_USER = `# Task
+Extract DISEASE STATE claims requiring MLR substantiation.
 
-Identify ALL disease and condition claims — any statement requiring substantiation:
+# Claim Types
+- Prevalence, burden, progression statistics
+- Unmet needs, treatment gaps
+- Risk factors, symptoms, diagnostic criteria
+- Epidemiological/population data
+- Disease impact on QOL
+- Natural history, disease trajectory
+- Diagnostic challenges/delays
+- Healthcare utilization, economic burden
 
-Disease & Condition:
-- Prevalence, burden, or progression statistics
-- Unmet need or treatment gap assertions
-- Risk factors, symptoms, or diagnostic criteria
-- Epidemiological data or population statistics
-- Disease impact on quality of life
-- Natural history or disease trajectory
-- Diagnostic challenges or delays
-- Healthcare utilization or economic burden
+# Rules
+- Combine related statements if same substantiation needed
+- Split only when DIFFERENT substantiation required
+- Include visual elements with statistical claims
 
-Claim Boundaries:
-- Combine related statements supporting the SAME assertion into ONE claim
-- Split only when statements need DIFFERENT substantiation
-- Claims must be complete, self-contained statements
-- Every statistic requires substantiation regardless of visual treatment
+# Confidence (0-100)
+90-100: Explicit stats, prevalence data | 70-89: Burden assertions, unmet needs | 50-69: Borderline | 30-49: Weak contextual
 
-Confidence Scoring (0-100):
-- 90-100: Definite — explicit stats, specific numbers, prevalence data
-- 70-89: Strong — burden assertions, unmet need statements, authoritative language
-- 50-69: Borderline — suggestive phrasing a cautious reviewer might flag
-- 30-49: Weak signal — contextual statements worth a second look
-
-When unsure, include it with lower confidence rather than omit.
-
-Now analyze the document. Find everything about disease states and conditions that could require substantiation.`
+Analyze now. Find all disease/condition claims.`
 
 // User-facing prompt for Medication claims (shown in UI, editable)
-export const MEDICATION_PROMPT_USER = `Role: Veteran MLR reviewer. Surface EVERY statement that could require substantiation — better to flag 20 borderline phrases than let 1 slip through.
+export const MEDICATION_PROMPT_USER = `# Task
+Extract MEDICATION claims requiring MLR substantiation.
 
-What is a Medication Claim?
+# Claim Types
+- **Efficacy:** outcomes, onset, duration
+- **Safety:** risk profile, side effects, interactions
+- **Dosing:** schedule, convenience, administration
+- **MOA:** biological/chemical mechanism
+- **Formulation:** delivery advantages, dosing frequency
+- **Comparative:** vs alternatives, standard of care
+- **Authority:** trial citations, regulatory status
+- **Patient:** QOL, lifestyle improvements
 
-A substantiable statement about a drug, biologic, or medical product, including:
+# Rules
+- Combine related statements if same substantiation needed
+- Split only when DIFFERENT substantiation required
 
-- Efficacy: How well it works, onset, duration, or treatment outcomes
-- Safety/Tolerability: Risk profile, side effects, interactions, or absence thereof
-- Dosage/Administration: Dosing schedule, ease of use, convenience
-- Mechanism of Action: How the product works biologically or chemically
-- Formulation Superiority: Novel delivery, once-daily vs. BID, etc.
-- Comparative Statements: Better/faster/longer than alternatives or standard of care
-- Authority References: Citing clinical trials, regulatory status, endorsements
-- Patient Benefit or QOL: Improvements to lifestyle, functioning, satisfaction
+# Confidence (0-100)
+90-100: "Clinically proven to reduce X" | 70-89: "Starts working in 3 days" | 50-69: "Helps patients feel better" | 30-49: "New era in treatment"
 
-Claim Boundaries:
-- Combine related statements that support the same assertion into one claim
-- Split if different substantiation would be needed
-- Claims must be complete, self-contained statements
-
-Confidence Scoring:
-- 90-100: Definite claim — "Clinically proven to reduce A1c"
-- 70-89: Strong implication — "Starts working in just 3 days"
-- 50-69: Suggestive or borderline — "Helps patients feel better faster"
-- 30-49: Weak signal, worth second look — "New era in diabetes management"
-
-When unsure, include it with lower confidence rather than omit.
-
-Now analyze the document. Find everything that could require substantiation.`
+Analyze now. Find all medication claims.`
 
 /**
  * Analyze a PDF document and detect claims
@@ -231,27 +236,35 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
   onProgress?.(25, 'Sending to AI...')
 
   try {
+    // Use stable generateContent API with optimized config:
+    // - systemInstruction: role/persona moved out of user prompt
+    // - responseJsonSchema: strict output validation
+    // - Document-first ordering: PDF before text prompt (per Gemini best practices)
     const response = await client.models.generateContent({
       model: GEMINI_MODEL,
       contents: [
         {
           role: 'user',
           parts: [
-            { text: finalPrompt },
+            // Document FIRST (recommended for single-document prompts)
             {
               inlineData: {
                 mimeType: 'application/pdf',
                 data: base64Data
               }
-            }
+            },
+            // Then the prompt
+            { text: finalPrompt }
           ]
         }
       ],
       config: {
+        systemInstruction: SYSTEM_INSTRUCTION,
         temperature: 0, // Zero temperature for deterministic, reproducible output
         topP: 1,
-        maxOutputTokens: 64000, // Max output tokens
-        responseMimeType: 'application/json'
+        maxOutputTokens: 64000,
+        responseMimeType: 'application/json',
+        responseJsonSchema: CLAIMS_JSON_SCHEMA
       }
     })
 
@@ -264,7 +277,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
 
     // Parse JSON from response (Gemini may wrap in markdown code blocks despite responseMimeType)
     let jsonText = text
-    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/)
+    const jsonMatch = text?.match(/```(?:json)?\s*([\s\S]*?)```/)
     if (jsonMatch) {
       console.log('📦 Extracted JSON from markdown code block')
       jsonText = jsonMatch[1].trim()
@@ -416,19 +429,22 @@ Return a JSON object with:
 }`
 
   try {
+    // Document-first ordering for better multimodal processing
     const response = await client.models.generateContent({
-      model: GEMINI_MODEL, // Use flash for faster text extraction
+      model: GEMINI_MODEL,
       contents: [
         {
           role: 'user',
           parts: [
-            { text: prompt },
+            // Document FIRST
             {
               inlineData: {
                 mimeType: 'application/pdf',
                 data: base64Data
               }
-            }
+            },
+            // Then the prompt
+            { text: prompt }
           ]
         }
       ],
@@ -509,12 +525,11 @@ export async function debugGeminiAPI() {
     // Try different model name formats
     console.log('\n🧪 Testing different model name formats...')
     const modelFormats = [
-      'gemini-1.5-flash',
-      'models/gemini-1.5-flash',
-      'gemini-1.5-flash-latest',
+      'gemini-3-pro-preview',
+      'gemini-3-flash-preview',
+      'gemini-2.5-flash',
       'gemini-2.0-flash',
-      'models/gemini-2.0-flash',
-      'gemini-2.0-flash-exp'
+      'gemini-1.5-flash'
     ]
 
     for (const modelName of modelFormats) {

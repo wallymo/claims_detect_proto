@@ -14,6 +14,7 @@ import { analyzeDocument as analyzeWithGemini, checkGeminiConnection, ALL_CLAIMS
 import { analyzeDocument as analyzeWithOpenAI } from '@/services/openai'
 import { analyzeDocument as analyzeWithAnthropic } from '@/services/anthropic'
 import { normalizeDocument, base64ToBlob } from '@/services/normalizer'
+import { pdfToImages } from '@/utils/pdfToImages'
 
 import { enrichClaimsWithPositions, addGlobalIndices } from '@/utils/textMatcher'
 
@@ -221,7 +222,7 @@ export default function MKGClaimsDetector() {
         pdfFile = base64ToBlob(normalized.document.canonical_pdf)
       }
 
-      // All models accept PDFs directly - no conversion needed
+      // Gemini uses native PDF, Claude/GPT need image conversion for reliable text extraction
       if (isGemini) {
         setAnalysisProgress(5)
         setAnalysisStatus('Checking connection...')
@@ -231,10 +232,19 @@ export default function MKGClaimsDetector() {
         }
       }
 
+      // For Claude and GPT, convert PDF to images first (native PDF has font encoding issues)
+      let pageImages = null
+      if (!isGemini) {
+        setAnalysisStatus('Rendering pages for vision analysis...')
+        setAnalysisProgress(15)
+        pageImages = await pdfToImages(pdfFile)
+        console.log(`🖼️ Converted PDF to ${pageImages.length} images for ${selectedModel}`)
+      }
+
       result = await analyzeDocument(pdfFile, (progress, status) => {
         setAnalysisProgress(progress)
         setAnalysisStatus(status)
-      }, promptKey, editablePrompt)
+      }, promptKey, editablePrompt, pageImages)
 
       if (!result.success) {
         throw new Error(result.error || 'Analysis failed')
