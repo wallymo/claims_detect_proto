@@ -12,6 +12,7 @@
  */
 
 import { GoogleGenAI } from '@google/genai'
+import { logger } from '@/utils/logger'
 
 // Singleton client instance
 let geminiClient = null
@@ -50,8 +51,10 @@ const PRICING = {
   'default': { input: 1.25, output: 5.00 }
 }
 
-// System instruction (moved out of user prompt for efficiency)
-const SYSTEM_INSTRUCTION = `You are a veteran MLR (Medical, Legal, Regulatory) reviewer for pharmaceutical promotional materials. Your mission: surface EVERY statement that could require substantiation. Flag 20 borderline phrases rather than let 1 slip through. When unsure, include it with lower confidence rather than omit.`
+// MLR Reviewer persona - included in all prompts for consistency across AI services
+const MLR_PERSONA = `You are a veteran MLR (Medical, Legal, Regulatory) reviewer for pharmaceutical promotional materials. Your mission: surface EVERY statement that could require substantiation. Flag 20 borderline phrases rather than let 1 slip through. When unsure, include it with lower confidence rather than omit.
+
+`
 
 // JSON Schema for strict output validation
 const CLAIMS_JSON_SCHEMA = {
@@ -134,7 +137,7 @@ const POSITION_INSTRUCTIONS = `
 - Charts/graphs: position at LEFT EDGE of visual element`
 
 // User-facing prompt for All Claims (shown in UI, editable)
-export const ALL_CLAIMS_PROMPT_USER = `# Task
+export const ALL_CLAIMS_PROMPT_USER = MLR_PERSONA + `# Task
 Extract ALL claims requiring MLR substantiation from this pharmaceutical document.
 
 # Claim Types
@@ -155,7 +158,7 @@ Extract ALL claims requiring MLR substantiation from this pharmaceutical documen
 Analyze now. Find everything requiring substantiation.`
 
 // User-facing prompt for Disease State claims (shown in UI, editable)
-export const DISEASE_STATE_PROMPT_USER = `# Task
+export const DISEASE_STATE_PROMPT_USER = MLR_PERSONA + `# Task
 Extract DISEASE STATE claims requiring MLR substantiation.
 
 # Claim Types
@@ -179,7 +182,7 @@ Extract DISEASE STATE claims requiring MLR substantiation.
 Analyze now. Find all disease/condition claims.`
 
 // User-facing prompt for Medication claims (shown in UI, editable)
-export const MEDICATION_PROMPT_USER = `# Task
+export const MEDICATION_PROMPT_USER = MLR_PERSONA + `# Task
 Extract MEDICATION claims requiring MLR substantiation.
 
 # Claim Types
@@ -217,7 +220,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
   let userPrompt
   if (customPrompt) {
     userPrompt = customPrompt
-    console.log(`📋 Using custom prompt (${customPrompt.length} chars)`)
+    logger.debug(`Using custom prompt (${customPrompt.length} chars)`)
   } else {
     if (promptKey === 'drug') {
       userPrompt = MEDICATION_PROMPT_USER
@@ -226,7 +229,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     } else {
       userPrompt = ALL_CLAIMS_PROMPT_USER
     }
-    console.log(`📋 Using default prompt for: ${promptKey}`)
+    logger.info(`Using default prompt for: ${promptKey}`)
   }
   const finalPrompt = userPrompt + POSITION_INSTRUCTIONS
 
@@ -259,7 +262,6 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
         }
       ],
       config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
         temperature: 0, // Zero temperature for deterministic, reproducible output
         topP: 1,
         maxOutputTokens: 64000,
@@ -273,13 +275,13 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     // Extract text from response
     const text = response.candidates?.[0]?.content?.parts?.[0]?.text || response.text
 
-    console.log('🔍 Raw Gemini response (first 500 chars):', text?.substring(0, 500))
+    logger.debug('Raw Gemini response (first 500 chars):', text?.substring(0, 500))
 
     // Parse JSON from response (Gemini may wrap in markdown code blocks despite responseMimeType)
     let jsonText = text
     const jsonMatch = text?.match(/```(?:json)?\s*([\s\S]*?)```/)
     if (jsonMatch) {
-      console.log('📦 Extracted JSON from markdown code block')
+      logger.debug('Extracted JSON from markdown code block')
       jsonText = jsonMatch[1].trim()
     }
 
@@ -287,7 +289,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     try {
       result = JSON.parse(jsonText)
     } catch (parseError) {
-      console.error('❌ JSON parse failed. Raw text:', jsonText?.substring(0, 1000))
+      logger.error('Gemini JSON parse failed. Raw text:', jsonText?.substring(0, 1000))
       throw new Error(`Failed to parse AI response as JSON: ${parseError.message}`)
     }
 
@@ -300,7 +302,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
         : null
 
       // Debug: log what Gemini returned for each claim
-      console.log(`📍 Claim ${index + 1}: x=${claim.x}, y=${claim.y}, text="${claim.claim?.slice(0, 50)}..."`)
+      logger.debug(`Claim ${index + 1}: x=${claim.x}, y=${claim.y}, text="${claim.claim?.slice(0, 50)}..."`)
 
       return {
         id: `claim_${String(index + 1).padStart(3, '0')}`,
@@ -320,8 +322,8 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     const outputTokens = usageMetadata.candidatesTokenCount || 0
     const cost = calculateCost(GEMINI_MODEL, inputTokens, outputTokens)
 
-    console.log(`✅ Detected ${claims.length} claims`)
-    console.log(`💰 Usage: ${inputTokens} input + ${outputTokens} output tokens = $${cost.toFixed(4)}`)
+    logger.info(`Detected ${claims.length} claims`)
+    logger.info(`Usage: ${inputTokens} input + ${outputTokens} output tokens = $${cost.toFixed(4)}`)
 
     const pricing = PRICING[GEMINI_MODEL] || PRICING['default']
     return {
@@ -338,7 +340,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
       }
     }
   } catch (error) {
-    console.error('Gemini analysis error:', error)
+    logger.error('Gemini analysis error:', error)
     return {
       success: false,
       error: error.message,
@@ -399,7 +401,7 @@ Only match if the reference actually substantiates the claim. A low confidence m
     const text = response.candidates?.[0]?.content?.parts?.[0]?.text || response.text
     return JSON.parse(text)
   } catch (error) {
-    console.error('Reference matching error:', error)
+    logger.error('Reference matching error:', error)
     return {
       matched: false,
       error: error.message
@@ -458,7 +460,7 @@ Return a JSON object with:
     const text = response.candidates?.[0]?.content?.parts?.[0]?.text || response.text
     return JSON.parse(text)
   } catch (error) {
-    console.error('PDF text extraction error:', error)
+    logger.error('PDF text extraction error:', error)
     return {
       text: '',
       error: error.message
@@ -488,42 +490,42 @@ export async function checkGeminiConnection() {
  * Run this in browser console: import('/src/services/gemini.js').then(m => m.debugGeminiAPI())
  */
 export async function debugGeminiAPI() {
-  console.log('🔍 Debugging Gemini API connection...\n')
+  logger.info('Debugging Gemini API connection...')
 
   // Check if API key is set
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY
   if (!apiKey) {
-    console.error('❌ VITE_GEMINI_API_KEY is not set in .env.local')
+    logger.error('VITE_GEMINI_API_KEY is not set in .env.local')
     return { error: 'API key not set' }
   }
-  console.log('✅ API key found (starts with:', apiKey.substring(0, 8) + '...)')
+  logger.info('API key found (starts with:', apiKey.substring(0, 8) + '...)')
 
   try {
     const client = getGeminiClient()
 
     // Try to list models
-    console.log('\n📋 Attempting to list available models...')
+    logger.info('Attempting to list available models...')
     try {
       const modelsResponse = await client.models.list()
-      console.log('Available models:')
+      logger.info('Available models:')
       const models = []
       for await (const model of modelsResponse) {
-        console.log('  -', model.name)
+        logger.info('  -', model.name)
         models.push(model.name)
       }
-      console.log('\n')
+      logger.info('')
 
       // Check if our target model is available
       const targetModel = GEMINI_MODEL
       const modelExists = models.some(m => m.includes(targetModel) || m.includes('gemini'))
-      console.log(`Target model "${targetModel}" available:`, modelExists ? '✅ Yes' : '❌ No')
+      logger.info(`Target model "${targetModel}" available:`, modelExists ? 'Yes' : 'No')
 
     } catch (listError) {
-      console.log('⚠️ Could not list models:', listError.message)
+      logger.warn('Could not list models:', listError.message)
     }
 
     // Try different model name formats
-    console.log('\n🧪 Testing different model name formats...')
+    logger.info('Testing different model name formats...')
     const modelFormats = [
       'gemini-3-pro-preview',
       'gemini-3-flash-preview',
@@ -539,17 +541,17 @@ export async function debugGeminiAPI() {
           contents: [{ role: 'user', parts: [{ text: 'Say "ok"' }] }]
         })
         const text = response.candidates?.[0]?.content?.parts?.[0]?.text || response.text
-        console.log(`✅ "${modelName}" works! Response: ${text}`)
+        logger.info(`"${modelName}" works. Response: ${text}`)
         return { success: true, workingModel: modelName }
       } catch (err) {
-        console.log(`❌ "${modelName}" failed:`, err.message?.substring(0, 80))
+        logger.warn(`"${modelName}" failed:`, err.message?.substring(0, 80))
       }
     }
 
     return { error: 'No model format worked' }
 
   } catch (error) {
-    console.error('❌ API Error:', error)
+    logger.error('API Error:', error)
     return { error: error.message }
   }
 }
