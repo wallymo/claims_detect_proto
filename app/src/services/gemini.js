@@ -52,7 +52,13 @@ const PRICING = {
 }
 
 // System instruction (moved out of user prompt for efficiency)
-const SYSTEM_INSTRUCTION = `You are a veteran MLR (Medical, Legal, Regulatory) reviewer for pharmaceutical promotional materials. Your mission: surface EVERY statement that could require substantiation. Flag 20 borderline phrases rather than let 1 slip through. When unsure, include it with lower confidence rather than omit.`
+const SYSTEM_INSTRUCTION = `You are a veteran MLR (Medical, Legal, Regulatory) reviewer for pharmaceutical promotional materials. Your mission: surface EVERY statement that could require substantiation. Flag 20 borderline phrases rather than let 1 slip through. When unsure, include it with lower confidence rather than omit.
+
+CRITICAL DOCUMENT FORMAT: These documents are "notes pages" with TWO regions per page:
+1. TOP HALF: Slide image (visual content)
+2. BOTTOM HALF: Speaker notes starting with "Speaker notes" header, containing bullet points (• and ○)
+
+You MUST extract claims from BOTH regions. The speaker notes often contain MORE substantive claims than the slides - specific statistics, study citations, clinical outcomes. Ignoring speaker notes is an unacceptable failure.`
 
 // JSON Schema for strict output validation
 const CLAIMS_JSON_SCHEMA = {
@@ -127,12 +133,40 @@ export async function fileToBase64(file) {
 
 // Leaner, markdown-structured prompts (role moved to systemInstruction)
 
+// Document structure instructions for notes pages - EMPHATIC version
+const DOCUMENT_STRUCTURE_INSTRUCTIONS = `
+# CRITICAL: TWO-REGION DOCUMENT STRUCTURE
+⚠️ THIS DOCUMENT HAS TWO DISTINCT REGIONS PER PAGE - YOU MUST ANALYZE BOTH:
+
+**REGION 1 - SLIDE (top ~50% of page):**
+Visual presentation content with titles, graphics, charts, statistics
+
+**REGION 2 - SPEAKER NOTES (bottom ~50% of page):**
+- Starts with header: "Speaker notes" or "Speaker note"
+- Contains bullet points using • (main) and ○ or ▪ (sub-bullets)
+- Often has MORE detailed claims than the slide itself
+- Includes study citations, specific statistics, clinical data
+
+🚨 FAILURE MODE TO AVOID: Do NOT only extract from the slide image. The speaker notes section contains critical claims that MUST be extracted. If your output contains zero claims from speaker notes (y > 55%), you have failed the task.
+
+`
+
 // Position instructions appended to all prompts
 const POSITION_INSTRUCTIONS = `
 # Position
 - x: LEFT EDGE of claim text as % (0=left, 100=right)
 - y: vertical CENTER of claim as % (0=top, 100=bottom)
-- Charts/graphs: position at LEFT EDGE of visual element`
+- Charts/graphs: position at LEFT EDGE of visual element
+- Speaker notes claims: y will typically be 55-90% (bottom half of page)
+
+# EXTRACTION CHECKLIST
+Before finalizing your response:
+1. ☐ Did you read EVERY bullet point under "Speaker notes" headers? (bottom half of each page)
+2. ☐ Do you have claims with y > 55%? (If not, you missed speaker notes)
+3. ☐ For a 30-page document, expect 80-150+ claims total (slides + speaker notes combined)
+4. ☐ If you have < 50 claims, go back and re-read the speaker notes sections
+
+⚠️ The speaker notes bullets contain the MOST important claims - statistics, study citations, clinical outcomes. Do not skip them.`
 
 // User-facing prompt for All Claims (shown in UI, editable)
 export const ALL_CLAIMS_PROMPT_USER = `# Task
@@ -229,7 +263,15 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     }
     logger.info(`Using default prompt for: ${promptKey}`)
   }
-  const finalPrompt = userPrompt + POSITION_INSTRUCTIONS
+  // Prepend document structure instructions (for notes pages) and append position instructions
+  const finalPrompt = DOCUMENT_STRUCTURE_INSTRUCTIONS + userPrompt + POSITION_INSTRUCTIONS
+
+  // Debug: confirm document structure instructions are included
+  const hasDocStructure = finalPrompt.includes('Speaker notes')
+  logger.info(`Final prompt: ${finalPrompt.length} chars, has speaker notes instructions: ${hasDocStructure}`)
+  if (!hasDocStructure) {
+    logger.error('WARNING: Document structure instructions missing from prompt!')
+  }
 
   onProgress?.(10, 'Preparing document...')
   const base64Data = await fileToBase64(pdfFile)
@@ -261,8 +303,9 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
       ],
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
-        temperature: 0, // Zero temperature for deterministic, reproducible output
-        topP: 1,
+        temperature: 0,    // Zero for deterministic output
+        topP: 0.1,         // Low top_p for more consistent sampling
+        topK: 1,           // Only consider top token (most deterministic)
         maxOutputTokens: 64000,
         responseMimeType: 'application/json',
         responseJsonSchema: CLAIMS_JSON_SCHEMA
@@ -321,8 +364,9 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     const outputTokens = usageMetadata.candidatesTokenCount || 0
     const cost = calculateCost(GEMINI_MODEL, inputTokens, outputTokens)
 
-    logger.info(`Detected ${claims.length} claims`)
-    logger.info(`Usage: ${inputTokens} input + ${outputTokens} output tokens = $${cost.toFixed(4)}`)
+    // Log for reproducibility tracking
+    const modelVersion = response.modelVersion || GEMINI_MODEL
+    logger.info(`[Gemini] Model: ${modelVersion}, Claims: ${claims.length}, Tokens: ${inputTokens}/${outputTokens}, Cost: $${cost.toFixed(4)}`)
 
     const pricing = PRICING[GEMINI_MODEL] || PRICING['default']
     return {

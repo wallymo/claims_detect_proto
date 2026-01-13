@@ -9,8 +9,8 @@ import { logger } from './logger.js'
 // Use same worker setup as PDFViewer
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.min.mjs`
 
-// Max pages to convert (prevents massive payloads)
-const MAX_PAGES = 10
+// Max pages to convert (set high - let API token limits be the constraint)
+const MAX_PAGES = 100
 
 /**
  * Convert PDF to array of base64 PNG images

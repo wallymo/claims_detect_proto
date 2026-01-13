@@ -55,6 +55,24 @@ async function fileToBase64(file) {
   })
 }
 
+// Document structure instructions for notes pages - EMPHATIC version
+const DOCUMENT_STRUCTURE_INSTRUCTIONS = `
+# CRITICAL: TWO-REGION DOCUMENT STRUCTURE
+⚠️ THIS DOCUMENT HAS TWO DISTINCT REGIONS PER PAGE - YOU MUST ANALYZE BOTH:
+
+**REGION 1 - SLIDE (top ~50% of page):**
+Visual presentation content with titles, graphics, charts, statistics
+
+**REGION 2 - SPEAKER NOTES (bottom ~50% of page):**
+- Starts with header: "Speaker notes" or "Speaker note"
+- Contains bullet points using • (main) and ○ or ▪ (sub-bullets)
+- Often has MORE detailed claims than the slide itself
+- Includes study citations, specific statistics, clinical data
+
+🚨 FAILURE MODE TO AVOID: Do NOT only extract from the slide image. The speaker notes section contains critical claims that MUST be extracted. If your output contains zero claims from speaker notes (y > 55%), you have failed the task.
+
+`
+
 // JSON output instructions - appended to imported prompts that don't have position/output format
 const JSON_OUTPUT_INSTRUCTIONS = `
 
@@ -62,6 +80,16 @@ POSITION: Return the x/y coordinates where a marker pin should be placed for eac
 - x: LEFT EDGE of the claim text as percentage (0 = page left, 100 = page right)
 - y: vertical center of the claim text as percentage (0 = page top, 100 = page bottom)
 - The pin will appear AT these exact coordinates, so position at the LEFT EDGE of text, not center
+- Speaker notes claims: y will typically be 55-90% (bottom half of page)
+
+# EXTRACTION CHECKLIST
+Before finalizing your response:
+1. ☐ Did you read EVERY bullet point under "Speaker notes" headers? (bottom half of each page)
+2. ☐ Do you have claims with y > 55%? (If not, you missed speaker notes)
+3. ☐ For a 30-page document, expect 80-150+ claims total (slides + speaker notes combined)
+4. ☐ If you have < 50 claims, go back and re-read the speaker notes sections
+
+⚠️ The speaker notes bullets contain the MOST important claims - statistics, study citations, clinical outcomes. Do not skip them.
 
 Respond with this exact JSON structure (no other text):
 {"claims": [{"claim": "[Exact phrase]", "confidence": 85, "page": 1, "x": 25.0, "y": 14.5}]}`
@@ -116,21 +144,22 @@ Respond with this exact JSON structure (no other text):
  */
 export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null, pageImages = null) {
   // Select the appropriate prompt
+  // Prepend document structure instructions (for notes pages)
   // The imported prompts don't have position/JSON instructions, so we append them
   let selectedPrompt
   if (customPrompt) {
     // Ensure custom prompts include JSON output format
     selectedPrompt = customPrompt.toLowerCase().includes('json')
-      ? customPrompt
-      : customPrompt + JSON_OUTPUT_INSTRUCTIONS
+      ? DOCUMENT_STRUCTURE_INSTRUCTIONS + customPrompt
+      : DOCUMENT_STRUCTURE_INSTRUCTIONS + customPrompt + JSON_OUTPUT_INSTRUCTIONS
     logger.debug(`Using custom prompt (${customPrompt.length} chars)`)
   } else {
     if (promptKey === 'drug') {
-      selectedPrompt = MEDICATION_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
+      selectedPrompt = DOCUMENT_STRUCTURE_INSTRUCTIONS + MEDICATION_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
     } else if (promptKey === 'disease') {
-      selectedPrompt = DISEASE_STATE_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
+      selectedPrompt = DOCUMENT_STRUCTURE_INSTRUCTIONS + DISEASE_STATE_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
     } else {
-      selectedPrompt = ALL_CLAIMS_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
+      selectedPrompt = DOCUMENT_STRUCTURE_INSTRUCTIONS + ALL_CLAIMS_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
     }
     logger.info(`Using ${promptKey} prompt for Claude analysis`)
   }
@@ -195,6 +224,8 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
         model: ANTHROPIC_MODEL,
         max_tokens: 64000, // Max for Claude Sonnet 4.5
         temperature: 0,
+        top_p: 0.1,        // Low top_p for more deterministic sampling
+        top_k: 1,          // Only consider top token (most deterministic)
         messages: [
           {
             role: 'user',
@@ -262,8 +293,8 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     const outputTokens = usage.output_tokens || 0
     const cost = calculateCost(ANTHROPIC_MODEL, inputTokens, outputTokens)
 
-    logger.info(`Detected ${claims.length} claims`)
-    logger.info(`Usage: ${inputTokens} input + ${outputTokens} output tokens = $${cost.toFixed(4)}`)
+    // Log for reproducibility tracking
+    logger.info(`[Claude] Model: ${ANTHROPIC_MODEL}, Claims: ${claims.length}, Tokens: ${inputTokens}/${outputTokens}, Cost: $${cost.toFixed(4)}`)
 
     const pricing = PRICING[ANTHROPIC_MODEL] || PRICING['default']
     return {

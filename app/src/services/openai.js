@@ -76,6 +76,24 @@ async function fileToBase64(file) {
   })
 }
 
+// Document structure instructions for notes pages - EMPHATIC version
+const DOCUMENT_STRUCTURE_INSTRUCTIONS = `
+# CRITICAL: TWO-REGION DOCUMENT STRUCTURE
+⚠️ THIS DOCUMENT HAS TWO DISTINCT REGIONS PER PAGE - YOU MUST ANALYZE BOTH:
+
+**REGION 1 - SLIDE (top ~50% of page):**
+Visual presentation content with titles, graphics, charts, statistics
+
+**REGION 2 - SPEAKER NOTES (bottom ~50% of page):**
+- Starts with header: "Speaker notes" or "Speaker note"
+- Contains bullet points using • (main) and ○ or ▪ (sub-bullets)
+- Often has MORE detailed claims than the slide itself
+- Includes study citations, specific statistics, clinical data
+
+🚨 FAILURE MODE TO AVOID: Do NOT only extract from the slide image. The speaker notes section contains critical claims that MUST be extracted. If your output contains zero claims from speaker notes (y > 55%), you have failed the task.
+
+`
+
 // JSON output instructions - OpenAI requires "json" in the prompt when using response_format
 const JSON_OUTPUT_INSTRUCTIONS = `
 
@@ -83,6 +101,16 @@ POSITION: Return the x/y coordinates where a marker pin should be placed for eac
 - x: LEFT EDGE of the claim text as percentage (0 = page left, 100 = page right)
 - y: vertical center of the claim text as percentage (0 = page top, 100 = page bottom)
 - The pin will appear AT these exact coordinates, so position at the LEFT EDGE of text, not center
+- Speaker notes claims: y will typically be 55-90% (bottom half of page)
+
+# EXTRACTION CHECKLIST
+Before finalizing your response:
+1. ☐ Did you read EVERY bullet point under "Speaker notes" headers? (bottom half of each page)
+2. ☐ Do you have claims with y > 55%? (If not, you missed speaker notes)
+3. ☐ For a 30-page document, expect 80-150+ claims total (slides + speaker notes combined)
+4. ☐ If you have < 50 claims, go back and re-read the speaker notes sections
+
+⚠️ The speaker notes bullets contain the MOST important claims - statistics, study citations, clinical outcomes. Do not skip them.
 
 Return ONLY valid JSON in this format:
 {
@@ -149,17 +177,18 @@ Now analyze the document. Find everything that could require substantiation.`
  */
 export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null, pageImages = null) {
   // Select the appropriate prompt - no need for "json" keyword with text.format
+  // Prepend document structure instructions (for notes pages)
   let selectedPrompt
   if (customPrompt) {
-    selectedPrompt = customPrompt + JSON_OUTPUT_INSTRUCTIONS
+    selectedPrompt = DOCUMENT_STRUCTURE_INSTRUCTIONS + customPrompt + JSON_OUTPUT_INSTRUCTIONS
     logger.debug(`Using custom prompt (${customPrompt.length} chars)`)
   } else {
     if (promptKey === 'drug') {
-      selectedPrompt = MEDICATION_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
+      selectedPrompt = DOCUMENT_STRUCTURE_INSTRUCTIONS + MEDICATION_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
     } else if (promptKey === 'disease') {
-      selectedPrompt = DISEASE_STATE_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
+      selectedPrompt = DOCUMENT_STRUCTURE_INSTRUCTIONS + DISEASE_STATE_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
     } else {
-      selectedPrompt = ALL_CLAIMS_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
+      selectedPrompt = DOCUMENT_STRUCTURE_INSTRUCTIONS + ALL_CLAIMS_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
     }
     logger.info(`Using ${promptKey} prompt for OpenAI analysis`)
   }
@@ -236,7 +265,9 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
           strict: true
         }
       },
-      temperature: 0
+      temperature: 0,
+      top_p: 0.1,  // Low top_p for more deterministic sampling
+      seed: 42     // Fixed seed for reproducibility
     })
 
     onProgress?.(75, 'Processing results...')
@@ -275,8 +306,9 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     const outputTokens = usage.completion_tokens || usage.output_tokens || 0
     const cost = calculateCost(OPENAI_MODEL, inputTokens, outputTokens)
 
-    logger.info(`Detected ${claims.length} claims`)
-    logger.info(`Usage: ${inputTokens} input + ${outputTokens} output tokens = $${cost.toFixed(4)}`)
+    // Log for reproducibility tracking (OpenAI returns system_fingerprint for version tracking)
+    const fingerprint = response.system_fingerprint || 'unknown'
+    logger.info(`[OpenAI] Model: ${OPENAI_MODEL}, Fingerprint: ${fingerprint}, Claims: ${claims.length}, Tokens: ${inputTokens}/${outputTokens}, Cost: $${cost.toFixed(4)}`)
 
     const pricing = PRICING[OPENAI_MODEL] || PRICING['default']
     return {
