@@ -266,8 +266,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
         }
       },
       temperature: 0,
-      top_p: 0.1,  // Low top_p for more deterministic sampling
-      seed: 42     // Fixed seed for reproducibility
+      top_p: 0.1  // Low top_p for more deterministic sampling
     })
 
     onProgress?.(75, 'Processing results...')
