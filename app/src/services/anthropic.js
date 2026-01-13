@@ -223,9 +223,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
       body: JSON.stringify({
         model: ANTHROPIC_MODEL,
         max_tokens: 64000, // Max for Claude Sonnet 4.5
-        temperature: 0,
-        top_p: 0.1,        // Low top_p for more deterministic sampling
-        top_k: 1,          // Only consider top token (most deterministic)
+        temperature: 0,    // Deterministic sampling
         messages: [
           {
             role: 'user',
