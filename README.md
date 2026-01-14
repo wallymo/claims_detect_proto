@@ -33,7 +33,7 @@ Pharmaceutical promotional materials require extensive MLR review to ensure all 
 ### The Solution
 
 Claims Detector uses multimodal AI to:
-- **Automatically scan** PDFs, DOCX, and PPTX documents
+- **Automatically scan** PDF documents
 - **Identify claims** requiring substantiation with confidence scores
 - **Pinpoint locations** with precise x/y coordinates on each page
 - **Categorize claims** by type (efficacy, safety, comparative, etc.)
@@ -48,7 +48,7 @@ Claims Detector uses multimodal AI to:
 | **Multi-Model AI** | Choose from Gemini 3 Pro, GPT-4o, or Claude Sonnet 4.5 |
 | **Visual Document Analysis** | AI sees documents as images—catches claims in charts, graphs, and infographics |
 | **Precise Positioning** | Claims pinpointed with x/y coordinates for easy navigation |
-| **Document Normalization** | DOCX/PPTX automatically converted to canonical PDF format |
+| **PDF Document Analysis** | Direct processing of PDF documents |
 | **Confidence Scoring** | 0-100 confidence rating for each detected claim |
 | **Claim Categorization** | Auto-classification: efficacy, safety, regulatory, comparative, dosage, ingredient, testimonial, pricing |
 | **Knowledge Base Matching** | Match claims against your reference document library |
@@ -82,14 +82,6 @@ Claims Detector uses multimodal AI to:
 │  │  │  Native PDF  │  │ Responses API│  │    Messages API          │   │   │
 │  │  └──────────────┘  └──────────────┘  └──────────────────────────┘   │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
-│                                    │                                        │
-│                                    ▼                                        │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                    Normalizer Service (Express)                      │   │
-│  │  ┌──────────────────────────────────────────────────────────────┐   │   │
-│  │  │  DOCX/PPTX → PDF (LibreOffice)  │  PDF → PNG (Poppler)       │   │   │
-│  │  └──────────────────────────────────────────────────────────────┘   │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -99,9 +91,8 @@ Claims Detector uses multimodal AI to:
 | Layer | Technology |
 |-------|------------|
 | **Frontend** | React 19.2, Vite 7.2, CSS Modules, pdfjs-dist |
-| **Backend** | Node.js 20+, Express 5 |
 | **AI Models** | Google Gemini 3 Pro, OpenAI GPT-4o, Anthropic Claude Sonnet 4.5 |
-| **Document Processing** | LibreOffice (DOCX/PPTX), Poppler (PDF rendering) |
+| **Document Processing** | PDF.js for client-side PDF rendering |
 | **State Management** | React component state (no external library) |
 | **Styling** | CSS Modules, Design Tokens |
 
@@ -113,8 +104,6 @@ Claims Detector uses multimodal AI to:
 
 - **Node.js** 20+
 - **npm** 10+
-- **LibreOffice** 7.6+ (for DOCX/PPTX conversion)
-- **Poppler** (for PDF rendering) - `brew install poppler` on macOS
 
 ### Installation
 
@@ -125,10 +114,6 @@ cd claims-detector
 
 # Install frontend dependencies
 cd app
-npm install
-
-# Install normalizer service dependencies
-cd ../normalizer-service
 npm install
 ```
 
@@ -141,29 +126,23 @@ Create `app/.env.local` with your API keys:
 VITE_GEMINI_API_KEY=your_gemini_api_key
 VITE_OPENAI_API_KEY=your_openai_api_key
 VITE_ANTHROPIC_API_KEY=your_anthropic_api_key
-
-# Normalizer Service URL
-VITE_NORMALIZER_URL=http://localhost:3001
 ```
 
 ### Running the Application
 
 ```bash
-# From the /app directory - starts both frontend and normalizer service
+# Start the frontend development server
 cd app
 npm run dev
 
-# Access the application
-# Frontend: http://localhost:5173
-# Normalizer: http://localhost:3001
+# Access the application at http://localhost:5173
 ```
 
 ### Available Scripts
 
 | Command | Description |
 |---------|-------------|
-| `npm run dev` | Start Vite dev server + normalizer service concurrently |
-| `npm run dev:app` | Start Vite dev server only |
+| `npm run dev` | Start Vite development server |
 | `npm run build` | Create production build |
 | `npm run lint` | Run ESLint |
 | `npm run preview` | Preview production build |
@@ -185,56 +164,11 @@ Add `?demo=true` to enable model comparison features.
 
 Navigate to `http://localhost:5173/mkg` for the full AI-powered analysis:
 
-1. **Upload Document** - Drag & drop or select PDF, DOCX, or PPTX
+1. **Upload Document** - Drag & drop or select PDF
 2. **Select AI Model** - Choose Gemini, GPT-4o, or Claude
 3. **Analyze** - AI scans document and identifies claims
 4. **Review** - Navigate claims with confidence scores and positions
 5. **Export** - Download results for your MLR workflow
-
----
-
-## API Reference
-
-### Normalizer Service
-
-#### `POST /normalize`
-
-Convert DOCX/PPTX/PDF to canonical format with page images.
-
-**Request:**
-```http
-POST /normalize
-Content-Type: multipart/form-data
-
-file: <binary>
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "document": {
-    "document_id": "uuid",
-    "canonical_pdf": "data:application/pdf;base64,...",
-    "page_images": [
-      { "page": 1, "base64": "..." }
-    ],
-    "page_count": 10,
-    "original_filename": "document.docx",
-    "original_type": "docx",
-    "conversion_time_ms": 1500
-  }
-}
-```
-
-**Limits:**
-- Max file size: 100MB
-- Max pages: 200
-- Accepted types: PDF, DOCX, PPTX
-
-#### `GET /health`
-
-Health check endpoint for monitoring.
 
 ---
 
@@ -284,28 +218,9 @@ type ClaimStatus = 'pending' | 'approved' | 'rejected';
 
 ## Deployment
 
-### Docker (Normalizer Service)
-
-```bash
-cd normalizer-service
-docker build -t claims-detector-normalizer .
-docker run -p 3001:3001 claims-detector-normalizer
-```
-
-### Environment Variables (Production)
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PORT` | Normalizer service port | 3001 |
-| `MAX_FILE_SIZE_MB` | Maximum upload size | 100 |
-| `MAX_PAGES` | Maximum document pages | 200 |
-| `PDF_RENDERER` | Renderer: `poppler` or `pdfjs` | poppler |
-| `PDF_RENDER_DPI` | DPI for page images | 144 |
-
 ### Recommended Platforms
 
 - **Frontend**: Vercel, Netlify, AWS Amplify
-- **Normalizer Service**: Railway, Render, AWS ECS (requires LibreOffice)
 
 ---
 
@@ -326,7 +241,6 @@ claims_detector/
 │   │   ├── tokens/               # Design system tokens
 │   │   └── utils/                # Utility functions
 │   └── public/                   # Static assets
-├── normalizer-service/           # Document conversion backend
 ├── docs/                         # Documentation and briefs
 └── MKG Knowledge Base/           # Reference documents
 ```
@@ -361,7 +275,7 @@ claims_detector/
 
 ### Phase 1: POC (Current)
 - [x] Multi-model AI integration
-- [x] PDF/DOCX/PPTX support
+- [x] PDF document analysis
 - [x] Claim detection with positioning
 - [x] Basic knowledge base matching
 - [x] Cost tracking

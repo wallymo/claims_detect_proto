@@ -11,7 +11,7 @@ afterEach(() => {
 vi.stubEnv('VITE_GEMINI_API_KEY', 'test-gemini-key')
 vi.stubEnv('VITE_OPENAI_API_KEY', 'test-openai-key')
 vi.stubEnv('VITE_ANTHROPIC_API_KEY', 'test-anthropic-key')
-vi.stubEnv('VITE_NORMALIZER_URL', 'http://localhost:3001')
+
 
 // Mock window.matchMedia
 Object.defineProperty(window, 'matchMedia', {

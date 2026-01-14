@@ -13,7 +13,7 @@ import ClaimCard from '@/components/claims-detector/ClaimCard'
 import { analyzeDocument as analyzeWithGemini, checkGeminiConnection, ALL_CLAIMS_PROMPT_USER, MEDICATION_PROMPT_USER } from '@/services/gemini'
 import { analyzeDocument as analyzeWithOpenAI } from '@/services/openai'
 import { analyzeDocument as analyzeWithAnthropic } from '@/services/anthropic'
-import { normalizeDocument, base64ToBlob } from '@/services/normalizer'
+
 import { pdfToImages } from '@/utils/pdfToImages'
 
 import { enrichClaimsWithPositions, addGlobalIndices } from '@/utils/textMatcher'
@@ -145,15 +145,9 @@ export default function MKGClaimsDetector() {
     const file = event.target.files?.[0]
     if (!file) return
 
-    // Accept PDF, DOCX, PPTX
-    const validTypes = [
-      'application/pdf',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-    ]
-
-    if (!validTypes.includes(file.type)) {
-      setAnalysisError('Please upload a PDF, DOCX, or PPTX file')
+    // Accept only PDF files
+    if (file.type !== 'application/pdf') {
+      setAnalysisError('Please upload a PDF file')
       return
     }
 
@@ -200,28 +194,7 @@ export default function MKGClaimsDetector() {
       const promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
       let result
 
-      // Check if file needs normalization (DOCX/PPTX) or can be processed directly (PDF)
-      const isPDF = uploadedFile.type === 'application/pdf'
       const isGemini = selectedModel === 'gemini-3-pro'
-
-      // Get the PDF file (either original or converted from DOCX/PPTX)
-      let pdfFile = uploadedFile
-
-      if (!isPDF) {
-        // DOCX/PPTX need conversion via normalizer
-        setAnalysisStatus('Converting document to PDF...')
-        const normalized = await normalizeDocument(uploadedFile, (progress, status) => {
-          setAnalysisProgress(progress)
-          setAnalysisStatus(status)
-        })
-
-        if (!normalized.success) {
-          throw new Error(normalized.error)
-        }
-
-        logger.info(`Document converted: ${normalized.document.page_count} pages`)
-        pdfFile = base64ToBlob(normalized.document.canonical_pdf)
-      }
 
       // Gemini uses native PDF, Claude/GPT need image conversion for reliable text extraction
       if (isGemini) {
@@ -238,11 +211,11 @@ export default function MKGClaimsDetector() {
       if (!isGemini) {
         setAnalysisStatus('Rendering pages for vision analysis...')
         setAnalysisProgress(15)
-        pageImages = await pdfToImages(pdfFile)
+        pageImages = await pdfToImages(uploadedFile)
         logger.info(`Converted PDF to ${pageImages.length} images for ${selectedModel}`)
       }
 
-      result = await analyzeDocument(pdfFile, (progress, status) => {
+      result = await analyzeDocument(uploadedFile, (progress, status) => {
         setAnalysisProgress(progress)
         setAnalysisStatus(status)
       }, promptKey, editablePrompt, pageImages)
@@ -389,7 +362,7 @@ export default function MKGClaimsDetector() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".pdf,.docx,.pptx"
+                  accept=".pdf"
                   onChange={handleFileSelect}
                   style={{ display: 'none' }}
                 />
@@ -398,7 +371,7 @@ export default function MKGClaimsDetector() {
                   <div className="uploadDropzone" onClick={handleUploadClick}>
                     <Icon name="upload" size={32} />
                     <p>Click to upload document</p>
-                    <span className="uploadHint">PDF, DOCX, or PPTX</span>
+                    <span className="uploadHint">PDF only</span>
                   </div>
                 )}
 

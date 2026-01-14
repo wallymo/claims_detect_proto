@@ -16,16 +16,9 @@ All commands run from the `/app` directory:
 
 ```bash
 cd app
-npm run dev       # Start Vite + normalizer-service concurrently
-npm run dev:app   # Vite only (no normalizer)
+npm run dev       # Start Vite development server
 npm run build     # Production build
 npm run lint      # ESLint
-```
-
-Normalizer service standalone (from `/normalizer-service`):
-```bash
-npm run dev       # Start on localhost:3001 with --watch
-npm start         # Production start
 ```
 
 ## Environment Setup
@@ -35,7 +28,6 @@ Create `app/.env.local`:
 VITE_GEMINI_API_KEY=your_key
 VITE_OPENAI_API_KEY=your_key
 VITE_ANTHROPIC_API_KEY=your_key
-VITE_NORMALIZER_URL=http://localhost:3001
 ```
 
 ## Architecture
@@ -50,7 +42,6 @@ claims_detector/
 │       ├── services/       # gemini.js, openai.js, anthropic.js
 │       ├── mocks/          # Mock data for Home page demos
 │       └── tokens/         # Design tokens (CSS variables)
-├── normalizer-service/     # Express backend for DOCX/PPTX→PDF conversion
 ├── docs/briefs/            # Project briefs and requirements
 └── MKG Knowledge Base/     # Reference documents for claim matching
 ```
@@ -74,13 +65,6 @@ Three interchangeable AI backends in `src/services/`:
 All three send PDFs directly as base64 with visual/multimodal processing. Gemini returns x/y coordinates for claim positions—no client-side text matching needed.
 
 **Key pattern:** Ask the AI for `position: { x, y }` as % of page dimensions. Pin placement: `x = (position.x / 100) * canvasWidth`.
-
-### Normalizer Service
-
-Converts DOCX/PPTX to PDF using LibreOffice headless. Also renders PDF pages to PNG for Claude/OpenAI (which prefer images over native PDF).
-
-- `POST /normalize` - Returns canonical PDF + page images
-- Requires LibreOffice and Poppler (`pdftocairo`) on system
 
 ### State Management
 
