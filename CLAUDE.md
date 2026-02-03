@@ -98,3 +98,41 @@ All state lives in page components (no external state library):
 - **Bidirectional sync** (Home): Click claim → scroll to text; click text → select claim
 - **PDF rendering** (MKG): pdfjs-dist with claim pin overlay
 - **Cost tracking**: API usage tracked per-run and cumulative in localStorage
+
+## Gemini API Notes
+
+### Reproducibility
+
+Gemini is **non-deterministic** even with these settings:
+```js
+temperature: 0,
+topP: 0.1,
+topK: 1
+```
+
+The `seed` parameter exists but is "best effort" only—Google explicitly states deterministic output isn't guaranteed. Expect ~10-15% variance in claim counts between runs on the same document.
+
+**If results seem wrong after code changes:** Restart the Vite dev server (`npm run dev`) to clear any caching issues before assuming code is broken.
+
+### Document Structure (Notes Pages)
+
+The prompts are tuned for "notes page" PDFs with two regions per page:
+- **Top ~50%**: Slide image (visual content, icons, charts)
+- **Bottom ~50%**: Speaker notes (bullet points starting with "Speaker notes" header)
+
+Claims with `y < 55%` are from slides; `y > 55%` are from speaker notes.
+
+### Claim Deduplication Behavior
+
+The prompt includes: "Combine related statements into ONE claim if same substantiation needed"
+
+This means if the same statistic appears in BOTH the slide image AND the speaker notes, Gemini may only return ONE pin (usually on the slide). Attempts to force duplicate extraction by changing this rule made results significantly worse—leave it as-is.
+
+## Troubleshooting
+
+| Symptom | Likely Cause | Fix |
+|---------|--------------|-----|
+| Claim count varies between runs | Gemini non-determinism | Normal behavior, not a bug |
+| Results seem stale after code change | Vite/browser cache | Restart dev server |
+| Missing claims in speaker notes | Check y-coordinates | Should have claims with y > 55% |
+| Same stat in slide + notes = 1 pin | Deduplication rule | Expected behavior (don't change prompt)

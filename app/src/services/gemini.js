@@ -154,10 +154,12 @@ Visual presentation content with titles, graphics, charts, statistics
 // Position instructions appended to all prompts
 const POSITION_INSTRUCTIONS = `
 # Position
-- x: LEFT EDGE of claim text as % (0=left, 100=right)
+- x: Position at the BULLET SYMBOL (• or ○) for bulleted text, NOT at the page margin
 - y: vertical CENTER of claim as % (0=top, 100=bottom)
 - Charts/graphs: position at LEFT EDGE of visual element
 - Speaker notes claims: y will typically be 55-90% (bottom half of page)
+- Speaker notes bullets: x should be ~5-8% for main bullets (•), ~8-12% for sub-bullets (○)
+- IMPORTANT: Sub-bullets (○) are INDENTED further right than main bullets (•)
 
 # EXTRACTION CHECKLIST
 Before finalizing your response:
