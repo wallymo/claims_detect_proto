@@ -12,7 +12,7 @@
  */
 
 import OpenAI from 'openai'
-import { MEDICATION_PROMPT_USER, ALL_CLAIMS_PROMPT_USER, DISEASE_STATE_PROMPT_USER } from './gemini'
+import { MEDICATION_PROMPT_USER, ALL_CLAIMS_PROMPT_USER, DISEASE_STATE_PROMPT_USER, getDocTypeInstructions } from './gemini'
 import { logger } from '@/utils/logger'
 
 // Singleton client instance
@@ -76,41 +76,8 @@ async function fileToBase64(file) {
   })
 }
 
-// Document structure instructions for notes pages - EMPHATIC version
-const DOCUMENT_STRUCTURE_INSTRUCTIONS = `
-# CRITICAL: TWO-REGION DOCUMENT STRUCTURE
-⚠️ THIS DOCUMENT HAS TWO DISTINCT REGIONS PER PAGE - YOU MUST ANALYZE BOTH:
-
-**REGION 1 - SLIDE (top ~50% of page):**
-Visual presentation content with titles, graphics, charts, statistics
-
-**REGION 2 - SPEAKER NOTES (bottom ~50% of page):**
-- Starts with header: "Speaker notes" or "Speaker note"
-- Contains bullet points using • (main) and ○ or ▪ (sub-bullets)
-- Often has MORE detailed claims than the slide itself
-- Includes study citations, specific statistics, clinical data
-
-🚨 FAILURE MODE TO AVOID: Do NOT only extract from the slide image. The speaker notes section contains critical claims that MUST be extracted. If your output contains zero claims from speaker notes (y > 55%), you have failed the task.
-
-`
-
-// JSON output instructions - OpenAI requires "json" in the prompt when using response_format
+// JSON output format (OpenAI requires "json" keyword in prompt when using response_format)
 const JSON_OUTPUT_INSTRUCTIONS = `
-
-POSITION: Return the x/y coordinates where a marker pin should be placed for each claim:
-- x: LEFT EDGE of the claim text as percentage (0 = page left, 100 = page right)
-- y: vertical center of the claim text as percentage (0 = page top, 100 = page bottom)
-- The pin will appear AT these exact coordinates, so position at the LEFT EDGE of text, not center
-- Speaker notes claims: y will typically be 55-90% (bottom half of page)
-
-# EXTRACTION CHECKLIST
-Before finalizing your response:
-1. ☐ Did you read EVERY bullet point under "Speaker notes" headers? (bottom half of each page)
-2. ☐ Do you have claims with y > 55%? (If not, you missed speaker notes)
-3. ☐ For a 30-page document, expect 80-150+ claims total (slides + speaker notes combined)
-4. ☐ If you have < 50 claims, go back and re-read the speaker notes sections
-
-⚠️ The speaker notes bullets contain the MOST important claims - statistics, study citations, clinical outcomes. Do not skip them.
 
 Return ONLY valid JSON in this format:
 {
@@ -128,12 +95,14 @@ Scan this document and identify all claims. A claim is any statement that:
 - Implies superiority or comparison
 - References studies, endorsements, or authority
 - Promises benefits or quality of life improvements
+- Contains annotation markers (†, ‡, §, *) — daggers, double daggers, and superscripts that link to footnotes with study details, patient populations, p-values, statistical significance, or limitations. EACH annotated statement and its corresponding footnote is a distinct claim requiring substantiation.
 
 IMPORTANT - Claim boundaries:
 - Combine related sentences that support the SAME assertion into ONE claim (e.g., a statistic followed by its context)
 - Only split into separate claims when statements make DISTINCT assertions requiring DIFFERENT substantiation
 - A claim should be the complete, self-contained statement - not sentence fragments
 - Every statistic requires substantiation - whether it appears as a headline or embedded in text
+- Every annotation marker (†, ‡, §, *) signals a substantiation point — flag the annotated statement as a claim
 
 For each claim, rate your confidence (0-100):
 - 90-100: Definite claim - explicit stats, direct efficacy statements, specific numbers that clearly need substantiation
@@ -175,22 +144,24 @@ Now analyze the document. Find everything that could require substantiation.`
  * @param {Array|null} pageImages - Pre-rendered page images [{page, base64}] for vision analysis
  * @returns {Promise<Object>} - Result with claims array
  */
-export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null, pageImages = null) {
-  // Select the appropriate prompt - no need for "json" keyword with text.format
-  // Prepend document structure instructions (for notes pages)
+export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null, pageImages = null, docType = 'speaker-notes', factInventory = '') {
+  // Get doc-type-specific instructions
+  const { structure, position } = getDocTypeInstructions(docType)
+
+  // Select the appropriate prompt
   let selectedPrompt
   if (customPrompt) {
-    selectedPrompt = DOCUMENT_STRUCTURE_INSTRUCTIONS + customPrompt + JSON_OUTPUT_INSTRUCTIONS
+    selectedPrompt = structure + customPrompt + position + factInventory + JSON_OUTPUT_INSTRUCTIONS
     logger.debug(`Using custom prompt (${customPrompt.length} chars)`)
   } else {
     if (promptKey === 'drug') {
-      selectedPrompt = DOCUMENT_STRUCTURE_INSTRUCTIONS + MEDICATION_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
+      selectedPrompt = structure + MEDICATION_PROMPT_USER + position + factInventory + JSON_OUTPUT_INSTRUCTIONS
     } else if (promptKey === 'disease') {
-      selectedPrompt = DOCUMENT_STRUCTURE_INSTRUCTIONS + DISEASE_STATE_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
+      selectedPrompt = structure + DISEASE_STATE_PROMPT_USER + position + factInventory + JSON_OUTPUT_INSTRUCTIONS
     } else {
-      selectedPrompt = DOCUMENT_STRUCTURE_INSTRUCTIONS + ALL_CLAIMS_PROMPT_USER + JSON_OUTPUT_INSTRUCTIONS
+      selectedPrompt = structure + ALL_CLAIMS_PROMPT_USER + position + factInventory + JSON_OUTPUT_INSTRUCTIONS
     }
-    logger.info(`Using ${promptKey} prompt for OpenAI analysis`)
+    logger.info(`Using ${promptKey} prompt for OpenAI analysis (docType: ${docType})`)
   }
 
   const client = getOpenAIClient()

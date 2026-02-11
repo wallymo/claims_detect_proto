@@ -1,0 +1,234 @@
+/*
+ * ThemeToggle - "Within" style from toggles.dev
+ * Sun/Moon animated toggle
+ */
+
+.toggle {
+  --toggle-size: 32px;
+  --toggle-padding: 4px;
+  --toggle-bg-light: #87CEEB;
+  --toggle-bg-dark: #2C3E50;
+  --sun-color: #FFD700;
+  --moon-color: #F5F5F5;
+  
+  position: relative;
+  width: calc(var(--toggle-size) * 2);
+  height: var(--toggle-size);
+  padding: 0;
+  border: none;
+  border-radius: 9999px;
+  cursor: pointer;
+  background: transparent;
+  overflow: hidden;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.toggle:hover {
+  transform: scale(1.05);
+}
+
+.toggle:active {
+  transform: scale(0.95);
+}
+
+/* Track */
+.track {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 9999px;
+  background: var(--toggle-bg-light);
+  position: relative;
+  transition: background 0.4s ease;
+  overflow: hidden;
+}
+
+.dark .track {
+  background: var(--toggle-bg-dark);
+}
+
+/* Cloud decorations for light mode */
+.track::before,
+.track::after {
+  content: '';
+  position: absolute;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 50%;
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+.track::before {
+  width: 20px;
+  height: 12px;
+  top: 6px;
+  right: 8px;
+  opacity: 1;
+}
+
+.track::after {
+  width: 14px;
+  height: 8px;
+  top: 16px;
+  right: 16px;
+  opacity: 1;
+}
+
+.dark .track::before,
+.dark .track::after {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+/* Thumb */
+.thumb {
+  display: block;
+  width: calc(var(--toggle-size) - var(--toggle-padding) * 2);
+  height: calc(var(--toggle-size) - var(--toggle-padding) * 2);
+  border-radius: 50%;
+  position: absolute;
+  top: var(--toggle-padding);
+  left: var(--toggle-padding);
+  transition: transform 0.4s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+}
+
+.dark .thumb {
+  transform: translateX(var(--toggle-size));
+}
+
+/* Body (sun/moon) */
+.body {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: var(--sun-color);
+  position: relative;
+  box-shadow: 
+    inset -2px -2px 4px rgba(0, 0, 0, 0.1),
+    inset 2px 2px 4px rgba(255, 255, 255, 0.3),
+    0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: background 0.4s ease, box-shadow 0.4s ease;
+}
+
+.dark .body {
+  background: var(--moon-color);
+  box-shadow: 
+    inset -2px -2px 4px rgba(0, 0, 0, 0.1),
+    inset 2px 2px 4px rgba(255, 255, 255, 0.8),
+    0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* Sun rays */
+.sunRays {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 100%;
+  transform: translate(-50%, -50%);
+  transition: opacity 0.3s ease, transform 0.4s ease;
+}
+
+.dark .sunRays {
+  opacity: 0;
+  transform: translate(-50%, -50%) rotate(90deg) scale(0.5);
+}
+
+.ray {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 6px;
+  background: var(--sun-color);
+  border-radius: 1px;
+  transform-origin: center;
+  transition: opacity 0.3s ease;
+}
+
+.ray:nth-child(1) { transform: translate(-50%, -50%) rotate(0deg) translateY(-10px); }
+.ray:nth-child(2) { transform: translate(-50%, -50%) rotate(45deg) translateY(-10px); }
+.ray:nth-child(3) { transform: translate(-50%, -50%) rotate(90deg) translateY(-10px); }
+.ray:nth-child(4) { transform: translate(-50%, -50%) rotate(135deg) translateY(-10px); }
+.ray:nth-child(5) { transform: translate(-50%, -50%) rotate(180deg) translateY(-10px); }
+.ray:nth-child(6) { transform: translate(-50%, -50%) rotate(225deg) translateY(-10px); }
+.ray:nth-child(7) { transform: translate(-50%, -50%) rotate(270deg) translateY(-10px); }
+.ray:nth-child(8) { transform: translate(-50%, -50%) rotate(315deg) translateY(-10px); }
+
+/* Moon crater */
+.crater {
+  position: absolute;
+  top: 30%;
+  left: 25%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.1);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.crater::before,
+.crater::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.crater::before {
+  width: 6px;
+  height: 6px;
+  top: 8px;
+  left: 4px;
+}
+
+.crater::after {
+  width: 3px;
+  height: 3px;
+  top: -4px;
+  left: 8px;
+}
+
+.dark .crater {
+  opacity: 1;
+}
+
+/* Stars for dark mode */
+.track {
+  background-image: 
+    radial-gradient(2px 2px at 20% 30%, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0)),
+    radial-gradient(1px 1px at 40% 70%, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0)),
+    radial-gradient(1px 1px at 60% 20%, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0)),
+    radial-gradient(2px 2px at 80% 60%, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0));
+  transition: background-image 0.4s ease, background 0.4s ease;
+}
+
+.dark .track {
+  background-image: 
+    radial-gradient(2px 2px at 20% 30%, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0)),
+    radial-gradient(1px 1px at 40% 70%, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0)),
+    radial-gradient(1px 1px at 60% 20%, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0)),
+    radial-gradient(2px 2px at 80% 60%, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0));
+}
+
+/* Focus styles */
+.toggle:focus-visible {
+  outline: 2px solid var(--color-interactive-default, #333);
+  outline-offset: 2px;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .toggle,
+  .track,
+  .thumb,
+  .body,
+  .sunRays,
+  .crater,
+  .track::before,
+  .track::after {
+    transition: none !important;
+  }
+}

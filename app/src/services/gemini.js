@@ -52,13 +52,10 @@ const PRICING = {
 }
 
 // System instruction (moved out of user prompt for efficiency)
+// Generic — doc-type-specific guidance is in the user prompt
 const SYSTEM_INSTRUCTION = `You are a veteran MLR (Medical, Legal, Regulatory) reviewer for pharmaceutical promotional materials. Your mission: surface EVERY statement that could require substantiation. Flag 20 borderline phrases rather than let 1 slip through. When unsure, include it with lower confidence rather than omit.
 
-CRITICAL DOCUMENT FORMAT: These documents are "notes pages" with TWO regions per page:
-1. TOP HALF: Slide image (visual content)
-2. BOTTOM HALF: Speaker notes starting with "Speaker notes" header, containing bullet points (• and ○)
-
-You MUST extract claims from BOTH regions. The speaker notes often contain MORE substantive claims than the slides - specific statistics, study citations, clinical outcomes. Ignoring speaker notes is an unacceptable failure.`
+Pay close attention to the DOCUMENT FORMAT section in the prompt — it tells you the layout of this specific document and how to scan it.`
 
 // JSON Schema for strict output validation
 const CLAIMS_JSON_SCHEMA = {
@@ -133,42 +130,157 @@ export async function fileToBase64(file) {
 
 // Leaner, markdown-structured prompts (role moved to systemInstruction)
 
-// Document structure instructions for notes pages - EMPHATIC version
-const DOCUMENT_STRUCTURE_INSTRUCTIONS = `
-# CRITICAL: TWO-REGION DOCUMENT STRUCTURE
-⚠️ THIS DOCUMENT HAS TWO DISTINCT REGIONS PER PAGE - YOU MUST ANALYZE BOTH:
+// ===== Document-type-specific instructions =====
+// These get prepended/appended to the user prompt based on selected document type.
 
-**REGION 1 - SLIDE (top ~50% of page):**
-Visual presentation content with titles, graphics, charts, statistics
+const DOC_TYPE_INSTRUCTIONS = {
+  'speaker-notes': {
+    structure: `
+# CRITICAL: TWO-REGION DOCUMENT STRUCTURE
+⚠️ THIS DOCUMENT HAS TWO DISTINCT REGIONS PER PAGE - YOU MUST ANALYZE BOTH REGIONS AT THE MICRO LEVEL:
+
+**REGION 1 - SLIDE IMAGE (top ~50% of page):**
+Do NOT treat the slide as a single visual — zoom into EVERY element:
+- **Titles & subtitles** — headline claims, positioning statements
+- **Body text** — sentences or phrases within the slide layout
+- **Tables** — every cell, row header, column header, and footnote within tables. Table data often contains specific numbers, percentages, and p-values that each require substantiation
+- **Charts & graphs** — axis labels, data point labels, trend lines, legend text. A chart claiming "47% reduction" is a claim even if it's only a bar label
+- **Infographics & icons with text** — benefit statements paired with visual elements (e.g., clock icon + "Works in 3 days")
+- **Callout boxes & pull quotes** — highlighted statistics or key messages
+- **Footnotes & small print** — disclaimers, study citations, asterisked qualifications at the bottom of the slide
+- **Annotation markers (†, ‡, §, *)** — daggers, double daggers, and superscript symbols that link to footnotes containing study details, patient populations, p-values, statistical significance, or limitations. EACH annotation marker and its corresponding footnote text is a distinct substantiation point that must be flagged as a claim.
+- **Watermarks & branded text** — sometimes contain claims like "Clinically Proven" or "FDA Approved"
 
 **REGION 2 - SPEAKER NOTES (bottom ~50% of page):**
-- Starts with header: "Speaker notes" or "Speaker note"
-- Contains bullet points using • (main) and ○ or ▪ (sub-bullets)
-- Often has MORE detailed claims than the slide itself
-- Includes study citations, specific statistics, clinical data
+Starts with header: "Speaker notes" or "Speaker note". Contains a NESTED bullet hierarchy — you must read ALL levels:
+- **Main bullets (•)** — primary talking points, often contain headline claims
+- **Sub-bullets (○ or ▪)** — supporting detail: specific statistics, study names, p-values, outcomes data
+- **Sub-sub-bullets (– or -)** — additional granularity: subgroup data, secondary endpoints, safety specifics
+- **Inline citations** — study references embedded in bullet text (e.g., "Smith et al., 2023") — the claim around the citation needs flagging
+- **Parenthetical data** — numbers in parentheses like (p<0.001) or (95% CI: 1.2-3.4) are claims requiring substantiation
+- **Annotation markers (†, ‡, §, *)** — dagger and double dagger symbols in text that reference footnotes with study limitations, populations, or statistical qualifiers. The annotated statement AND the footnote text are both claims.
+- **Transitional statements** — phrases like "importantly," "notably," "uniquely" often precede substantive claims
 
-🚨 FAILURE MODE TO AVOID: Do NOT only extract from the slide image. The speaker notes section contains critical claims that MUST be extracted. If your output contains zero claims from speaker notes (y > 55%), you have failed the task.
+🚨 FAILURE MODES TO AVOID:
+1. Do NOT treat the slide image as a single blob — drill into tables, chart labels, footnotes
+2. Do NOT only read top-level (•) bullets — sub-bullets (○) and sub-sub-bullets contain the most specific claims
+3. If your output has zero claims from speaker notes (y > 55%), you have FAILED the task
 
-`
-
-// Position instructions appended to all prompts
-const POSITION_INSTRUCTIONS = `
+`,
+    position: `
 # Position
 - x: Position at the BULLET SYMBOL (• or ○) for bulleted text, NOT at the page margin
 - y: vertical CENTER of claim as % (0=top, 100=bottom)
-- Charts/graphs: position at LEFT EDGE of visual element
-- Speaker notes claims: y will typically be 55-90% (bottom half of page)
-- Speaker notes bullets: x should be ~5-8% for main bullets (•), ~8-12% for sub-bullets (○)
-- IMPORTANT: Sub-bullets (○) are INDENTED further right than main bullets (•)
+- Slide region elements:
+  - Table claims: position at LEFT EDGE of the table cell containing the claim
+  - Chart/graph claims: position at the data label or axis label, not the chart center
+  - Footnote claims: position at the footnote text (typically y = 45-55%, near slide bottom)
+  - Title claims: typically y = 2-10%
+- Speaker notes region:
+  - y will typically be 55-90% (bottom half of page)
+  - Main bullets (•): x should be ~5-8%
+  - Sub-bullets (○ or ▪): x should be ~8-12%
+  - Sub-sub-bullets (– or -): x should be ~12-16%
+  - IMPORTANT: Each nesting level is INDENTED further right
 
 # EXTRACTION CHECKLIST
 Before finalizing your response:
-1. ☐ Did you read EVERY bullet point under "Speaker notes" headers? (bottom half of each page)
-2. ☐ Do you have claims with y > 55%? (If not, you missed speaker notes)
-3. ☐ For a 30-page document, expect 80-150+ claims total (slides + speaker notes combined)
-4. ☐ If you have < 50 claims, go back and re-read the speaker notes sections
+1. ☐ Did you examine tables in the slide image — every cell, header, and footnote?
+2. ☐ Did you read chart/graph labels, axis values, and data annotations?
+3. ☐ Did you check slide footnotes and small print?
+4. ☐ Did you read ALL bullet levels in speaker notes — main (•), sub (○), and sub-sub (–)?
+5. ☐ Did you flag parenthetical data like (p<0.001) and (95% CI: ...)?
+6. ☐ Did you identify ALL annotation markers (†, ‡, §, *) and flag both the annotated statement AND corresponding footnote as claims?
+7. ☐ Do you have claims with y > 55%? (If not, you missed speaker notes)
+8. ☐ For a 30-page document, expect 80-150+ claims total
+9. ☐ If you have < 50 claims, go back and re-examine tables, chart labels, annotations, and sub-bullets`
+  },
 
-⚠️ The speaker notes bullets contain the MOST important claims - statistics, study citations, clinical outcomes. Do not skip them.`
+  'trifold': {
+    structure: `
+# DOCUMENT FORMAT: TRI-FOLD BROCHURE
+This is a tri-fold (3-panel) pharmaceutical brochure. Each page has THREE distinct content panels arranged side-by-side.
+
+**LAYOUT:**
+- Page 1 (front): Three panels read left → center → right
+- Page 2 (back): Three panels (may include cover panel, mailing panel, reference panel)
+
+**WHERE TO FIND CLAIMS:**
+- **Headlines & subheads** in each panel — often contain efficacy or benefit claims
+- **Body copy** — detailed statements about mechanism, outcomes, safety
+- **Callout boxes / pull quotes** — highlighted statistics or key messages
+- **Charts, graphs, infographics** — visual statistical claims
+- **Footnotes & references section** — may contain additional claims or qualifiers
+- **Annotation markers (†, ‡, §, *)** — daggers and double daggers linking to study details, populations, p-values, or limitations. Each annotation is a substantiation point.
+- **Bullet points** — listed benefits, features, or clinical data
+
+🚨 FAILURE MODE TO AVOID: Do NOT only scan the largest or most prominent panel. ALL three panels on each page may contain substantive claims. Small-print body copy and footnotes are common locations for claims that need substantiation.
+
+`,
+    position: `
+# Position
+- x: Horizontal position as % from left edge (0-100). For a 3-panel layout:
+  - Left panel claims: x typically 5-30%
+  - Center panel claims: x typically 35-65%
+  - Right panel claims: x typically 70-95%
+- y: Vertical CENTER of claim as % from top (0-100)
+- Charts/graphs: position at LEFT EDGE of the visual element
+- Footnotes: position at actual text location (usually bottom of panel)
+
+# EXTRACTION CHECKLIST
+Before finalizing your response:
+1. ☐ Did you scan ALL three panels on each page?
+2. ☐ Did you check callout boxes and pull quotes?
+3. ☐ Did you read footnotes and small-print body copy?
+4. ☐ Did you extract claims from charts and infographics?
+5. ☐ Did you identify all annotation markers (†, ‡, §, *) and flag annotated statements as claims?`
+  },
+
+  'slides-only': {
+    structure: `
+# DOCUMENT FORMAT: PRESENTATION SLIDES (NO SPEAKER NOTES)
+This is a slide deck — each page is a single presentation slide. There are NO speaker notes below the slides.
+
+**WHERE TO FIND CLAIMS:**
+- **Slide titles & subtitles** — often contain primary efficacy or positioning claims
+- **Bullet points** — listed benefits, clinical outcomes, safety data
+- **Charts, graphs, tables** — visual data claims requiring substantiation
+- **Callout boxes / highlighted text** — key statistics or messaging
+- **Icons with text labels** — benefit statements paired with visual icons
+- **Annotation markers (†, ‡, §, *)** — daggers and double daggers linking to footnotes with study details, populations, p-values, or limitations. Each is a substantiation point.
+- **Bottom bars / footers** — may contain additional claims or references
+
+🚨 FAILURE MODE TO AVOID: Do NOT assume slides contain fewer claims. Pharma slide decks pack claims into every element — titles, bullets, callouts, data visualizations. Analyze every visual and text element on each slide.
+
+`,
+    position: `
+# Position
+- x: Horizontal position as % from left edge (0-100)
+- y: Vertical CENTER of claim as % from top (0-100)
+- Title claims: typically y = 5-15%
+- Bullet points: position at bullet symbol, NOT at margin
+- Charts/graphs: position at LEFT EDGE of visual element
+- Footer claims: typically y = 90-98%
+
+# EXTRACTION CHECKLIST
+Before finalizing your response:
+1. ☐ Did you extract claims from slide titles and subtitles?
+2. ☐ Did you check every bullet point on each slide?
+3. ☐ Did you extract statistical claims from charts, graphs, and tables?
+4. ☐ Did you check callout boxes and highlighted text?
+5. ☐ Did you identify all annotation markers (†, ‡, §, *) and flag annotated statements as claims?`
+  }
+}
+
+/**
+ * Get document structure and position instructions for a given doc type.
+ * Defaults to 'speaker-notes' for backward compatibility.
+ * Exported so other AI services (anthropic, openai) can reuse the same instructions.
+ */
+export function getDocTypeInstructions(docType) {
+  const instructions = DOC_TYPE_INSTRUCTIONS[docType] || DOC_TYPE_INSTRUCTIONS['speaker-notes']
+  return { structure: instructions.structure, position: instructions.position }
+}
 
 // User-facing prompt for All Claims (shown in UI, editable)
 export const ALL_CLAIMS_PROMPT_USER = `# Task
@@ -184,6 +296,7 @@ Extract ALL claims requiring MLR substantiation from this pharmaceutical documen
 - Combine related statements into ONE claim if same substantiation needed
 - Split only when DIFFERENT substantiation required
 - Include charts/graphs/infographics with statistical claims
+- Flag ALL annotation markers (†, ‡, §, *) — each dagger/double dagger references a footnote with study details, populations, or statistical qualifiers that require substantiation
 - Complete, self-contained statements only
 
 # Confidence (0-100)
@@ -209,6 +322,7 @@ Extract DISEASE STATE claims requiring MLR substantiation.
 - Combine related statements if same substantiation needed
 - Split only when DIFFERENT substantiation required
 - Include visual elements with statistical claims
+- Flag ALL annotation markers (†, ‡, §, *) — each links to substantiation-requiring footnote text
 
 # Confidence (0-100)
 90-100: Explicit stats, prevalence data | 70-89: Burden assertions, unmet needs | 50-69: Borderline | 30-49: Weak contextual
@@ -228,10 +342,12 @@ Extract MEDICATION claims requiring MLR substantiation.
 - **Comparative:** vs alternatives, standard of care
 - **Authority:** trial citations, regulatory status
 - **Patient:** QOL, lifestyle improvements
+- **Annotations:** statements marked with †, ‡, §, * that link to footnotes with study details, populations, or qualifiers
 
 # Rules
 - Combine related statements if same substantiation needed
 - Split only when DIFFERENT substantiation required
+- Flag ALL annotation markers (†, ‡, §, *) — each dagger/double dagger is a distinct substantiation point
 
 # Confidence (0-100)
 90-100: "Clinically proven to reduce X" | 70-89: "Starts working in 3 days" | 50-69: "Helps patients feel better" | 30-49: "New era in treatment"
@@ -245,10 +361,15 @@ Analyze now. Find all medication claims.`
  * @param {Function} onProgress - Optional progress callback
  * @param {string} promptKey - Prompt selection key ('all', 'drug', etc.)
  * @param {string|null} customPrompt - Optional custom prompt override
+ * @param {Array|null} pageImages - Pre-rendered page images (unused by Gemini, kept for API compat)
+ * @param {string} docType - Document type: 'speaker-notes', 'trifold', 'slides-only'
  * @returns {Promise<Object>} - Result with claims array
  */
-export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null) {
+export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null, pageImages = null, docType = 'speaker-notes', factInventory = '') {
   const client = getGeminiClient()
+
+  // Get doc-type-specific instructions
+  const { structure, position } = getDocTypeInstructions(docType)
 
   // Build final prompt: custom prompt (if provided) or default, plus position instructions
   let userPrompt
@@ -265,15 +386,10 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     }
     logger.info(`Using default prompt for: ${promptKey}`)
   }
-  // Prepend document structure instructions (for notes pages) and append position instructions
-  const finalPrompt = DOCUMENT_STRUCTURE_INSTRUCTIONS + userPrompt + POSITION_INSTRUCTIONS
+  // Prepend document structure instructions and append position instructions (doc-type-aware)
+  const finalPrompt = structure + userPrompt + position + factInventory
 
-  // Debug: confirm document structure instructions are included
-  const hasDocStructure = finalPrompt.includes('Speaker notes')
-  logger.info(`Final prompt: ${finalPrompt.length} chars, has speaker notes instructions: ${hasDocStructure}`)
-  if (!hasDocStructure) {
-    logger.error('WARNING: Document structure instructions missing from prompt!')
-  }
+  logger.info(`Final prompt: ${finalPrompt.length} chars, docType: ${docType}`)
 
   onProgress?.(10, 'Preparing document...')
   const base64Data = await fileToBase64(pdfFile)

@@ -1,0 +1,161 @@
+/* ========================================
+   THEME SYSTEM - Dark Mode Overrides
+   ======================================== */
+
+/* Dark Mode Token Overrides */
+[data-theme="dark"] {
+  /* Background Colors */
+  --color-background-primary: #1A1A1A;
+  --color-background-secondary: #2D2D2D;
+  --color-background-tertiary: #404040;
+  --color-background-elevated: #242424;
+  --color-background-input: #333333;
+  
+  /* Text Colors */
+  --color-text-primary: #F5F5F5;
+  --color-text-secondary: #B0B0B0;
+  --color-text-disabled: #666666;
+  --color-text-placeholder: #808080;
+  
+  /* Border Colors */
+  --color-border-default: #404040;
+  --color-border-strong: #666666;
+  --color-border-hover: #808080;
+  
+  /* Interactive Colors */
+  --color-interactive-default: #E0E0E0;
+  --color-interactive-hover: #FFFFFF;
+  --color-interactive-active: #FFFFFF;
+  
+  /* State Colors - Brighter for dark backgrounds */
+  --color-state-error: #EF5350;
+  --color-state-success: #66BB6A;
+  --color-state-warning: #FFA726;
+  --color-state-info: #42A5F5;
+  
+  /* Semantic Colors */
+  --color-primary: #64B5F6;
+  --color-success: #66BB6A;
+  --color-error: #EF5350;
+  --color-warning: #FFA726;
+  --color-border: #404040;
+  
+  /* Shadows - Stronger for depth on dark backgrounds */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+  --shadow-base: 0 1px 3px rgba(0,0,0,0.4);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.4);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,0.5);
+  --shadow-xl: 0 20px 25px rgba(0,0,0,0.5);
+}
+
+/* System Preference Dark Mode */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-background-primary: #1A1A1A;
+    --color-background-secondary: #2D2D2D;
+    --color-background-tertiary: #404040;
+    --color-background-elevated: #242424;
+    --color-background-input: #333333;
+    
+    --color-text-primary: #F5F5F5;
+    --color-text-secondary: #B0B0B0;
+    --color-text-disabled: #666666;
+    --color-text-placeholder: #808080;
+    
+    --color-border-default: #404040;
+    --color-border-strong: #666666;
+    --color-border-hover: #808080;
+    
+    --color-interactive-default: #E0E0E0;
+    --color-interactive-hover: #FFFFFF;
+    --color-interactive-active: #FFFFFF;
+    
+    --color-state-error: #EF5350;
+    --color-state-success: #66BB6A;
+    --color-state-warning: #FFA726;
+    --color-state-info: #42A5F5;
+    
+    --color-primary: #64B5F6;
+    --color-success: #66BB6A;
+    --color-error: #EF5350;
+    --color-warning: #FFA726;
+    --color-border: #404040;
+    
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+    --shadow-base: 0 1px 3px rgba(0,0,0,0.4);
+    --shadow-md: 0 4px 6px rgba(0,0,0,0.4);
+    --shadow-lg: 0 10px 15px rgba(0,0,0,0.5);
+    --shadow-xl: 0 20px 25px rgba(0,0,0,0.5);
+  }
+}
+
+/* Smooth theme transitions - EXCLUDING text color to prevent fade */
+* {
+  transition: background-color 0.3s ease,
+              border-color 0.3s ease,
+              box-shadow 0.3s ease;
+}
+
+/* Disable transitions for users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}
+
+/* ========================================
+   COMPONENT OVERRIDES FOR DARK MODE
+   ======================================== */
+
+/* Body background */
+body {
+  background-color: var(--color-background-secondary);
+  color: var(--color-text-primary);
+}
+
+/* Alert styles for dark mode */
+[data-theme="dark"] .alert-info,
+[data-theme="dark"] [class*="alert-info"] {
+  background-color: rgba(66, 165, 245, 0.15);
+  border-color: var(--color-state-info);
+}
+
+[data-theme="dark"] .alert-success,
+[data-theme="dark"] [class*="alert-success"] {
+  background-color: rgba(102, 187, 106, 0.15);
+  border-color: var(--color-state-success);
+}
+
+[data-theme="dark"] .alert-warning,
+[data-theme="dark"] [class*="alert-warning"] {
+  background-color: rgba(255, 167, 38, 0.15);
+  border-color: var(--color-state-warning);
+}
+
+[data-theme="dark"] .alert-error,
+[data-theme="dark"] [class*="alert-error"] {
+  background-color: rgba(239, 83, 80, 0.15);
+  border-color: var(--color-state-error);
+}
+
+/* ClaimCard specific styles */
+[data-theme="dark"] .claim-card-approved,
+[data-theme="dark"] [class*="claim-card-approved"] {
+  background-color: rgba(102, 187, 106, 0.1);
+}
+
+[data-theme="dark"] .claim-card-rejected,
+[data-theme="dark"] [class*="claim-card-rejected"] {
+  background-color: rgba(239, 83, 80, 0.1);
+}
+
+[data-theme="dark"] .claim-card-active,
+[data-theme="dark"] [class*="claim-card-active"] {
+  box-shadow: 0 0 0 4px rgba(100, 181, 246, 0.2);
+}
+
+/* Type chips dark mode adjustments */
+[data-theme="dark"] .type-chip.active,
+[data-theme="dark"] [class*="type-chip active"] {
+  color: #1A1A1A;  /* Dark text on light colored chips */
+}

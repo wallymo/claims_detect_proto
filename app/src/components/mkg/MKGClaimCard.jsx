@@ -10,7 +10,8 @@ export default function MKGClaimCard({
   isActive = false,
   onApprove,
   onReject,
-  onSelect
+  onSelect,
+  onViewSource
 }) {
   const [showFeedback, setShowFeedback] = useState(false)
   const [showReferencePreview, setShowReferencePreview] = useState(false)
@@ -123,12 +124,24 @@ export default function MKGClaimCard({
               <Icon name="info" size={14} />
             </button>
           </div>
-          {claim.reference.page && (
-            <div className={styles.referenceLocation}>
-              <Icon name="mapPin" size={12} />
-              <span>Page {claim.reference.page}</span>
-            </div>
-          )}
+          <div className={styles.referenceLocation}>
+            {claim.reference.page && (
+              <>
+                <Icon name="mapPin" size={12} />
+                <span>Page {claim.reference.page}</span>
+              </>
+            )}
+            {onViewSource && (
+              <button
+                className={styles.viewSourceBtn}
+                onClick={(e) => { e.stopPropagation(); onViewSource?.() }}
+                title="View source document"
+              >
+                <Icon name="fileSearch" size={12} />
+                View Source
+              </button>
+            )}
+          </div>
 
           {/* Reference preview popup */}
           {showReferencePreview && claim.reference.excerpt && (

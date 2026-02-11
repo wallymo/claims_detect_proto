@@ -1,0 +1,434 @@
+.libraryTab {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.libraryHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-3) var(--spacing-4);
+  border-bottom: var(--border-width-thin) solid var(--color-border-default);
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.libraryCount {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+/* ===== Folder Tree ===== */
+.folderTree {
+  padding: var(--spacing-3) var(--spacing-4);
+  border-bottom: var(--border-width-thin) solid var(--color-border-default);
+  flex-shrink: 0;
+}
+
+.treeRoot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: var(--border-radius-sm, 6px);
+  width: 100%;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.treeRoot:hover {
+  background: var(--color-background-secondary, #f5f5f5);
+}
+
+.treeRootActive {
+  background: var(--blue-1, #E3F2FD);
+}
+
+.treeRootIcon {
+  display: flex;
+  align-items: center;
+  color: var(--color-text-secondary);
+}
+
+.treeRootLabel {
+  flex: 1;
+  font-size: var(--font-size-sm, 14px);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-text-primary, #212121);
+}
+
+.treeRootActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.treeActionBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  border-radius: var(--border-radius-sm, 6px);
+  transition: all 0.15s ease;
+}
+
+.treeActionBtn:hover {
+  background: var(--color-background-secondary, #f5f5f5);
+  color: var(--color-text-primary);
+}
+
+.treeChevron {
+  transition: transform 0.2s ease;
+}
+
+.treeChevronOpen {
+  transform: rotate(0deg);
+}
+
+.treeChevronClosed {
+  transform: rotate(-90deg);
+}
+
+/* Children container */
+.treeChildren {
+  position: relative;
+  margin-left: 16px;
+  padding-left: 12px;
+}
+
+/* Vertical connecting line */
+.treeChildren::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 8px;
+  width: 1px;
+  background: var(--color-border-default, #e0e0e0);
+}
+
+/* Individual folder row */
+.treeFolder {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: var(--border-radius-sm, 6px);
+  font-size: var(--font-size-sm, 14px);
+  color: var(--color-text-secondary, #616161);
+  text-align: left;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.treeFolder:hover {
+  background: var(--color-background-secondary, #f5f5f5);
+  color: var(--color-text-primary, #212121);
+}
+
+.treeFolderActive {
+  background: var(--blue-1, #E3F2FD);
+  color: var(--blue-8, #1565C0);
+  font-weight: var(--font-weight-medium, 500);
+}
+
+/* Blue accent bar on active folder */
+.treeFolderActive::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--blue-5, #2196F3);
+}
+
+.treeFolderName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.treeFolderCount {
+  font-size: 11px;
+  color: var(--color-text-disabled, #9e9e9e);
+  font-weight: var(--font-weight-regular, 400);
+}
+
+.treeFolderActive .treeFolderCount {
+  color: var(--blue-6, #1E88E5);
+}
+
+/* Rename + Delete action icons */
+.treeFolderActions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
+.treeFolder:hover .treeFolderActions {
+  display: flex;
+}
+
+.treeFolderAction {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--border-radius-sm, 6px);
+  color: var(--color-text-disabled, #9e9e9e);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.treeFolderAction:hover {
+  color: var(--color-text-primary, #212121);
+  background: var(--color-background-secondary, #f5f5f5);
+}
+
+/* Inline rename input row */
+.treeRenameRow {
+  flex: 1;
+  min-width: 0;
+}
+
+/* New folder inline input in tree */
+.treeNewFolder {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0;
+  margin-left: 0;
+}
+
+.treeNewFolder > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.folderAction {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  border-radius: var(--border-radius-sm);
+  flex-shrink: 0;
+}
+
+.folderAction:hover {
+  background: var(--color-background-secondary);
+  color: var(--color-text-primary);
+}
+
+/* ===== Bulk action bar ===== */
+.bulkBar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  padding: var(--spacing-2) var(--spacing-4);
+  background: var(--blue-1, #E3F2FD);
+  border-bottom: var(--border-width-thin) solid var(--blue-3, #90CAF9);
+  flex-shrink: 0;
+}
+
+.bulkCheckbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--blue-4, #42A5F5);
+  border-radius: 3px;
+  background: var(--color-background-primary, #fff);
+  cursor: pointer;
+  position: relative;
+  transition: all 0.15s ease;
+}
+
+.bulkCheckbox:hover {
+  border-color: var(--blue-6, #1E88E5);
+}
+
+.bulkCheckbox:checked {
+  background: var(--color-interactive-default, #2196F3);
+  border-color: var(--color-interactive-default, #2196F3);
+}
+
+
+.bulkCount {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--blue-8, #1565C0);
+}
+
+.bulkActions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-left: auto;
+}
+
+/* ===== Move-to popover ===== */
+.moveDropdown {
+  position: relative;
+}
+
+.moveBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: var(--border-width-thin) solid var(--blue-3, #90CAF9);
+  border-radius: var(--border-radius-sm);
+  background: var(--color-background-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.moveBtn:hover {
+  background: var(--blue-1, #E3F2FD);
+}
+
+.movePopover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 200px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--color-background-primary, #fff);
+  border: var(--border-width-thin) solid var(--color-border-default, #e0e0e0);
+  border-radius: var(--border-radius-md, 8px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  z-index: 100;
+  padding: 4px;
+}
+
+.moveItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  font-size: var(--font-size-sm, 14px);
+  color: var(--color-text-primary, #212121);
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--border-radius-sm, 6px);
+  transition: background 0.12s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.moveItem:hover {
+  background: var(--color-background-secondary, #f5f5f5);
+}
+
+.moveDivider {
+  height: 1px;
+  background: var(--color-border-default, #e0e0e0);
+  margin: 4px 0;
+}
+
+.moveNewFolder {
+  color: var(--blue-6, #1E88E5);
+  font-weight: var(--font-weight-medium, 500);
+}
+
+.moveNewRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+}
+
+.moveNewRow > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.bulkDeleteBtn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: var(--border-width-thin) solid var(--red-5, #F44336);
+  border-radius: var(--border-radius-sm);
+  background: var(--color-background-primary);
+  color: var(--red-7, #D32F2F);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bulkDeleteBtn:hover {
+  background: var(--red-1, #FFEBEE);
+}
+
+/* ===== Document list ===== */
+.libraryList {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--spacing-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.libraryEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  text-align: center;
+  color: var(--color-text-disabled);
+  padding: var(--spacing-6);
+}
+
+.libraryEmpty h3 {
+  margin: var(--spacing-3) 0 var(--spacing-1);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+}
+
+.libraryEmpty p {
+  margin: var(--spacing-2) 0 0;
+  font-size: var(--font-size-sm);
+  max-width: 280px;
+}

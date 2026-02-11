@@ -148,6 +148,26 @@
   padding-left: 20px;
 }
 
+.viewSourceBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid var(--green-4);
+  border-radius: 4px;
+  background: var(--green-2);
+  color: var(--green-8);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.viewSourceBtn:hover {
+  background: var(--green-3);
+  border-color: var(--green-5);
+}
+
 /* Reference preview popup */
 .referencePreview {
   margin-top: 8px;

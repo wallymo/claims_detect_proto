@@ -12,9 +12,11 @@ export default function Input({
   onChange,
   onFocus,
   onBlur,
+  onKeyDown,
   id,
   name,
   required = false,
+  autoFocus = false,
   'aria-label': ariaLabel
 }) {
   const inputClassName = [
@@ -48,9 +50,11 @@ export default function Input({
         value={value}
         disabled={disabled}
         required={required}
+        autoFocus={autoFocus}
         onChange={onChange}
         onFocus={onFocus}
         onBlur={onBlur}
+        onKeyDown={onKeyDown}
         aria-label={ariaLabel || label || placeholder}
         aria-invalid={state === 'error'}
         aria-describedby={helperText ? `${inputId}-helper` : undefined}

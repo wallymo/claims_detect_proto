@@ -39,7 +39,20 @@ Prototype Design System
 # TaskMaster
 .taskmaster/
 
+# Backend artifacts
+backend/data/
+backend/uploads/
+backend/node_modules/
+
 # Dev folders
 presentation/
 docs/ui-guide/
 normalizer-service/
+
+# Large binary assets
+*.mov
+app/References/
+app/Design System/
+Claims_Detector_Overview.pdf
+edit_infographic.py
+generate_overview_pdf.py

@@ -12,6 +12,10 @@
   ],
   "rewrites": [
     {
+      "source": "/mkg2",
+      "destination": "/index.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

@@ -36,15 +36,29 @@ html, body {
 }
 
 .header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
   margin-bottom: var(--spacing-4);
   flex-shrink: 0;
+}
+
+.headerLeft {
+  display: flex;
+  flex-direction: column;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
 }
 
 .titleSection {
   display: flex;
   align-items: center;
   gap: var(--spacing-3);
-  margin-bottom: var(--spacing-2);
+  margin-bottom: var(--spacing-1);
 }
 
 .title {
@@ -60,6 +74,15 @@ html, body {
   margin: 0;
 }
 
+/* NEW: Workbench wrapper for vertical split */
+.workbenchWrapper {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: var(--spacing-2);
+}
+
 /* Three-Panel Workbench Layout - Full Width */
 .workbench {
   display: flex;
@@ -67,6 +90,11 @@ html, body {
   flex: 1;
   min-height: 0;
   width: 100%;
+  transition: flex 0.3s ease;
+}
+
+.workbench[data-library-open="true"] {
+  flex: 0 1 65%;
 }
 
 /* Config Panel (Left) */
@@ -175,6 +203,13 @@ html, body {
   background-color: var(--color-background-secondary);
 }
 
+.claimsPanelBody {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 .claimsPanelTitle {
   display: flex;
   align-items: center;
@@ -230,9 +265,10 @@ html, body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 300px;
+  flex: 1;
   text-align: center;
   color: var(--color-text-disabled);
+  padding: var(--spacing-6);
 }
 
 .claimsEmptyState h3 {
@@ -246,6 +282,7 @@ html, body {
 .claimsLoadingState p {
   margin: var(--spacing-2) 0 0;
   font-size: var(--font-size-sm);
+  max-width: 280px;
 }
 
 /* Modal Styles */
@@ -344,6 +381,198 @@ html, body {
   gap: var(--spacing-3);
   padding-top: var(--spacing-4);
   border-top: var(--border-width-thin) solid var(--color-border-default);
+}
+
+/* Brand Modal Sections */
+.brandModalSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+}
+
+.brandModalSection + .brandModalSection {
+  padding-top: var(--spacing-5);
+  border-top: var(--border-width-thin) solid var(--color-border-default);
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.sectionHeader svg {
+  color: var(--color-text-secondary);
+}
+
+/* Drop zone for file uploads in modal */
+.dropZone {
+  border: 2px dashed var(--color-border-default);
+  border-radius: var(--border-radius-base);
+  padding: var(--spacing-6) var(--spacing-4);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+  background-color: var(--color-background-secondary);
+}
+
+.dropZone:hover {
+  border-color: var(--color-border-strong);
+  background-color: var(--color-background-primary);
+}
+
+.dropZone.dropZoneActive {
+  border-color: var(--color-interactive-default);
+  background-color: rgba(51, 51, 51, 0.04);
+}
+
+.dropZoneIcon {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--spacing-2);
+  color: var(--color-text-secondary);
+}
+
+.dropZoneText {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.dropZoneText strong {
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+.dropZoneHint {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  margin: var(--spacing-1) 0 0;
+}
+
+/* File list in brand modal */
+.brandFileList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.brandFileItem {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-3);
+  border-radius: var(--border-radius-sm);
+  background-color: var(--color-background-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.brandFileName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-primary);
+}
+
+.brandFileSize {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+
+.brandFileStatus {
+  display: flex;
+  align-items: center;
+  color: var(--color-status-success);
+}
+
+.brandFileRemove {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  border-radius: var(--border-radius-sm);
+}
+
+.brandFileRemove:hover {
+  color: var(--color-status-error);
+  background-color: rgba(220, 38, 38, 0.08);
+}
+
+/* Team section placeholder */
+.teamPlaceholder {
+  opacity: 0.5;
+  pointer-events: none;
+  position: relative;
+}
+
+.comingSoonBadge {
+  position: absolute;
+  top: var(--spacing-2);
+  right: var(--spacing-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+  background-color: var(--color-background-tertiary);
+  padding: 2px 8px;
+  border-radius: var(--border-radius-full);
+  pointer-events: auto;
+}
+
+.teamRow {
+  display: flex;
+  gap: var(--spacing-2);
+  align-items: center;
+}
+
+.teamRow .inputWrapper {
+  flex: 1;
+}
+
+.teamRoleSelect {
+  padding: var(--spacing-2) var(--spacing-3);
+  border: var(--border-width-thin) solid var(--color-border-default);
+  border-radius: var(--border-radius-base);
+  background-color: var(--color-background-primary);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
+
+/* Brand creation progress */
+.brandCreateProgress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+  padding: var(--spacing-4) 0;
+}
+
+.brandCreateStep {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.brandCreateStep.active {
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+.brandCreateStep.done {
+  color: var(--color-status-success);
 }
 
 /* Legacy styles for backward compatibility */

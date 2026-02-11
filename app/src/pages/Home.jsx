@@ -4,7 +4,6 @@ import FileUpload from '@/components/molecules/FileUpload/FileUpload'
 import DropdownMenu from '@/components/molecules/DropdownMenu/DropdownMenu'
 import Button from '@/components/atoms/Button/Button'
 import Icon from '@/components/atoms/Icon/Icon'
-import Alert from '@/components/molecules/Alert/Alert'
 import Spinner from '@/components/atoms/Spinner/Spinner'
 import Badge from '@/components/atoms/Badge/Badge'
 import StatCard from '@/components/molecules/StatCard/StatCard'
@@ -12,23 +11,15 @@ import AccordionItem from '@/components/molecules/AccordionItem/AccordionItem'
 import Tabs from '@/components/molecules/Tabs/Tabs'
 import Input from '@/components/atoms/Input/Input'
 import ClaimCard from '@/components/claims-detector/ClaimCard'
+import DocumentTypeSelector from '@/components/claims-detector/DocumentTypeSelector'
 import DocumentViewer from '@/components/claims-detector/DocumentViewer'
+import LibraryTab from '@/components/claims-detector/LibraryTab'
 import PromptEditor from '@/components/claims-detector/PromptEditor'
 import ModelComparison from '@/components/claims-detector/ModelComparison'
 import Toggle from '@/components/atoms/Toggle/Toggle'
-import { getDefaultDocument, getAIAnalysisDocument } from '@/mocks/documents'
-import { getClaimsForDocument, getAIAnalysisClaims, CLAIM_TYPES } from '@/mocks/claims'
-
-const BRAND_OPTIONS = [
-  { label: 'Novartis' },
-  { label: 'Pfizer' },
-  { label: 'Merck' },
-  { label: 'Amgen' },
-  { label: 'Johnson & Johnson' },
-  { label: 'AI Analysis', icon: 'zap', iconColor: '#F59E0B' },
-  { divider: true },
-  { label: 'New Client...', icon: 'upload' }
-]
+import { ThemeToggle } from '@/components/theme'
+import { getDefaultDocument } from '@/mocks/documents'
+import { getClaimsForDocument, CLAIM_TYPES } from '@/mocks/claims'
 
 const MODEL_OPTIONS = [
   { id: 'gemini-3', label: 'Google Gemini 3' },
@@ -41,7 +32,7 @@ export default function Home() {
   const [uploadState, setUploadState] = useState('empty')
   const [uploadProgress, setUploadProgress] = useState(0)
   const [document, setDocument] = useState(null)
-  const [selectedBrand, setSelectedBrand] = useState(null)
+  const [selectedDocType, setSelectedDocType] = useState(null)
   const [selectedModel, setSelectedModel] = useState('gemini-3')
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [claims, setClaims] = useState([])
@@ -56,8 +47,8 @@ export default function Home() {
   const [showModelComparison, setShowModelComparison] = useState(false)
   const [aiDiscoveryEnabled, setAiDiscoveryEnabled] = useState(true)
   const [showAIOnly, setShowAIOnly] = useState(false)
-  const [showCustomBrandModal, setShowCustomBrandModal] = useState(false)
-  const [customBrand, setCustomBrand] = useState({ name: '', description: '' })
+  const [referenceDocuments, setReferenceDocuments] = useState([])
+  const [rightPanelTab, setRightPanelTab] = useState(0)
   const claimsListRef = useRef(null)
 
   useEffect(() => {
@@ -128,49 +119,52 @@ export default function Home() {
     })
   }
 
-  const handleBrandSelect = (brand) => {
-    if (brand === 'New Client...') {
-      setShowCustomBrandModal(true)
-      return
-    }
-    setSelectedBrand(brand)
-
-    // Only load AI Analysis document when that client is selected
-    if (brand === 'AI Analysis') {
-      simulateUpload(() => {
-        setDocument(getAIAnalysisDocument())
-        setAnalysisComplete(false)
-        setClaims([])
-        setActiveClaim(null)
-      })
-    }
+  const formatFileSize = (bytes) => {
+    if (!bytes && bytes !== 0) return '0 Bytes'
+    if (bytes === 0) return '0 Bytes'
+    const k = 1024
+    const sizes = ['Bytes', 'KB', 'MB', 'GB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`
   }
 
-  const handleCustomBrandSave = () => {
-    if (customBrand.name.trim()) {
-      setSelectedBrand(customBrand.name)
-      setShowCustomBrandModal(false)
-      setCustomBrand({ name: '', description: '' })
+  const handleReferenceUpload = (file, name) => {
+    if (!file) return
+    const uploadedAt = new Date().toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    })
+    const nextDoc = {
+      id: `ref-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      name: name.trim() || file.name,
+      uploadedAt,
+      size: formatFileSize(file.size)
     }
+    setReferenceDocuments((prev) => [nextDoc, ...prev])
+  }
+
+  const handleReferenceRename = (docId, newName) => {
+    setReferenceDocuments((prev) =>
+      prev.map((doc) => (doc.id === docId ? { ...doc, name: newName } : doc))
+    )
+  }
+
+  const handleReferenceDelete = (docId) => {
+    setReferenceDocuments((prev) => prev.filter((doc) => doc.id !== docId))
   }
 
   const handleAnalyze = () => {
-    if (!document || !selectedBrand) return
+    if (!document || !selectedDocType) return
     setIsAnalyzing(true)
     setAnalysisComplete(false)
   }
 
   const handleScanComplete = () => {
-    let mockClaims
-    if (selectedBrand === 'AI Analysis') {
-      // AI Analysis mode: use dedicated AI-only claims dataset
-      mockClaims = getAIAnalysisClaims()
-    } else {
-      mockClaims = getClaimsForDocument(document.id)
-      // Filter out AI-discovered claims if discovery is disabled
-      if (!aiDiscoveryEnabled) {
-        mockClaims = mockClaims.filter(c => c.source === 'core')
-      }
+    let mockClaims = getClaimsForDocument(document.id)
+    // Filter out AI-discovered claims if discovery is disabled
+    if (!aiDiscoveryEnabled) {
+      mockClaims = mockClaims.filter(c => c.source === 'core')
     }
     setClaims(mockClaims)
     setProcessingTime(2340)
@@ -221,7 +215,7 @@ export default function Home() {
     setClaims([])
     setAnalysisComplete(false)
     setActiveClaim(null)
-    setSelectedBrand(null)
+    setSelectedDocType(null)
     setClaimFilter('all')
     setTypeFilters([])
     setSourceFilter('all')
@@ -268,7 +262,7 @@ export default function Home() {
     return acc
   }, {})
 
-  const canAnalyze = document && selectedBrand && !isAnalyzing
+  const canAnalyze = document && selectedDocType && !isAnalyzing
 
   const claimFilterTabs = [
     { label: `All (${claims.length})`, content: null },
@@ -280,26 +274,31 @@ export default function Home() {
   return (
     <div className="page">
       <div className="header">
-        <div className="titleSection">
-          <h1 className="title">Claims Detector</h1>
-          <Badge variant="info">POC</Badge>
-          {demoMode && (
-            <>
-              <Badge variant="warning">Demo Mode</Badge>
-              <Button
-                variant="ghost"
-                size="small"
-                onClick={() => setShowModelComparison(true)}
-              >
-                <Icon name="settings" size={16} />
-                Compare Models
-              </Button>
-            </>
-          )}
+        <div className="headerLeft">
+          <div className="titleSection">
+            <h1 className="title">Claims Detector</h1>
+            <Badge variant="info">POC</Badge>
+            {demoMode && (
+              <>
+                <Badge variant="warning">Demo Mode</Badge>
+                <Button
+                  variant="ghost"
+                  size="small"
+                  onClick={() => setShowModelComparison(true)}
+                >
+                  <Icon name="settings" size={16} />
+                  Compare Models
+                </Button>
+              </>
+            )}
+          </div>
+          <p className="subtitle">
+            AI-powered detection of medical and regulatory claims in pharmaceutical documents
+          </p>
         </div>
-        <p className="subtitle">
-          AI-powered detection of medical and regulatory claims in pharmaceutical documents
-        </p>
+        <div className="headerRight">
+          <ThemeToggle />
+        </div>
       </div>
 
       <div className="workbench">
@@ -318,7 +317,7 @@ export default function Home() {
                 onUpload={handleFileUpload}
                 onRemove={handleDocumentClose}
                 mockMode={true}
-                mockFileName={document?.id === 'ai_analysis_doc' ? 'NEW_clinical_data.pdf' : 'CardioMax_Clinical_Trial_Summary.pdf'}
+                mockFileName="CardioMax_Clinical_Trial_Summary.pdf"
               />
             }
           />
@@ -329,18 +328,10 @@ export default function Home() {
             size="small"
             content={
               <div className="settingsContent">
-                <div className="settingItem">
-                  <label className="settingLabel">Client Selection</label>
-                  <DropdownMenu
-                    trigger="button"
-                    triggerLabel={selectedBrand || 'Select client...'}
-                    items={BRAND_OPTIONS.map(item => ({
-                      ...item,
-                      onClick: item.divider ? undefined : () => handleBrandSelect(item.label)
-                    }))}
-                    size="medium"
-                  />
-                </div>
+                <DocumentTypeSelector
+                  selectedType={selectedDocType}
+                  onTypeSelect={setSelectedDocType}
+                />
 
                 {!demoMode && (
                   <div className="settingItem">
@@ -400,24 +391,15 @@ export default function Home() {
               size="small"
               content={
                 <div className="resultsSummary">
-                  {selectedBrand === 'AI Analysis' ? (
+                  <div className="coreClaimsRow">
+                    <span className="resultLabel">Core Claims Found</span>
+                    <span className="resultValue resultNumber">{coreClaimsFound}</span>
+                  </div>
+                  {aiDiscoveryEnabled && aiDiscoveredCount > 0 && (
                     <div className="aiDiscoveredRow">
-                      <span className="resultLabel">AI-Discovered Claims</span>
-                      <span className="resultValue aiValue">{claims.length}</span>
+                      <span className="resultLabel">AI-Discovered</span>
+                      <span className="resultValue aiValue">+{aiDiscoveredCount}</span>
                     </div>
-                  ) : (
-                    <>
-                      <div className="coreClaimsRow">
-                        <span className="resultLabel">Core Claims Found</span>
-                        <span className="resultValue resultNumber">{coreClaimsFound}</span>
-                      </div>
-                      {aiDiscoveryEnabled && aiDiscoveredCount > 0 && (
-                        <div className="aiDiscoveredRow">
-                          <span className="resultLabel">AI-Discovered</span>
-                          <span className="resultValue aiValue">+{aiDiscoveredCount}</span>
-                        </div>
-                      )}
-                    </>
                   )}
                   <div className="divider" />
                   <div className="statusRow">
@@ -458,119 +440,136 @@ export default function Home() {
         {/* Claims Panel */}
         <div className="claimsPanel">
           <div className="claimsPanelHeader">
-            <h2 className="claimsPanelTitle">
-              Claims
-              {claims.length > 0 && (
-                <Badge variant="neutral">{claims.length}</Badge>
-              )}
-            </h2>
+            <Tabs
+              tabs={[
+                { label: 'Claims', content: null },
+                { label: 'Library', content: null }
+              ]}
+              variant="underlined"
+              size="small"
+              defaultActiveIndex={rightPanelTab}
+              onChange={(index) => setRightPanelTab(index)}
+              showPanels={false}
+            />
           </div>
 
-          {analysisComplete && (
-            <>
-              <div className="claimsFilterBar">
-                <Tabs
-                  tabs={claimFilterTabs}
-                  variant="underlined"
-                  size="small"
-                  defaultActiveIndex={0}
-                  onChange={(index) => {
-                    const filters = ['all', 'pending', 'approved', 'rejected']
-                    setClaimFilter(filters[index])
-                  }}
-                />
-                <div className="claimsSearchSort">
-                  <Input
-                    placeholder="Search claims..."
-                    size="small"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                  <button
-                    className="sortToggle"
-                    onClick={() => setSortOrder(prev => prev === 'high-low' ? 'low-high' : 'high-low')}
-                  >
-                    Confidence {sortOrder === 'high-low' ? '↓' : '↑'}
-                  </button>
-                </div>
-              </div>
+          <div className="claimsPanelBody">
+            {rightPanelTab === 0 ? (
+              <>
+                {analysisComplete && (
+                  <>
+                    <div className="claimsFilterBar">
+                      <Tabs
+                        tabs={claimFilterTabs}
+                        variant="underlined"
+                        size="small"
+                        defaultActiveIndex={0}
+                        onChange={(index) => {
+                          const filters = ['all', 'pending', 'approved', 'rejected']
+                          setClaimFilter(filters[index])
+                        }}
+                      />
+                      <div className="claimsSearchSort">
+                        <Input
+                          placeholder="Search claims..."
+                          size="small"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                        <button
+                          className="sortToggle"
+                          onClick={() => setSortOrder(prev => prev === 'high-low' ? 'low-high' : 'high-low')}
+                        >
+                          Confidence {sortOrder === 'high-low' ? '↓' : '↑'}
+                        </button>
+                      </div>
+                    </div>
 
-              <div className="typeFilters">
-                {/* AI filter chip with distinct styling */}
-                {aiDiscoveryEnabled && aiDiscoveredCount > 0 && (
-                  <button
-                    className={`typeChip aiChip ${showAIOnly ? 'active' : ''}`}
-                    onClick={() => setShowAIOnly(!showAIOnly)}
-                  >
-                    ✦ AI
-                  </button>
-                )}
-                {Object.entries(CLAIM_TYPES).map(([key, config]) => {
-                  const isUnavailable = claimCountsByType[key] === 0
-                  return (
-                    <button
-                      key={key}
-                      className={`typeChip ${typeFilters.includes(key) ? 'active' : ''} ${isUnavailable ? 'unavailable' : ''}`}
-                      style={{ '--chip-color': config.color }}
-                      onClick={() => {
-                        if (isUnavailable) return
-                        setTypeFilters(prev =>
-                          prev.includes(key)
-                            ? prev.filter(t => t !== key)
-                            : [...prev, key]
+                    <div className="typeFilters">
+                      {/* AI filter chip with distinct styling */}
+                      {aiDiscoveryEnabled && aiDiscoveredCount > 0 && (
+                        <button
+                          className={`typeChip aiChip ${showAIOnly ? 'active' : ''}`}
+                          onClick={() => setShowAIOnly(!showAIOnly)}
+                        >
+                          ✦ AI
+                        </button>
+                      )}
+                      {Object.entries(CLAIM_TYPES).map(([key, config]) => {
+                        const isUnavailable = claimCountsByType[key] === 0
+                        return (
+                          <button
+                            key={key}
+                            className={`typeChip ${typeFilters.includes(key) ? 'active' : ''} ${isUnavailable ? 'unavailable' : ''}`}
+                            style={{ '--chip-color': config.color }}
+                            onClick={() => {
+                              if (isUnavailable) return
+                              setTypeFilters(prev =>
+                                prev.includes(key)
+                                  ? prev.filter(t => t !== key)
+                                  : [...prev, key]
+                              )
+                            }}
+                            disabled={isUnavailable}
+                          >
+                            {config.label}
+                          </button>
                         )
-                      }}
-                      disabled={isUnavailable}
-                    >
-                      {config.label}
-                    </button>
-                  )
-                })}
-                {(typeFilters.length > 0 || showAIOnly) && (
-                  <button className="clearFilters" onClick={() => { setTypeFilters([]); setShowAIOnly(false) }}>
-                    Clear
-                  </button>
+                      })}
+                      {(typeFilters.length > 0 || showAIOnly) && (
+                        <button className="clearFilters" onClick={() => { setTypeFilters([]); setShowAIOnly(false) }}>
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </>
                 )}
-              </div>
 
-            </>
-          )}
+                <div className="claimsList" ref={claimsListRef}>
+                  {!analysisComplete && !isAnalyzing && (
+                    <div className="claimsEmptyState">
+                      <Icon name="fileSearch" size={48} />
+                      <h3>No Claims Yet</h3>
+                      <p>Upload a document and click Analyze to detect claims</p>
+                    </div>
+                  )}
 
-          <div className="claimsList" ref={claimsListRef}>
-            {!analysisComplete && !isAnalyzing && (
-              <div className="claimsEmptyState">
-                <Icon name="fileSearch" size={48} />
-                <h3>No Claims Yet</h3>
-                <p>Upload a document and click Analyze to detect claims</p>
-              </div>
+                  {isAnalyzing && (
+                    <div className="claimsLoadingState">
+                      <Spinner size="large" />
+                      <p>Detecting claims...</p>
+                    </div>
+                  )}
+
+                  {analysisComplete && filteredClaims.length === 0 && (
+                    <div className="claimsEmptyState">
+                      <Icon name="search" size={48} />
+                      <p>No claims match your filter</p>
+                    </div>
+                  )}
+
+                  {analysisComplete && filteredClaims.map(claim => (
+                    <div key={claim.id} data-claim-id={claim.id}>
+                      <ClaimCard
+                        claim={claim}
+                        isActive={activeClaim === claim.id}
+                        onApprove={handleClaimApprove}
+                        onReject={handleClaimReject}
+                        onSelect={() => handleCardClick(claim.id)}
+                        onTypeChange={handleClaimTypeChange}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <LibraryTab
+                documents={referenceDocuments}
+                onUpload={handleReferenceUpload}
+                onRename={handleReferenceRename}
+                onDelete={handleReferenceDelete}
+              />
             )}
-
-            {isAnalyzing && (
-              <div className="claimsLoadingState">
-                <Spinner size="large" />
-                <p>Detecting claims...</p>
-              </div>
-            )}
-
-            {analysisComplete && filteredClaims.length === 0 && (
-              <div className="claimsEmptyState">
-                <Icon name="search" size={48} />
-                <p>No claims match your filter</p>
-              </div>
-            )}
-
-            {analysisComplete && filteredClaims.map(claim => (
-              <div key={claim.id} data-claim-id={claim.id}>
-                <ClaimCard
-                  claim={claim}
-                  isActive={activeClaim === claim.id}
-                  onApprove={handleClaimApprove}
-                  onReject={handleClaimReject}
-                  onSelect={() => handleCardClick(claim.id)}
-                  onTypeChange={handleClaimTypeChange}
-                />
-              </div>
-            ))}
           </div>
         </div>
       </div>
@@ -600,69 +599,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Custom Brand Modal */}
-      {showCustomBrandModal && (
-        <div className="modalOverlay" onClick={() => setShowCustomBrandModal(false)}>
-          <div className="modalContent modalSmall" onClick={e => e.stopPropagation()}>
-            <div className="modalHeader">
-              <h2>Add New Client</h2>
-              <Button
-                variant="ghost"
-                size="small"
-                onClick={() => setShowCustomBrandModal(false)}
-              >
-                <Icon name="x" size={20} />
-              </Button>
-            </div>
-            <div className="modalBody">
-              <div className="formField">
-                <label className="formLabel">Client Name</label>
-                <Input
-                  placeholder="Enter client name..."
-                  value={customBrand.name}
-                  onChange={(e) => setCustomBrand(prev => ({ ...prev, name: e.target.value }))}
-                  size="medium"
-                />
-              </div>
-              <div className="formField">
-                <label className="formLabel">Description</label>
-                <textarea
-                  className="formTextarea"
-                  placeholder="Include description or any additional info..."
-                  value={customBrand.description}
-                  onChange={(e) => setCustomBrand(prev => ({ ...prev, description: e.target.value }))}
-                  rows={3}
-                />
-              </div>
-              <div className="formField">
-                <label className="formLabel">Claims Document</label>
-                <FileUpload
-                  accept=".pdf,.docx,.xlsx"
-                  maxSize={10485760}
-                  onUpload={() => {}}
-                />
-              </div>
-              <div className="modalActions">
-                <Button
-                  variant="secondary"
-                  size="medium"
-                  onClick={() => setShowCustomBrandModal(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="primary"
-                  size="medium"
-                  onClick={handleCustomBrandSave}
-                  disabled={!customBrand.name.trim()}
-                >
-                  Save Brand
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

@@ -11,6 +11,7 @@ export default function Tabs({
   size = 'medium',
   orientation = 'horizontal',
   defaultActiveIndex = 0,
+  showPanels = true,
   onChange,
   className
 }) {
@@ -68,20 +69,22 @@ export default function Tabs({
         ))}
       </div>
 
-      <div className={styles.panelContainer}>
-        {tabs.map((tab, index) => (
-          <div
-            key={index}
-            className={`${styles.panel} ${index === activeIndex ? styles.activePanel : ''}`}
-            role="tabpanel"
-            id={`panel-${index}`}
-            aria-labelledby={`tab-${index}`}
-            hidden={index !== activeIndex}
-          >
-            {tab.content}
-          </div>
-        ))}
-      </div>
+      {showPanels && (
+        <div className={styles.panelContainer}>
+          {tabs.map((tab, index) => (
+            <div
+              key={index}
+              className={`${styles.panel} ${index === activeIndex ? styles.activePanel : ''}`}
+              role="tabpanel"
+              id={`panel-${index}`}
+              aria-labelledby={`tab-${index}`}
+              hidden={index !== activeIndex}
+            >
+              {tab.content}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
