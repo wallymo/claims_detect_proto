@@ -17,7 +17,7 @@ The mapping happens in **two distinct phases** that run sequentially:
 **What it does:** Pre-extracts every substantiable fact from each reference document and stores them as structured JSON in SQLite.
 
 **Tech:**
-- **Model:** Gemini 2.5 Flash (`backend/src/services/factExtractor.js`)
+- **Model:** Gemini 3 Flash (`backend/src/services/factExtractor.js`)
 - **Chunking:** Documents are split into ~24,000 character chunks with 1,200 char overlap (roughly 4,000 words per chunk). This is because a single reference PDF can be 50+ pages and would blow Gemini's input limits.
 - **Deduplication:** After all chunks are processed, facts are deduped by comparing the first 80 characters of each fact's text (lowercased). This catches the overlap zone where chunks repeat the same data.
 

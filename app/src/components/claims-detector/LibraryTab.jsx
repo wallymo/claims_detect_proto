@@ -198,7 +198,7 @@ export default function LibraryTab({
               }}
               title="New folder"
             >
-              <Icon name="plus" size={14} />
+              <Icon name="folderPlus" size={14} />
             </span>
             <span
               className={styles.treeActionBtn}

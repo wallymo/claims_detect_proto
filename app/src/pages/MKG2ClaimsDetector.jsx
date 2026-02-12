@@ -72,6 +72,7 @@ export default function MKG2ClaimsDetector() {
   // Brand state
   const [brands, setBrands] = useState([])
   const [selectedBrandId, setSelectedBrandId] = useState(null)
+  const [libraryBrandId, setLibraryBrandId] = useState(null) // "MKG Reference Library" — shared ref pool
   const [showNewBrandModal, setShowNewBrandModal] = useState(false)
   const [newBrandName, setNewBrandName] = useState('')
   const [newBrandClient, setNewBrandClient] = useState('')
@@ -137,14 +138,14 @@ export default function MKG2ClaimsDetector() {
     loadFolders()
   }, [])
 
-  // Reload references when brand changes — library is brand-scoped
+  // Reload references when brand changes — always load from shared MKG Reference Library
   useEffect(() => {
-    if (selectedBrandId) {
-      loadBrandReferences(selectedBrandId)
+    if (selectedBrandId && libraryBrandId) {
+      loadBrandReferences(libraryBrandId)
     } else {
       setReferenceDocuments([])
     }
-  }, [selectedBrandId])
+  }, [selectedBrandId, libraryBrandId])
 
   // Load total cost from localStorage
   useEffect(() => {
@@ -188,8 +189,11 @@ export default function MKG2ClaimsDetector() {
   async function loadBrands() {
     try {
       const allBrands = await api.fetchBrands()
-      // Filter out the internal reference library — it's not a selectable brand
+      // Filter out the shared reference hub and AI Only — they're not selectable brands
       const selectableBrands = allBrands.filter(b => b.name !== 'MKG Reference Library' && b.name !== 'AI Only')
+      // Stash the shared library brand ID so we can load its references for any selected brand
+      const libraryBrand = allBrands.find(b => b.name === 'MKG Reference Library')
+      if (libraryBrand) setLibraryBrandId(libraryBrand.id)
       // Enforce display order: Annexon, XCOPRI, then any user-created brands
       const ORDER = ['Annexon', 'XCOPRI']
       selectableBrands.sort((a, b) => {
@@ -668,8 +672,8 @@ export default function MKG2ClaimsDetector() {
 
   const handleReferenceUpload = async (file) => {
     if (!file) return
-    // Use first available brand for POC, or selected brand
-    const brandId = selectedBrandId || brands[0]?.id
+    // Always upload to the shared MKG Reference Library
+    const brandId = libraryBrandId || selectedBrandId || brands[0]?.id
     if (!brandId) {
       logger.error('No brand available for upload')
       return
@@ -677,7 +681,7 @@ export default function MKG2ClaimsDetector() {
     setIsUploadingRef(true)
     try {
       await api.uploadReference(brandId, file)
-      await loadBrandReferences(brandId)
+      await loadBrandReferences(libraryBrandId || brandId)
     } catch (err) {
       logger.error('Reference upload error:', err)
     } finally {
@@ -758,7 +762,7 @@ export default function MKG2ClaimsDetector() {
       await api.deleteFolder(folderId)
       if (activeFolderId === folderId) setActiveFolderId(null)
       await loadFolders()
-      if (selectedBrandId) await loadBrandReferences(selectedBrandId)
+      if (libraryBrandId) await loadBrandReferences(libraryBrandId)
     } catch (err) {
       logger.error('Folder delete error:', err)
     }

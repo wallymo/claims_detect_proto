@@ -49,7 +49,7 @@
 }
 
 .treeRootActive {
-  background: var(--blue-1, #E3F2FD);
+  background: var(--color-background-tertiary);
 }
 
 .treeRootIcon {

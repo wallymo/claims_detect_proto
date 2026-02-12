@@ -54,7 +54,7 @@ const PROMPT_DISPLAY_TEXT = {
   'drug': MEDICATION_PROMPT_USER
 }
 
-export default function MKGClaimsDetector() {
+export default function MKGClaimsDetector({ demoMode = false }) {
   // Document state
   const [uploadedFile, setUploadedFile] = useState(null)
   const [uploadState, setUploadState] = useState('empty') // empty, uploading, complete
@@ -333,8 +333,8 @@ export default function MKGClaimsDetector() {
       <div className="header">
         <div className="headerLeft">
           <div className="titleSection">
-            <h1 className="title">MKG Claims Detector</h1>
-            <Badge variant="info">POC2</Badge>
+            <h1 className="title">{demoMode ? 'Claims Detector' : 'MKG Claims Detector'}</h1>
+            {!demoMode && <Badge variant="info">POC2</Badge>}
           </div>
           <p className="subtitle">
             AI-powered reference matching for pharmaceutical MLR submissions

@@ -9,6 +9,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/mkg" element={<MKGClaimsDetector />} />
+        <Route path="/demo" element={<MKGClaimsDetector demoMode />} />
         <Route path="/mkg2" element={<MKG2ClaimsDetector />} />
       </Routes>
     </BrowserRouter>
