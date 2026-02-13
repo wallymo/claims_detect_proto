@@ -445,15 +445,16 @@ export default function MKG2ClaimsDetector() {
 
       // Fetch fact inventory for brand-grounded detection (POC2)
       let factInventory = ''
-      if (selectedBrandId) {
+      const factBrandId = libraryBrandId || selectedBrandId
+      if (factBrandId) {
         try {
-          const factRefs = await api.fetchFactsSummary(selectedBrandId)
+          const factRefs = await api.fetchFactsSummary(factBrandId)
           const indexedRefs = factRefs.filter(r => r.extraction_status === 'indexed' && r.facts_count > 0)
           if (indexedRefs.length > 0) {
             const lines = []
             for (const ref of indexedRefs) {
               // Fetch full facts for each indexed reference
-              const factsData = await api.fetchFacts(selectedBrandId, ref.reference_id)
+              const factsData = await api.fetchFacts(factBrandId, ref.reference_id)
               if (factsData.facts?.length > 0) {
                 for (const fact of factsData.facts) {
                   lines.push(`- [${ref.display_alias}] ${fact.text} | ${fact.category}`)
@@ -551,16 +552,17 @@ export default function MKG2ClaimsDetector() {
 
       // Fetch brand facts for Tier 0 matching
       let brandFacts = []
-      if (selectedBrandId) {
+      const matchFactBrandId = libraryBrandId || selectedBrandId
+      if (matchFactBrandId) {
         try {
-          const factRefs = await api.fetchFactsSummary(selectedBrandId)
+          const factRefs = await api.fetchFactsSummary(matchFactBrandId)
           const indexedRefIds = factRefs
             .filter(r => r.extraction_status === 'indexed' && r.facts_count > 0)
             .map(r => r.reference_id)
 
           if (indexedRefIds.length > 0) {
             const factsResults = await Promise.all(
-              indexedRefIds.map(refId => api.fetchFacts(selectedBrandId, refId))
+              indexedRefIds.map(refId => api.fetchFacts(matchFactBrandId, refId))
             )
             brandFacts = factsResults.map(r => ({
               reference_id: r.reference_id,
