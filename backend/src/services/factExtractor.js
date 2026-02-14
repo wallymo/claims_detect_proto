@@ -83,7 +83,7 @@ export async function extractFacts(contentText, options = {}) {
   }
 
   const ai = new GoogleGenAI({ apiKey })
-  const model = options.model || 'gemini-3-flash-preview'
+  const model = options.model || 'gemini-2.5-flash'
 
   const chunks = chunkText(contentText)
   const allFacts = []
