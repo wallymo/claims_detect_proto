@@ -28,7 +28,7 @@ export const Reference = {
              END as facts_count
       FROM reference_documents rd
       LEFT JOIN reference_facts rf ON rf.reference_id = rd.id
-      WHERE rd.brand_id = ?
+      WHERE rd.brand_id = ? AND rd.deleted_at IS NULL
     `
     const params = [brandId]
     if (folderId !== undefined && folderId !== null) {
@@ -37,6 +37,24 @@ export const Reference = {
     }
     query += ' ORDER BY rd.upload_date DESC'
     return db.prepare(query).all(...params)
+  },
+
+  findDeleted(brandId) {
+    const db = getDb()
+    return db.prepare(`
+      SELECT rd.id, rd.brand_id, rd.folder_id, rd.filename, rd.display_alias, rd.doc_type,
+             rd.page_count, rd.file_size_bytes, rd.upload_date, rd.deleted_at, rd.notes,
+             (rd.content_text IS NOT NULL) as has_content,
+             rf.extraction_status,
+             CASE WHEN rf.facts_json IS NOT NULL
+               THEN json_array_length(rf.facts_json)
+               ELSE 0
+             END as facts_count
+      FROM reference_documents rd
+      LEFT JOIN reference_facts rf ON rf.reference_id = rd.id
+      WHERE rd.brand_id = ? AND rd.deleted_at IS NOT NULL
+      ORDER BY rd.deleted_at DESC
+    `).all(brandId)
   },
 
   findAll() {
@@ -82,7 +100,35 @@ export const Reference = {
     return this.findById(id)
   },
 
-  delete(id) {
+  softDelete(id) {
+    const db = getDb()
+    db.prepare("UPDATE reference_documents SET deleted_at = datetime('now') WHERE id = ?").run(id)
+  },
+
+  bulkSoftDelete(ids) {
+    const db = getDb()
+    const placeholders = ids.map(() => '?').join(', ')
+    db.prepare(
+      `UPDATE reference_documents SET deleted_at = datetime('now') WHERE id IN (${placeholders})`
+    ).run(...ids)
+    return { updated: ids.length }
+  },
+
+  restore(id) {
+    const db = getDb()
+    db.prepare("UPDATE reference_documents SET deleted_at = NULL, folder_id = NULL WHERE id = ?").run(id)
+  },
+
+  bulkRestore(ids) {
+    const db = getDb()
+    const placeholders = ids.map(() => '?').join(', ')
+    db.prepare(
+      `UPDATE reference_documents SET deleted_at = NULL, folder_id = NULL WHERE id IN (${placeholders})`
+    ).run(...ids)
+    return { restored: ids.length }
+  },
+
+  permanentDelete(id) {
     const db = getDb()
     const ref = db.prepare('SELECT file_path FROM reference_documents WHERE id = ?').get(id)
     db.prepare('DELETE FROM reference_documents WHERE id = ?').run(id)
@@ -98,7 +144,7 @@ export const Reference = {
     return { updated: ids.length }
   },
 
-  bulkDelete(ids) {
+  bulkPermanentDelete(ids) {
     const db = getDb()
     const placeholders = ids.map(() => '?').join(', ')
     const refs = db.prepare(
