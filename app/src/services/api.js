@@ -139,6 +139,25 @@ export async function bulkDeleteReferences(ids) {
   })
 }
 
+export async function fetchTrash(brandId) {
+  const data = await request(`/brands/${brandId}/references/trash`)
+  return data.references
+}
+
+export async function restoreReferences(brandId, ids) {
+  return request(`/brands/${brandId}/references/restore`, {
+    method: 'POST',
+    body: JSON.stringify({ ids })
+  })
+}
+
+export async function permanentDeleteReferences(brandId, ids) {
+  return request(`/brands/${brandId}/references/permanent`, {
+    method: 'DELETE',
+    body: JSON.stringify({ ids })
+  })
+}
+
 // ========== Files ==========
 
 export async function fetchReferenceFile(refId) {
