@@ -46,6 +46,19 @@ export function initDb() {
   const migration003 = fs.readFileSync(migration003Path, 'utf-8')
   db.exec(migration003)
 
+  // 004: soft delete (deleted_at column on reference_documents)
+  const migration004Path = path.resolve(__dirname, '../../migrations/004_soft_delete.sql')
+  const migration004 = fs.readFileSync(migration004Path, 'utf-8')
+  for (const stmt of migration004.split(';').map(s => s.trim()).filter(Boolean)) {
+    try {
+      db.exec(stmt)
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        throw err
+      }
+    }
+  }
+
   console.log('Database initialized:', env.DB_PATH)
   return db
 }
