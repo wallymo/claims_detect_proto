@@ -116,6 +116,7 @@ export default function MKG2ClaimsDetector() {
 
   // Library state
   const [referenceDocuments, setReferenceDocuments] = useState([])
+  const [trashDocuments, setTrashDocuments] = useState([])
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(false)
   const [isUploadingRef, setIsUploadingRef] = useState(false)
 
@@ -189,8 +190,8 @@ export default function MKG2ClaimsDetector() {
   async function loadBrands() {
     try {
       const allBrands = await api.fetchBrands()
-      // Filter out the shared reference hub and AI Only — they're not selectable brands
-      const selectableBrands = allBrands.filter(b => b.name !== 'MKG Reference Library' && b.name !== 'AI Only')
+      // Filter out the shared reference hub — it's not a selectable brand
+      const selectableBrands = allBrands.filter(b => b.name !== 'MKG Reference Library')
       // Stash the shared library brand ID so we can load its references for any selected brand
       const libraryBrand = allBrands.find(b => b.name === 'MKG Reference Library')
       if (libraryBrand) setLibraryBrandId(libraryBrand.id)
@@ -236,6 +237,35 @@ export default function MKG2ClaimsDetector() {
         extraction_status: ref.extraction_status || null,
         facts_count: ref.facts_count || 0
       })))
+      // Also load trash for the badge count
+      try {
+        const trashRefs = await api.fetchTrash(brandId)
+        setTrashDocuments(trashRefs.map(ref => ({
+          id: ref.id,
+          name: ref.display_alias,
+          originalName: ref.filename
+            ? ref.filename
+                .replace(/^\d+_/, '')
+                .replace(/\.[^.]+$/, '')
+                .replace(/_/g, ' ')
+                .replace(/\b\w/g, c => c.toUpperCase())
+            : ref.display_alias,
+          size: formatFileSize(ref.file_size_bytes),
+          uploadedAt: new Date(ref.upload_date).toLocaleDateString('en-US', {
+            month: 'short', day: 'numeric', year: 'numeric'
+          }),
+          deletedAt: ref.deleted_at,
+          doc_type: ref.doc_type,
+          has_content: ref.has_content,
+          page_count: ref.page_count,
+          brand_id: ref.brand_id,
+          folder_id: ref.folder_id || null,
+          extraction_status: ref.extraction_status || null,
+          facts_count: ref.facts_count || 0
+        })))
+      } catch (err) {
+        console.warn('Failed to load trash:', err)
+      }
     } catch (err) {
       logger.error('Failed to load references:', err)
     } finally {
@@ -711,7 +741,11 @@ export default function MKG2ClaimsDetector() {
     if (!brandId) return
     try {
       await api.deleteReference(brandId, docId)
+      const deleted = referenceDocuments.find(d => d.id === docId)
       setReferenceDocuments(prev => prev.filter(d => d.id !== docId))
+      if (deleted) {
+        setTrashDocuments(prev => [{ ...deleted, deletedAt: new Date().toISOString() }, ...prev])
+      }
     } catch (err) {
       logger.error('Reference delete error:', err)
     }
@@ -732,7 +766,9 @@ export default function MKG2ClaimsDetector() {
   const handleBulkDelete = async (ids) => {
     try {
       await api.bulkDeleteReferences(ids)
+      const deleted = referenceDocuments.filter(doc => ids.includes(doc.id))
       setReferenceDocuments(prev => prev.filter(doc => !ids.includes(doc.id)))
+      setTrashDocuments(prev => [...deleted.map(d => ({ ...d, deletedAt: new Date().toISOString() })), ...prev])
     } catch (err) {
       logger.error('Bulk delete error:', err)
     }
@@ -746,6 +782,28 @@ export default function MKG2ClaimsDetector() {
       )
     } catch (err) {
       logger.error('Bulk move error:', err)
+    }
+  }
+
+  const handleRestore = async (ids) => {
+    try {
+      const brandId = libraryBrandId || selectedBrandId
+      await api.restoreReferences(brandId, ids)
+      const restored = trashDocuments.filter(doc => ids.includes(doc.id))
+      setTrashDocuments(prev => prev.filter(doc => !ids.includes(doc.id)))
+      setReferenceDocuments(prev => [...prev, ...restored.map(d => ({ ...d, deletedAt: undefined, folder_id: null }))])
+    } catch (err) {
+      logger.error('Restore error:', err)
+    }
+  }
+
+  const handlePermanentDelete = async (ids) => {
+    try {
+      const brandId = libraryBrandId || selectedBrandId
+      await api.permanentDeleteReferences(brandId, ids)
+      setTrashDocuments(prev => prev.filter(doc => !ids.includes(doc.id)))
+    } catch (err) {
+      logger.error('Permanent delete error:', err)
     }
   }
 
@@ -1197,6 +1255,7 @@ export default function MKG2ClaimsDetector() {
               ) : (
                 <LibraryTab
                   documents={referenceDocuments}
+                  trashDocuments={trashDocuments}
                   folders={folders}
                   activeFolderId={activeFolderId}
                   selectedBrand={selectedBrand}
@@ -1209,6 +1268,8 @@ export default function MKG2ClaimsDetector() {
                   onDelete={handleReferenceDelete}
                   onBulkDelete={handleBulkDelete}
                   onBulkMove={handleBulkMove}
+                  onRestore={handleRestore}
+                  onPermanentDelete={handlePermanentDelete}
                   onView={(refId) => setReferenceViewerData({ referenceId: refId })}
                   onRetryIndex={handleRetryIndex}
                   isLoading={isLoadingLibrary}
