@@ -95,14 +95,8 @@ export const referenceController = {
     try {
       const existing = Reference.findById(req.params.refId)
       if (!existing) throw new AppError('Reference not found', 404)
-      const { filePath } = Reference.delete(req.params.refId)
-      if (filePath) {
-        const fullPath = path.resolve(filePath)
-        if (fs.existsSync(fullPath)) {
-          fs.unlinkSync(fullPath)
-        }
-      }
-      res.json({ message: 'Reference deleted' })
+      Reference.softDelete(req.params.refId)
+      res.json({ message: 'Reference moved to trash' })
     } catch (err) {
       next(err)
     }
@@ -130,14 +124,52 @@ export const referenceController = {
       if (!Array.isArray(ids) || ids.length === 0) {
         throw new AppError('ids must be a non-empty array', 400)
       }
-      const { deleted, filePaths } = Reference.bulkDelete(ids)
+      Reference.bulkSoftDelete(ids)
+      res.json({ message: `${ids.length} references moved to trash` })
+    } catch (err) {
+      next(err)
+    }
+  },
+
+  listTrash(req, res, next) {
+    try {
+      const brandId = parseInt(req.params.brandId, 10)
+      const brand = Brand.findById(brandId)
+      if (!brand) throw new AppError('Brand not found', 404)
+      const references = Reference.findDeleted(brandId)
+      res.json({ references })
+    } catch (err) {
+      next(err)
+    }
+  },
+
+  restore(req, res, next) {
+    try {
+      const { ids } = req.body
+      if (!Array.isArray(ids) || ids.length === 0) {
+        throw new AppError('ids must be a non-empty array', 400)
+      }
+      Reference.bulkRestore(ids)
+      res.json({ message: `${ids.length} references restored`, restored: ids.length })
+    } catch (err) {
+      next(err)
+    }
+  },
+
+  permanentDelete(req, res, next) {
+    try {
+      const { ids } = req.body
+      if (!Array.isArray(ids) || ids.length === 0) {
+        throw new AppError('ids must be a non-empty array', 400)
+      }
+      const { deleted, filePaths } = Reference.bulkPermanentDelete(ids)
       for (const filePath of filePaths) {
         const fullPath = path.resolve(filePath)
         if (fs.existsSync(fullPath)) {
           fs.unlinkSync(fullPath)
         }
       }
-      res.json({ message: `${deleted} references deleted` })
+      res.json({ message: `${deleted} references permanently deleted` })
     } catch (err) {
       next(err)
     }
