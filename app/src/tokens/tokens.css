@@ -30,6 +30,61 @@
   --color-warning: #F57C00;
   --color-border: #CCCCCC;
 
+  /* Colors - Scale - Gray */
+  --gray-1: #FAFAFA;
+  --gray-2: #F5F5F5;
+  --gray-3: #E0E0E0;
+  --gray-4: #BDBDBD;
+  --gray-5: #9E9E9E;
+  --gray-6: #757575;
+  --gray-7: #616161;
+  --gray-8: #424242;
+  --gray-9: #212121;
+
+  /* Colors - Scale - Blue */
+  --blue-1: #E3F2FD;
+  --blue-2: #BBDEFB;
+  --blue-3: #90CAF9;
+  --blue-4: #64B5F6;
+  --blue-5: #42A5F5;
+  --blue-6: #1E88E5;
+  --blue-7: #1976D2;
+  --blue-8: #1565C0;
+  --blue-9: #0D47A1;
+
+  /* Colors - Scale - Green */
+  --green-1: #E8F5E9;
+  --green-2: #C8E6C9;
+  --green-3: #A5D6A7;
+  --green-4: #66BB6A;
+  --green-5: #4CAF50;
+  --green-6: #43A047;
+  --green-7: #388E3C;
+  --green-8: #2E7D32;
+  --green-9: #1B5E20;
+
+  /* Colors - Scale - Red */
+  --red-1: #FFEBEE;
+  --red-2: #FFCDD2;
+  --red-3: #EF9A9A;
+  --red-4: #EF5350;
+  --red-5: #F44336;
+  --red-6: #E53935;
+  --red-7: #D32F2F;
+  --red-8: #C62828;
+  --red-9: #B71C1C;
+
+  /* Colors - Scale - Amber */
+  --amber-1: #FFF8E1;
+  --amber-2: #FFECB3;
+  --amber-3: #FFD54F;
+  --amber-4: #FFCA28;
+  --amber-5: #FFC107;
+  --amber-6: #FFB300;
+  --amber-7: #FFA000;
+  --amber-8: #FF8F00;
+  --amber-9: #FF6F00;
+
   /* Colors - DataViz - Categorical - Purple */
   --color-dataviz-categorical-purple-0: #F3E5F5;
   --color-dataviz-categorical-purple-1: #E1BEE7;

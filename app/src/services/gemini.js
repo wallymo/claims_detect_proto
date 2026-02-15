@@ -549,8 +549,9 @@ Return JSON with this structure:
 Only match if the reference actually substantiates the claim. A low confidence match is better than a false positive.`
 
   try {
+    // Use gemini-2.0-flash for matching — gemini-3-pro-preview doesn't support responseMimeType JSON
     const response = await client.models.generateContent({
-      model: GEMINI_MODEL,
+      model: 'gemini-2.0-flash',
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
         temperature: 0,
@@ -592,9 +593,9 @@ Return a JSON object with:
 }`
 
   try {
-    // Document-first ordering for better multimodal processing
+    // Use gemini-2.0-flash — supports responseMimeType JSON (gemini-3-pro-preview doesn't)
     const response = await client.models.generateContent({
-      model: GEMINI_MODEL,
+      model: 'gemini-2.0-flash',
       contents: [
         {
           role: 'user',

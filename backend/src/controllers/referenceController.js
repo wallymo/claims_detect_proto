@@ -38,7 +38,7 @@ export const referenceController = {
       })
 
       // Auto-index: create pending facts row and kick off async extraction
-      if (text && process.env.GEMINI_API_KEY) {
+      if (text && process.env.VITE_GEMINI_API_KEY) {
         ReferenceFact.createPending(ref.id)
         extractFacts(text)
           .then(facts => {

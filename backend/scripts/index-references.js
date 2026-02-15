@@ -2,23 +2,45 @@
  * Batch-index reference documents to extract structured facts via Gemini.
  * Run: node scripts/index-references.js
  * Flags:
- *   --force       Re-index all references (even already indexed)
- *   --brand <name>  Index only one brand's references
+ *   --force             Re-index all references (even already indexed)
+ *   --brand <name>      Index only one brand's references
+ *   --concurrency <n>   Number of parallel extractions (default: 10)
  */
 import 'dotenv/config'
+import pLimit from 'p-limit'
 import { initDb, getDb, closeDb } from '../src/config/database.js'
 import { extractFacts } from '../src/services/factExtractor.js'
 
 function parseArgs() {
   const args = process.argv.slice(2)
-  const flags = { force: false, brand: null }
+  const flags = { force: false, brand: null, concurrency: 10 }
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--force') flags.force = true
     if (args[i] === '--brand' && args[i + 1]) {
       flags.brand = args[++i]
     }
+    if (args[i] === '--concurrency' && args[i + 1]) {
+      flags.concurrency = parseInt(args[++i], 10) || 10
+    }
   }
   return flags
+}
+
+async function extractWithRetry(contentText, maxRetries = 3) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await extractFacts(contentText)
+    } catch (err) {
+      const is429 = err.message?.includes('429') || err.message?.includes('rate') || err.message?.includes('quota')
+      if (is429 && attempt < maxRetries) {
+        const delay = Math.pow(2, attempt) * 1000 // 2s, 4s, 8s
+        console.log(`    Rate limited, retrying in ${delay / 1000}s (attempt ${attempt}/${maxRetries})...`)
+        await new Promise(resolve => setTimeout(resolve, delay))
+      } else {
+        throw err
+      }
+    }
+  }
 }
 
 async function main() {
@@ -26,13 +48,14 @@ async function main() {
   console.log('=== Reference Fact Indexing ===\n')
   if (flags.force) console.log('Mode: FORCE (re-indexing all)')
   if (flags.brand) console.log(`Brand filter: ${flags.brand}`)
+  console.log(`Concurrency: ${flags.concurrency}`)
   console.log()
 
   initDb()
   const db = getDb()
 
-  if (!process.env.GEMINI_API_KEY) {
-    console.error('ERROR: GEMINI_API_KEY not set. Add it to backend/.env')
+  if (!process.env.VITE_GEMINI_API_KEY) {
+    console.error('ERROR: VITE_GEMINI_API_KEY not set. Add it to backend/.env')
     closeDb()
     process.exit(1)
   }
@@ -72,57 +95,60 @@ async function main() {
 
   let indexed = 0
   let failed = 0
+  const startTime = Date.now()
+  const limit = pLimit(flags.concurrency)
 
-  for (let i = 0; i < references.length; i++) {
-    const ref = references[i]
-    const label = `${i + 1}/${references.length}`
-    console.log(`Indexing ${label}: ${ref.display_alias} [${ref.brand_name}]...`)
+  const tasks = references.map((ref, i) =>
+    limit(async () => {
+      const label = `${i + 1}/${references.length}`
+      console.log(`Indexing ${label}: ${ref.display_alias} [${ref.brand_name}]...`)
 
-    try {
-      // Mark as extracting
-      const existing = db.prepare('SELECT id FROM reference_facts WHERE reference_id = ?').get(ref.id)
-      if (existing) {
-        db.prepare(
-          "UPDATE reference_facts SET extraction_status = 'extracting', updated_at = CURRENT_TIMESTAMP WHERE reference_id = ?"
-        ).run(ref.id)
-      } else {
-        db.prepare(
-          "INSERT INTO reference_facts (reference_id, extraction_status) VALUES (?, 'extracting')"
-        ).run(ref.id)
+      try {
+        // Mark as extracting (DB writes are synchronous/safe with WAL mode)
+        const existing = db.prepare('SELECT id FROM reference_facts WHERE reference_id = ?').get(ref.id)
+        if (existing) {
+          db.prepare(
+            "UPDATE reference_facts SET extraction_status = 'extracting', updated_at = CURRENT_TIMESTAMP WHERE reference_id = ?"
+          ).run(ref.id)
+        } else {
+          db.prepare(
+            "INSERT INTO reference_facts (reference_id, extraction_status) VALUES (?, 'extracting')"
+          ).run(ref.id)
+        }
+
+        const facts = await extractWithRetry(ref.content_text)
+
+        // Store results
+        db.prepare(`
+          UPDATE reference_facts
+          SET facts_json = ?, extraction_status = 'indexed', model_used = 'gemini-2.0-flash',
+              error_message = NULL, updated_at = CURRENT_TIMESTAMP
+          WHERE reference_id = ?
+        `).run(JSON.stringify(facts), ref.id)
+
+        console.log(`  ✓ ${label}: ${facts.length} facts extracted`)
+        indexed++
+      } catch (err) {
+        console.error(`  ✗ ${label}: FAILED — ${err.message}`)
+        db.prepare(`
+          UPDATE reference_facts
+          SET extraction_status = 'failed', error_message = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE reference_id = ?
+        `).run(err.message, ref.id)
+        failed++
       }
+    })
+  )
 
-      const facts = await extractFacts(ref.content_text)
+  await Promise.all(tasks)
 
-      // Store results
-      db.prepare(`
-        UPDATE reference_facts
-        SET facts_json = ?, extraction_status = 'indexed', model_used = 'gemini-2.5-flash',
-            error_message = NULL, updated_at = CURRENT_TIMESTAMP
-        WHERE reference_id = ?
-      `).run(JSON.stringify(facts), ref.id)
-
-      console.log(`  ${facts.length} facts extracted`)
-      indexed++
-    } catch (err) {
-      console.error(`  FAILED: ${err.message}`)
-      db.prepare(`
-        UPDATE reference_facts
-        SET extraction_status = 'failed', error_message = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE reference_id = ?
-      `).run(err.message, ref.id)
-      failed++
-    }
-
-    // Rate limit: 1 second between requests to avoid Gemini throttling
-    if (i < references.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, 1000))
-    }
-  }
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
 
   console.log('\n=== Indexing Complete ===')
   console.log(`Indexed: ${indexed}`)
   console.log(`Failed: ${failed}`)
   console.log(`Total: ${references.length}`)
+  console.log(`Time: ${elapsed}s`)
 
   // Summary
   const summary = db.prepare(`

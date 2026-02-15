@@ -218,17 +218,25 @@ async function matchSingleClaim(claim, allReferences, brandFacts = []) {
  * @returns {Promise<Array>} - Claims enriched with reference data
  */
 export async function matchAllClaimsToReferences(claims, references, onProgress, brandFacts = []) {
-  const enrichedClaims = []
+  const CONCURRENCY = 5
+  let completed = 0
+  const results = new Array(claims.length)
 
-  for (let i = 0; i < claims.length; i++) {
-    const claim = claims[i]
-    onProgress?.(i + 1, claims.length, claim)
-
-    const enriched = await matchSingleClaim(claim, references, brandFacts)
-    enrichedClaims.push(enriched)
+  // Process in batches of CONCURRENCY
+  for (let start = 0; start < claims.length; start += CONCURRENCY) {
+    const batch = claims.slice(start, start + CONCURRENCY)
+    const batchPromises = batch.map((claim, batchIdx) => {
+      const idx = start + batchIdx
+      return matchSingleClaim(claim, references, brandFacts).then(enriched => {
+        results[idx] = enriched
+        completed++
+        onProgress?.(completed, claims.length, claim)
+      })
+    })
+    await Promise.all(batchPromises)
   }
 
-  return enrichedClaims
+  return results
 }
 
 /**

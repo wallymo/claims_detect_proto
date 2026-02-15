@@ -46,6 +46,57 @@
   --shadow-md: 0 4px 6px rgba(0,0,0,0.4);
   --shadow-lg: 0 10px 15px rgba(0,0,0,0.5);
   --shadow-xl: 0 20px 25px rgba(0,0,0,0.5);
+
+  /* Color Scales - Dark Mode */
+  --gray-1: #2D2D2D;
+  --gray-2: #333333;
+  --gray-3: #404040;
+  --gray-4: #555555;
+  --gray-5: #6B6B6B;
+  --gray-6: #888888;
+  --gray-7: #A0A0A0;
+  --gray-8: #C0C0C0;
+  --gray-9: #E0E0E0;
+
+  --blue-1: rgba(30, 136, 229, 0.15);
+  --blue-2: rgba(30, 136, 229, 0.25);
+  --blue-3: rgba(30, 136, 229, 0.35);
+  --blue-4: #42A5F5;
+  --blue-5: #64B5F6;
+  --blue-6: #42A5F5;
+  --blue-7: #64B5F6;
+  --blue-8: #90CAF9;
+  --blue-9: #BBDEFB;
+
+  --green-1: rgba(67, 160, 71, 0.12);
+  --green-2: rgba(67, 160, 71, 0.2);
+  --green-3: rgba(67, 160, 71, 0.3);
+  --green-4: #66BB6A;
+  --green-5: #81C784;
+  --green-6: #66BB6A;
+  --green-7: #81C784;
+  --green-8: #A5D6A7;
+  --green-9: #C8E6C9;
+
+  --red-1: rgba(229, 57, 53, 0.12);
+  --red-2: rgba(229, 57, 53, 0.2);
+  --red-3: rgba(229, 57, 53, 0.3);
+  --red-4: #EF5350;
+  --red-5: #E57373;
+  --red-6: #EF5350;
+  --red-7: #E57373;
+  --red-8: #EF9A9A;
+  --red-9: #FFCDD2;
+
+  --amber-1: rgba(255, 179, 0, 0.12);
+  --amber-2: rgba(255, 179, 0, 0.2);
+  --amber-3: rgba(255, 179, 0, 0.3);
+  --amber-4: #FFCA28;
+  --amber-5: #FFD54F;
+  --amber-6: #FFCA28;
+  --amber-7: #FFD54F;
+  --amber-8: #FFE082;
+  --amber-9: #FFECB3;
 }
 
 /* System Preference Dark Mode */
@@ -86,6 +137,57 @@
     --shadow-md: 0 4px 6px rgba(0,0,0,0.4);
     --shadow-lg: 0 10px 15px rgba(0,0,0,0.5);
     --shadow-xl: 0 20px 25px rgba(0,0,0,0.5);
+
+    /* Color Scales - Dark Mode */
+    --gray-1: #2D2D2D;
+    --gray-2: #333333;
+    --gray-3: #404040;
+    --gray-4: #555555;
+    --gray-5: #6B6B6B;
+    --gray-6: #888888;
+    --gray-7: #A0A0A0;
+    --gray-8: #C0C0C0;
+    --gray-9: #E0E0E0;
+
+    --blue-1: rgba(30, 136, 229, 0.15);
+    --blue-2: rgba(30, 136, 229, 0.25);
+    --blue-3: rgba(30, 136, 229, 0.35);
+    --blue-4: #42A5F5;
+    --blue-5: #64B5F6;
+    --blue-6: #42A5F5;
+    --blue-7: #64B5F6;
+    --blue-8: #90CAF9;
+    --blue-9: #BBDEFB;
+
+    --green-1: rgba(67, 160, 71, 0.12);
+    --green-2: rgba(67, 160, 71, 0.2);
+    --green-3: rgba(67, 160, 71, 0.3);
+    --green-4: #66BB6A;
+    --green-5: #81C784;
+    --green-6: #66BB6A;
+    --green-7: #81C784;
+    --green-8: #A5D6A7;
+    --green-9: #C8E6C9;
+
+    --red-1: rgba(229, 57, 53, 0.12);
+    --red-2: rgba(229, 57, 53, 0.2);
+    --red-3: rgba(229, 57, 53, 0.3);
+    --red-4: #EF5350;
+    --red-5: #E57373;
+    --red-6: #EF5350;
+    --red-7: #E57373;
+    --red-8: #EF9A9A;
+    --red-9: #FFCDD2;
+
+    --amber-1: rgba(255, 179, 0, 0.12);
+    --amber-2: rgba(255, 179, 0, 0.2);
+    --amber-3: rgba(255, 179, 0, 0.3);
+    --amber-4: #FFCA28;
+    --amber-5: #FFD54F;
+    --amber-6: #FFCA28;
+    --amber-7: #FFD54F;
+    --amber-8: #FFE082;
+    --amber-9: #FFECB3;
   }
 }
 
@@ -138,24 +240,4 @@ body {
   border-color: var(--color-state-error);
 }
 
-/* ClaimCard specific styles */
-[data-theme="dark"] .claim-card-approved,
-[data-theme="dark"] [class*="claim-card-approved"] {
-  background-color: rgba(102, 187, 106, 0.1);
-}
-
-[data-theme="dark"] .claim-card-rejected,
-[data-theme="dark"] [class*="claim-card-rejected"] {
-  background-color: rgba(239, 83, 80, 0.1);
-}
-
-[data-theme="dark"] .claim-card-active,
-[data-theme="dark"] [class*="claim-card-active"] {
-  box-shadow: 0 0 0 4px rgba(100, 181, 246, 0.2);
-}
-
-/* Type chips dark mode adjustments */
-[data-theme="dark"] .type-chip.active,
-[data-theme="dark"] [class*="type-chip active"] {
-  color: #1A1A1A;  /* Dark text on light colored chips */
-}
+/* Card state colors now handled via --green-*, --red-*, --blue-* scale vars above */

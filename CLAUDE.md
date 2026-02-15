@@ -33,10 +33,11 @@ Claims Detector is a React + Express POC for AI-powered detection of medical/reg
 - **Document types vary.** Speaker notes, print ads, digital banners, leave-behinds all have different claim density, layout, and review needs.
 - **References can expire.** Some references get superseded and can no longer be used for substantiation. Freshness matters.
 
-**Three routes:**
-- `/` — Home page with mock data for demos (client selection)
+**Four routes:**
+- `/` — Home page with mock data for demos (client selection). Redirects to `/mkg` on Vercel production.
 - `/mkg` — POC1: Real AI integration for PDF claim detection
-- `/mkg2` — POC2: Full pipeline with brand reference library, AI claim-to-reference mapping, and feedback
+- `/demo` — Same as `/mkg` but with `demoMode` prop (client-friendly title, hides POC badge)
+- `/mkg2` — **POC2 (this is the only POC2 route):** Full pipeline with brand reference library, AI claim-to-reference mapping, and feedback
 
 ## POC2 Scope of Work & Success Criteria
 
@@ -59,6 +60,8 @@ Claims Detector is a React + Express POC for AI-powered detection of medical/reg
 
 **Deliverables:** Functional hosted POC, benchmark summary (best model), claim detection interface, prompt modification panel, JSON claim extraction/display, approval/rejection tracking system.
 
+**Validation status (as of 2026-02-13):** All scope items implemented. Benchmark deliverable pending — requires manual validation using annotated test documents (clean PDFs run through POC2, results compared against human-annotated answer keys). See `docs/plans/2026-02-13-poc2-sow-alignment-assessment.md` for full alignment assessment.
+
 ## Commands
 
 **Frontend** (from `app/`):
@@ -69,6 +72,7 @@ npm run lint          # ESLint
 npm run test          # Vitest (single run)
 npm run test:watch    # Vitest (watch mode)
 npm run test:coverage # Vitest with coverage
+npx vitest run test/utils/logger.test.js  # Run a single test file
 ```
 
 **Backend** (from `backend/`):
@@ -76,9 +80,10 @@ npm run test:coverage # Vitest with coverage
 npm run dev           # Express with --watch on :3001
 npm start             # Express without watch
 npm run preload       # Load 54 reference PDFs into SQLite from MKG Knowledge Base/
-node scripts/index-references.js          # Batch-index all refs for fact extraction (requires GEMINI_API_KEY)
+node scripts/index-references.js          # Batch-index all refs for fact extraction (requires VITE_GEMINI_API_KEY)
 node scripts/index-references.js --force  # Re-index all (even already indexed)
 node scripts/index-references.js --brand "MKG Reference Library"  # Index one brand only
+node scripts/index-references.js --force --concurrency 5  # Control parallel extractions (default: 10)
 ```
 
 **Full development requires two terminals:**
@@ -86,6 +91,8 @@ node scripts/index-references.js --brand "MKG Reference Library"  # Index one br
 2. `cd app && npm run dev`
 
 Vite proxies `/api` requests to `http://localhost:3001`.
+
+**Tests** live in `app/test/` (not colocated with source). Environment: happy-dom. Coverage thresholds: 50% (lines, functions, branches, statements).
 
 ## Environment Setup
 
@@ -98,12 +105,13 @@ VITE_ANTHROPIC_API_KEY=your_key
 
 Backend uses `backend/.env`:
 ```
-GEMINI_API_KEY=your_key          # Required for fact indexing
-VITE_GEMINI_API_KEY=your_key     # Frontend Gemini access
+VITE_GEMINI_API_KEY=your_key     # Gemini access (frontend + backend fact indexing)
 VITE_OPENAI_API_KEY=your_key
 VITE_ANTHROPIC_API_KEY=your_key
 ```
 Defaults: port 3001, `./data/claims_detector.db`. No `.env.local` — all config lives in `.env`.
+
+**Deployment:** Vercel config in `app/vercel.json`. Production redirects `/` → `/mkg`. SPA rewrites for `/mkg2`, `/demo`, and catch-all to `index.html`.
 
 ## Architecture
 
@@ -197,36 +205,14 @@ Three interchangeable AI backends in `src/services/`. All send PDFs as base64 wi
 
 ### Reference Fact Indexing
 
-Pre-extracts structured facts (efficacy, safety, dosage, mechanism, population, endpoint, statistical, regulatory) from each reference document via Gemini. Facts are stored as JSON in `reference_facts` table.
+Pre-extracts structured facts (efficacy, safety, dosage, mechanism, population, endpoint, statistical, regulatory) from each reference document via Gemini 2.0 Flash. Facts are stored as JSON in `reference_facts` table.
 
-- **Batch indexing:** `node scripts/index-references.js` processes all unindexed refs sequentially
-- **Auto-index on upload:** New references are automatically indexed async after upload (non-blocking, requires `GEMINI_API_KEY`)
+- **Batch indexing:** `node scripts/index-references.js` processes unindexed refs in parallel (default concurrency: 10, configurable via `--concurrency <n>`)
+- **Auto-index on upload:** New references are automatically indexed async after upload (non-blocking, requires `VITE_GEMINI_API_KEY`)
 - **Detection integration:** Fact inventory appended to all 3 AI prompts when brand has indexed refs
 - **Matching integration:** Tier 0 uses fact keywords for fast direct matching before keyword pre-filter
 - **Feedback weighting:** Confirmed facts get +10% boost in Tier 0 scoring; mostly-rejected facts get -20% penalty
 - **Library UI:** "Indexing..." badge on pending refs, "Index failed" with retry button on failed refs, no badge when indexed
-
-### Brand Creation Flow
-
-The "Add New Brand" modal (`MKG2ClaimsDetector.jsx`) is a 3-section expanded form:
-
-1. **Brand Info** — Name (required) + Client/Company (optional)
-2. **Reference Library** — Drag-and-drop file upload zone. Files queue in modal state (`brandModalFiles`), then upload sequentially after brand creation. Progress shown inline: "Uploading 2/5..."
-3. **Team Access** — Visual placeholder only (Coming Soon badge). No auth system exists yet.
-
-On Create: brand is created → files upload sequentially → brand is auto-selected → modal closes.
-
-### Library Tab Behavior
-
-- **No brand selected:** Only empty state shows ("Select a Brand"). Header, folder tree, upload button, and bulk actions are all hidden.
-- **Brand selected, no refs:** Empty state with upload prompt ("No References for {brand}")
-- **Brand selected, has refs:** Full UI — header with doc count + upload, folder tree, document list with selection/bulk actions
-
-References load per brand via `loadBrandReferences(brandId)` triggered by `useEffect` on `selectedBrandId`.
-
-### State Management
-
-All state lives in page components (no external state library). Cost tracking persists to localStorage.
 
 ### Claim Schema
 ```javascript
