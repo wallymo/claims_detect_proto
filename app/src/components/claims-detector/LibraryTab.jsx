@@ -8,6 +8,7 @@ import ReferenceListItem from '@/components/claims-detector/ReferenceListItem'
 
 export default function LibraryTab({
   documents = [],
+  trashDocuments = [],
   folders = [],
   activeFolderId = null,
   selectedBrand = null,
@@ -20,6 +21,8 @@ export default function LibraryTab({
   onDelete,
   onBulkDelete,
   onBulkMove,
+  onRestore,
+  onPermanentDelete,
   onView,
   onRetryIndex,
   isLoading = false,
@@ -71,10 +74,15 @@ export default function LibraryTab({
 
   const clearSelection = () => setSelectedIds(new Set())
 
+  // Trash mode
+  const isTrashMode = activeFolderId === '__trash__'
+
   // Folder filtering
-  const filteredDocs = activeFolderId
-    ? documents.filter(d => d.folder_id === activeFolderId)
-    : documents
+  const filteredDocs = isTrashMode
+    ? trashDocuments
+    : activeFolderId
+      ? documents.filter(d => d.folder_id === activeFolderId)
+      : documents
 
   // Instant multi-file upload
   const handleFileChange = (e) => {
@@ -154,26 +162,32 @@ export default function LibraryTab({
         <>
           {/* Header: count + upload */}
           <div className={styles.libraryHeader}>
-            <span className={styles.libraryCount}>{filteredDocs.length} documents</span>
+            <span className={styles.libraryCount}>
+              {isTrashMode ? `${filteredDocs.length} in trash` : `${filteredDocs.length} documents`}
+            </span>
             <div className={styles.headerActions}>
-              {isUploading && <Spinner size="small" />}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,.docx,.doc"
-                multiple
-                onChange={handleFileChange}
-                hidden
-              />
-              <Button
-                variant="primary"
-                size="small"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading}
-              >
-                <Icon name="upload" size={14} />
-                Upload
-              </Button>
+              {!isTrashMode && (
+                <>
+                  {isUploading && <Spinner size="small" />}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,.docx,.doc"
+                    multiple
+                    onChange={handleFileChange}
+                    hidden
+                  />
+                  <Button
+                    variant="primary"
+                    size="small"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading}
+                  >
+                    <Icon name="upload" size={14} />
+                    Upload
+                  </Button>
+                </>
+              )}
             </div>
           </div>
 
@@ -292,6 +306,19 @@ export default function LibraryTab({
             )}
           </div>
         )}
+            {/* Trash */}
+            {trashDocuments.length > 0 && (
+              <button
+                className={`${styles.trashItem} ${isTrashMode ? styles.trashItemActive : ''}`}
+                onClick={() => onFolderSelect?.('__trash__')}
+              >
+                <span className={styles.trashIcon}>
+                  <Icon name="trash" size={16} />
+                </span>
+                <span className={styles.trashLabel}>Trash</span>
+                <span className={styles.trashCount}>{trashDocuments.length}</span>
+              </button>
+            )}
           </div>
 
           {/* Bulk action bar */}
@@ -303,115 +330,138 @@ export default function LibraryTab({
                 onChange={toggleSelectAll}
                 className={styles.bulkCheckbox}
               />
-          <span className={styles.bulkCount}>{selectedIds.size} selected</span>
-          <div className={styles.bulkActions}>
-            <div className={styles.moveDropdown} ref={moveRef}>
-              <button
-                className={styles.moveBtn}
-                onClick={() => {
-                  setMoveOpen(prev => !prev)
-                  setMoveCreating(false)
-                  setMoveNewName('')
-                }}
-              >
-                <Icon name="folder" size={14} />
-                Move to...
-                <Icon name="chevronDown" size={12} />
-              </button>
-              {moveOpen && (
-                <div className={styles.movePopover}>
-                  <button
-                    className={styles.moveItem}
-                    onClick={() => {
-                      handleBulkMove(null)
-                      setMoveOpen(false)
-                    }}
-                  >
-                    All files
-                  </button>
-                  {folders.map(f => (
+              <span className={styles.bulkCount}>{selectedIds.size} selected</span>
+              <div className={styles.bulkActions}>
+                {isTrashMode ? (
+                  <>
+                    <button className={styles.restoreBtn} onClick={() => { onRestore?.(Array.from(selectedIds)); clearSelection() }}>
+                      <Icon name="refreshCw" size={14} />
+                      Restore
+                    </button>
                     <button
-                      key={f.id}
-                      className={styles.moveItem}
+                      className={styles.bulkDeleteBtn}
                       onClick={() => {
-                        handleBulkMove(f.id)
-                        setMoveOpen(false)
+                        if (window.confirm(`Permanently delete ${selectedIds.size} document${selectedIds.size > 1 ? 's' : ''}? This cannot be undone.`)) {
+                          onPermanentDelete?.(Array.from(selectedIds))
+                          clearSelection()
+                        }
                       }}
                     >
-                      {f.name}
+                      <Icon name="x" size={14} />
+                      Delete Forever
                     </button>
-                  ))}
-                  <div className={styles.moveDivider} />
-                  {moveCreating ? (
-                    <div className={styles.moveNewRow}>
-                      <Input
-                        value={moveNewName}
-                        onChange={(e) => setMoveNewName(e.target.value)}
-                        placeholder="Folder name"
-                        size="small"
-                        autoFocus
-                        onKeyDown={async (e) => {
-                          if (e.key === 'Enter') {
-                            const name = moveNewName.trim()
-                            if (!name) return
-                            const folder = await onFolderCreate?.(name)
-                            if (folder?.id) {
-                              handleBulkMove(folder.id)
-                            }
-                            setMoveOpen(false)
-                            setMoveCreating(false)
-                            setMoveNewName('')
-                          }
-                          if (e.key === 'Escape') {
-                            setMoveCreating(false)
-                            setMoveNewName('')
-                          }
-                        }}
-                      />
+                  </>
+                ) : (
+                  <>
+                    <div className={styles.moveDropdown} ref={moveRef}>
                       <button
-                        className={styles.folderAction}
-                        onClick={async () => {
-                          const name = moveNewName.trim()
-                          if (!name) return
-                          const folder = await onFolderCreate?.(name)
-                          if (folder?.id) {
-                            handleBulkMove(folder.id)
-                          }
-                          setMoveOpen(false)
-                          setMoveCreating(false)
-                          setMoveNewName('')
-                        }}
-                      >
-                        <Icon name="check" size={12} />
-                      </button>
-                      <button
-                        className={styles.folderAction}
+                        className={styles.moveBtn}
                         onClick={() => {
+                          setMoveOpen(prev => !prev)
                           setMoveCreating(false)
                           setMoveNewName('')
                         }}
                       >
-                        <Icon name="x" size={12} />
+                        <Icon name="folder" size={14} />
+                        Move to...
+                        <Icon name="chevronDown" size={12} />
                       </button>
+                      {moveOpen && (
+                        <div className={styles.movePopover}>
+                          <button
+                            className={styles.moveItem}
+                            onClick={() => {
+                              handleBulkMove(null)
+                              setMoveOpen(false)
+                            }}
+                          >
+                            All files
+                          </button>
+                          {folders.map(f => (
+                            <button
+                              key={f.id}
+                              className={styles.moveItem}
+                              onClick={() => {
+                                handleBulkMove(f.id)
+                                setMoveOpen(false)
+                              }}
+                            >
+                              {f.name}
+                            </button>
+                          ))}
+                          <div className={styles.moveDivider} />
+                          {moveCreating ? (
+                            <div className={styles.moveNewRow}>
+                              <Input
+                                value={moveNewName}
+                                onChange={(e) => setMoveNewName(e.target.value)}
+                                placeholder="Folder name"
+                                size="small"
+                                autoFocus
+                                onKeyDown={async (e) => {
+                                  if (e.key === 'Enter') {
+                                    const name = moveNewName.trim()
+                                    if (!name) return
+                                    const folder = await onFolderCreate?.(name)
+                                    if (folder?.id) {
+                                      handleBulkMove(folder.id)
+                                    }
+                                    setMoveOpen(false)
+                                    setMoveCreating(false)
+                                    setMoveNewName('')
+                                  }
+                                  if (e.key === 'Escape') {
+                                    setMoveCreating(false)
+                                    setMoveNewName('')
+                                  }
+                                }}
+                              />
+                              <button
+                                className={styles.folderAction}
+                                onClick={async () => {
+                                  const name = moveNewName.trim()
+                                  if (!name) return
+                                  const folder = await onFolderCreate?.(name)
+                                  if (folder?.id) {
+                                    handleBulkMove(folder.id)
+                                  }
+                                  setMoveOpen(false)
+                                  setMoveCreating(false)
+                                  setMoveNewName('')
+                                }}
+                              >
+                                <Icon name="check" size={12} />
+                              </button>
+                              <button
+                                className={styles.folderAction}
+                                onClick={() => {
+                                  setMoveCreating(false)
+                                  setMoveNewName('')
+                                }}
+                              >
+                                <Icon name="x" size={12} />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              className={`${styles.moveItem} ${styles.moveNewFolder}`}
+                              onClick={() => setMoveCreating(true)}
+                            >
+                              <Icon name="plus" size={14} />
+                              New folder
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  ) : (
-                    <button
-                      className={`${styles.moveItem} ${styles.moveNewFolder}`}
-                      onClick={() => setMoveCreating(true)}
-                    >
-                      <Icon name="plus" size={14} />
-                      New folder
+                    <button className={styles.bulkDeleteBtn} onClick={handleBulkDelete}>
+                      <Icon name="x" size={14} />
+                      Delete
                     </button>
-                  )}
-                </div>
-              )}
+                  </>
+                )}
+              </div>
             </div>
-            <button className={styles.bulkDeleteBtn} onClick={handleBulkDelete}>
-              <Icon name="x" size={14} />
-              Delete
-            </button>
-          </div>
-        </div>
           )}
         </>
       )}
@@ -443,9 +493,16 @@ export default function LibraryTab({
               selected={selectedIds.has(doc.id)}
               onSelect={toggleSelect}
               onView={onView}
-              onRename={(newName) => onRename?.(doc.id, newName)}
-              onDelete={() => onDelete?.(doc.id)}
-              onRetryIndex={() => onRetryIndex?.(doc.id)}
+              onRename={isTrashMode ? undefined : (newName) => onRename?.(doc.id, newName)}
+              onDelete={isTrashMode ? undefined : () => onDelete?.(doc.id)}
+              onRetryIndex={isTrashMode ? undefined : () => onRetryIndex?.(doc.id)}
+              isTrashMode={isTrashMode}
+              onRestore={isTrashMode ? () => onRestore?.([doc.id]) : undefined}
+              onPermanentDelete={isTrashMode ? () => {
+                if (window.confirm(`Permanently delete "${doc.name}"? This cannot be undone.`)) {
+                  onPermanentDelete?.([doc.id])
+                }
+              } : undefined}
             />
           ))}
         </div>
