@@ -157,3 +157,64 @@
 .listItem:hover .deleteBtn {
   display: flex;
 }
+
+.itemNameDisabled {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 1px 4px;
+  margin: -1px -4px;
+}
+
+.trashActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.restoreBtn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--green-6, #43A047);
+  cursor: pointer;
+  border-radius: var(--border-radius-sm);
+  transition: all 0.15s ease;
+}
+
+.restoreBtn:hover {
+  background: var(--green-1, #E8F5E9);
+  color: var(--green-7, #388E3C);
+}
+
+.permanentDeleteBtn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-disabled, #9e9e9e);
+  cursor: pointer;
+  border-radius: var(--border-radius-sm);
+  transition: all 0.15s ease;
+}
+
+.permanentDeleteBtn:hover {
+  color: var(--red-7, #D32F2F);
+  background: var(--red-1, #FFEBEE);
+}
+
+.listItem:hover .restoreBtn,
+.listItem:hover .permanentDeleteBtn {
+  display: flex;
+}

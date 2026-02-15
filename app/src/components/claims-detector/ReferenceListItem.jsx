@@ -11,7 +11,10 @@ export default function ReferenceListItem({
   onView,
   onRetryIndex,
   selected,
-  onSelect
+  onSelect,
+  isTrashMode = false,
+  onRestore,
+  onPermanentDelete
 }) {
   const [isEditing, setIsEditing] = useState(false)
   const [editName, setEditName] = useState(document.name)
@@ -96,9 +99,9 @@ export default function ReferenceListItem({
           <>
             <div className={styles.nameRow}>
               <span
-                className={styles.itemName}
-                onClick={handleStartEdit}
-                title="Click to rename"
+                className={isTrashMode ? styles.itemNameDisabled : styles.itemName}
+                onClick={isTrashMode ? undefined : handleStartEdit}
+                title={isTrashMode ? undefined : "Click to rename"}
               >{document.name}</span>
             </div>
             <span className={styles.itemMeta}>
@@ -120,17 +123,36 @@ export default function ReferenceListItem({
         )}
       </div>
       {!isEditing && (
-        <button
-          className={styles.deleteBtn}
-          onClick={() => {
-            if (window.confirm(`Delete "${document.name}"?`)) {
-              onDelete?.()
-            }
-          }}
-          title="Delete document"
-        >
-          <Icon name="trash" size={14} />
-        </button>
+        isTrashMode ? (
+          <div className={styles.trashActions}>
+            <button
+              className={styles.restoreBtn}
+              onClick={(e) => { e.stopPropagation(); onRestore?.() }}
+              title="Restore to library"
+            >
+              <Icon name="refreshCw" size={14} />
+            </button>
+            <button
+              className={styles.permanentDeleteBtn}
+              onClick={(e) => { e.stopPropagation(); onPermanentDelete?.() }}
+              title="Delete forever"
+            >
+              <Icon name="trash" size={14} />
+            </button>
+          </div>
+        ) : (
+          <button
+            className={styles.deleteBtn}
+            onClick={() => {
+              if (window.confirm(`Delete "${document.name}"?`)) {
+                onDelete?.()
+              }
+            }}
+            title="Delete document"
+          >
+            <Icon name="trash" size={14} />
+          </button>
+        )
       )}
     </div>
   )
