@@ -55,6 +55,24 @@ const PROMPT_DISPLAY_TEXT = {
   'drug': MEDICATION_PROMPT_USER
 }
 
+const MATCHED_CLAIM_FIELDS = ['matched', 'matchConfidence', 'matchTier', 'reference', 'matchReasoning']
+
+function mergeMatchFields(existingClaim, matchedClaim) {
+  if (!matchedClaim) return existingClaim
+
+  let changed = false
+  const merged = { ...existingClaim }
+
+  for (const field of MATCHED_CLAIM_FIELDS) {
+    if (merged[field] !== matchedClaim[field]) {
+      merged[field] = matchedClaim[field]
+      changed = true
+    }
+  }
+
+  return changed ? merged : existingClaim
+}
+
 export default function MKG2ClaimsDetector() {
   // Document state
   const [uploadedFile, setUploadedFile] = useState(null)
@@ -558,6 +576,36 @@ export default function MKG2ClaimsDetector() {
     setIsMatching(true)
     setMatchingProgress('Preparing semantic retrieval...')
     const matchingStartedAt = Date.now()
+    const pendingClaimUpdates = new Map()
+    let flushHandle = null
+
+    const applyPendingClaimUpdates = () => {
+      if (!pendingClaimUpdates.size) return
+
+      const updates = new Map(pendingClaimUpdates)
+      pendingClaimUpdates.clear()
+
+      setClaims(prev => {
+        let changed = false
+        const merged = prev.map((claim) => {
+          const nextMatch = updates.get(claim.id)
+          if (!nextMatch) return claim
+
+          const nextClaim = mergeMatchFields(claim, nextMatch)
+          if (nextClaim !== claim) changed = true
+          return nextClaim
+        })
+        return changed ? merged : prev
+      })
+    }
+
+    const scheduleClaimUpdateFlush = () => {
+      if (flushHandle) return
+      flushHandle = setTimeout(() => {
+        flushHandle = null
+        applyPendingClaimUpdates()
+      }, 120)
+    }
 
     try {
       if (!detectedClaims.length) {
@@ -607,17 +655,58 @@ export default function MKG2ClaimsDetector() {
 
           setMatchingProgress(`Matched claim ${claimNumber} of ${total}...`)
         },
-        matchBrandId
+        matchBrandId,
+        {
+          onClaimResult: ({ claim }) => {
+            if (!claim?.id) return
+            pendingClaimUpdates.set(claim.id, claim)
+
+            // Flush immediately when enough updates accumulate to keep UI responsive
+            if (pendingClaimUpdates.size >= 6) {
+              if (flushHandle) {
+                clearTimeout(flushHandle)
+                flushHandle = null
+              }
+              applyPendingClaimUpdates()
+              return
+            }
+
+            scheduleClaimUpdateFlush()
+          }
+        }
       )
 
+      if (flushHandle) {
+        clearTimeout(flushHandle)
+        flushHandle = null
+      }
+      applyPendingClaimUpdates()
+
       const matchingTotalMs = Date.now() - matchingStartedAt
-      setClaims(enrichedClaims)
+      setClaims(prev => {
+        if (!prev.length) return enrichedClaims
+
+        const enrichedById = new Map(enrichedClaims.map(claim => [claim.id, claim]))
+        let changed = false
+
+        const merged = prev.map((claim) => {
+          const finalMatch = enrichedById.get(claim.id)
+          if (!finalMatch) return claim
+
+          const nextClaim = mergeMatchFields(claim, finalMatch)
+          if (nextClaim !== claim) changed = true
+          return nextClaim
+        })
+
+        return changed ? merged : prev
+      })
       const stats = getMatchingStats(enrichedClaims)
       const enrichedStats = {
         ...stats,
         matching_total_ms: telemetry?.matching_total_ms ?? matchingTotalMs,
         reference_fetch_ms: telemetry?.reference_fetch_ms ?? 0,
         per_claim_match_ms: telemetry?.per_claim_match_ms,
+        concurrency: telemetry?.concurrency,
         top_k: telemetry?.top_k,
         retrieval_top_k: telemetry?.retrieval_top_k,
         candidate_pool: telemetry?.candidate_pool,
@@ -630,8 +719,13 @@ export default function MKG2ClaimsDetector() {
         ai_diversity_pruned_total: telemetry?.ai_diversity_pruned_total,
         ai_diversity_replacements_total: telemetry?.ai_diversity_replacements_total,
         confirmation_skipped_count: telemetry?.confirmation_skipped_count,
+        confirmation_skipped_low_confidence_count: telemetry?.confirmation_skipped_low_confidence_count,
         hybrid_enabled: telemetry?.hybrid_enabled,
         autoconfirm_enabled: telemetry?.autoconfirm_enabled,
+        skip_confirm_low_confidence_enabled: telemetry?.skip_confirm_low_confidence_enabled,
+        skip_confirm_max_semantic: telemetry?.skip_confirm_max_semantic,
+        skip_confirm_max_hybrid: telemetry?.skip_confirm_max_hybrid,
+        skip_confirm_max_keyword: telemetry?.skip_confirm_max_keyword,
         confirm_diversity_enabled: telemetry?.confirm_diversity_enabled,
         ai_confirm_per_reference_cap: telemetry?.ai_confirm_per_reference_cap
       }
@@ -644,6 +738,7 @@ export default function MKG2ClaimsDetector() {
         matching_total_ms: enrichedStats.matching_total_ms,
         reference_fetch_ms: enrichedStats.reference_fetch_ms,
         per_claim_match_ms: enrichedStats.per_claim_match_ms,
+        concurrency: enrichedStats.concurrency,
         top_k: enrichedStats.top_k,
         retrieval_top_k: enrichedStats.retrieval_top_k,
         candidate_pool: enrichedStats.candidate_pool,
@@ -656,8 +751,13 @@ export default function MKG2ClaimsDetector() {
         ai_diversity_pruned_total: enrichedStats.ai_diversity_pruned_total,
         ai_diversity_replacements_total: enrichedStats.ai_diversity_replacements_total,
         confirmation_skipped_count: enrichedStats.confirmation_skipped_count,
+        confirmation_skipped_low_confidence_count: enrichedStats.confirmation_skipped_low_confidence_count,
         hybrid_enabled: enrichedStats.hybrid_enabled,
         autoconfirm_enabled: enrichedStats.autoconfirm_enabled,
+        skip_confirm_low_confidence_enabled: enrichedStats.skip_confirm_low_confidence_enabled,
+        skip_confirm_max_semantic: enrichedStats.skip_confirm_max_semantic,
+        skip_confirm_max_hybrid: enrichedStats.skip_confirm_max_hybrid,
+        skip_confirm_max_keyword: enrichedStats.skip_confirm_max_keyword,
         confirm_diversity_enabled: enrichedStats.confirm_diversity_enabled,
         ai_confirm_per_reference_cap: enrichedStats.ai_confirm_per_reference_cap,
         total_claims: stats.total,
@@ -669,6 +769,10 @@ export default function MKG2ClaimsDetector() {
       logger.error('Reference matching error:', error)
       setMatchingProgress(`Matching error: ${error.message}`)
     } finally {
+      if (flushHandle) {
+        clearTimeout(flushHandle)
+      }
+      applyPendingClaimUpdates()
       setIsMatching(false)
     }
   }

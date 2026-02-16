@@ -15,16 +15,27 @@ function parsePositiveIntEnv(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
+function parseBoundedFloatEnv(value, fallback, min = 0, max = 1) {
+  const parsed = Number.parseFloat(value)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(min, Math.min(max, parsed))
+}
+
 const viteEnv = typeof import.meta !== 'undefined' ? import.meta.env : {}
 
 const MATCHING_HYBRID_ENABLED = parseBooleanEnvFlag(viteEnv.VITE_MATCHING_HYBRID_ENABLED, true)
 const MATCHING_AUTOCONFIRM_ENABLED = parseBooleanEnvFlag(viteEnv.VITE_MATCHING_AUTOCONFIRM_ENABLED, false)
+const MATCHING_SKIP_CONFIRM_LOW_CONFIDENCE_ENABLED = parseBooleanEnvFlag(
+  viteEnv.VITE_MATCHING_SKIP_CONFIRM_LOW_CONFIDENCE_ENABLED,
+  false
+)
 
 const DEFAULT_TOP_K = parsePositiveIntEnv(viteEnv.VITE_MATCHING_TOPK, 20)
 const DEFAULT_CANDIDATE_POOL = parsePositiveIntEnv(viteEnv.VITE_MATCHING_CANDIDATE_POOL, 40)
 const DEFAULT_AI_CONFIRMATION_CANDIDATES = parsePositiveIntEnv(viteEnv.VITE_MATCHING_CONFIRM_TOPN, 8)
 const MATCHING_CONFIRM_DIVERSITY_ENABLED = parseBooleanEnvFlag(viteEnv.VITE_MATCHING_CONFIRM_DIVERSITY_ENABLED, true)
 const DEFAULT_AI_CONFIRM_PER_REFERENCE_CAP = parsePositiveIntEnv(viteEnv.VITE_MATCHING_CONFIRM_PER_REFERENCE_CAP, 2)
+const DEFAULT_MATCHING_CONCURRENCY = parsePositiveIntEnv(viteEnv.VITE_MATCHING_CONCURRENCY, 4)
 
 const HYBRID_WEIGHTS = {
   semantic: 0.75,
@@ -36,6 +47,19 @@ const AUTO_CONFIRM_MIN_SEMANTIC = 0.92
 const AUTO_CONFIRM_MIN_HYBRID = 0.76
 const AUTO_CONFIRM_MIN_MARGIN = 0.10
 const AUTO_CONFIRM_MIN_KEYWORD = 0.10
+
+const SKIP_CONFIRM_MAX_SEMANTIC = parseBoundedFloatEnv(
+  viteEnv.VITE_MATCHING_SKIP_CONFIRM_MAX_SEMANTIC,
+  0.50
+)
+const SKIP_CONFIRM_MAX_HYBRID = parseBoundedFloatEnv(
+  viteEnv.VITE_MATCHING_SKIP_CONFIRM_MAX_HYBRID,
+  0.46
+)
+const SKIP_CONFIRM_MAX_KEYWORD = parseBoundedFloatEnv(
+  viteEnv.VITE_MATCHING_SKIP_CONFIRM_MAX_KEYWORD,
+  0.08
+)
 
 const STOP_WORDS = new Set([
   'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
@@ -91,6 +115,12 @@ function summarizeDurations(durations) {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value))
+}
+
+function resolveConcurrency(value, fallback) {
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback
+  return clamp(parsed, 1, 12)
 }
 
 function normalizeClaimDedupKey(text) {
@@ -384,6 +414,28 @@ function evaluateAutoConfirm(candidates) {
   }
 }
 
+function evaluateSkipConfirmation(candidates) {
+  if (!candidates.length) {
+    return {
+      shouldSkip: false,
+      topCandidate: null
+    }
+  }
+
+  const topCandidate = candidates[0]
+  const semantic = topCandidate.semantic_score ?? 0
+  const hybrid = topCandidate.hybrid_score ?? 0
+  const keyword = topCandidate.keyword_overlap ?? 0
+
+  const shouldSkip = (
+    semantic <= SKIP_CONFIRM_MAX_SEMANTIC &&
+    hybrid <= SKIP_CONFIRM_MAX_HYBRID &&
+    keyword <= SKIP_CONFIRM_MAX_KEYWORD
+  )
+
+  return { shouldSkip, topCandidate }
+}
+
 function copyMatchToDuplicateClaim(targetClaim, sourceClaimResult) {
   return {
     ...targetClaim,
@@ -488,6 +540,7 @@ async function matchSingleClaim(claim, brandId, allReferences, options = {}) {
       ? rerankSemanticResults(claim.text, searchResults)
       : enrichSemanticOnlyResults(searchResults)
     const { shouldAutoConfirm, topCandidate, leadMargin } = evaluateAutoConfirm(rerankedResults)
+    const { shouldSkip: shouldSkipConfirmation, topCandidate: lowConfidenceTop } = evaluateSkipConfirmation(rerankedResults)
 
     if (MATCHING_AUTOCONFIRM_ENABLED && shouldAutoConfirm && topCandidate) {
       telemetry.autoconfirm_count++
@@ -503,6 +556,16 @@ async function matchSingleClaim(claim, brandId, allReferences, options = {}) {
           excerpt: topCandidate.passage_text?.slice(0, 400)
         },
         matchReasoning: `Auto-confirmed by hybrid score (${(topCandidate.hybrid_score * 100).toFixed(0)}%), semantic ${(topCandidate.semantic_score * 100).toFixed(0)}%, lead +${(leadMargin * 100).toFixed(0)}`
+      }
+    }
+
+    if (MATCHING_SKIP_CONFIRM_LOW_CONFIDENCE_ENABLED && shouldSkipConfirmation && lowConfidenceTop) {
+      telemetry.confirmation_skipped_low_confidence_count++
+      return {
+        ...claim,
+        matched: false,
+        reference: null,
+        matchReasoning: `Skipped AI confirmation: low retrieval confidence (hybrid ${(lowConfidenceTop.hybrid_score * 100).toFixed(0)}%, semantic ${(lowConfidenceTop.semantic_score * 100).toFixed(0)}%)`
       }
     }
 
@@ -714,12 +777,15 @@ async function keywordFallbackMatch(claim, allReferences) {
  * @returns {Promise<Object>} - { claims, telemetry }
  */
 export async function matchAllClaimsToReferences(claims, references, onProgress, brandId, options = {}) {
-  const CONCURRENCY = options.concurrency || 3
+  const CONCURRENCY = resolveConcurrency(options.concurrency, DEFAULT_MATCHING_CONCURRENCY)
   const topK = options.topK || DEFAULT_TOP_K
   const candidatePool = Math.max(topK, options.candidatePool || DEFAULT_CANDIDATE_POOL)
   const retrievalTopK = Math.max(topK, candidatePool)
   const aiConfirmationCandidates = options.aiConfirmationCandidates || DEFAULT_AI_CONFIRMATION_CANDIDATES
   const aiConfirmPerReferenceCap = options.aiConfirmPerReferenceCap || DEFAULT_AI_CONFIRM_PER_REFERENCE_CAP
+  const onClaimResult = typeof options.onClaimResult === 'function'
+    ? options.onClaimResult
+    : null
   let completed = 0
   const results = new Array(claims.length)
   const startedAt = Date.now()
@@ -748,6 +814,8 @@ export async function matchAllClaimsToReferences(claims, references, onProgress,
     ai_diversity_pruned_total: 0,
     ai_diversity_replacements_total: 0,
     keyword_fallback_count: 0,
+    confirmation_skipped_low_confidence_count: 0,
+    concurrency: CONCURRENCY,
     top_k: topK,
     retrieval_top_k: retrievalTopK,
     candidate_pool: candidatePool,
@@ -755,6 +823,10 @@ export async function matchAllClaimsToReferences(claims, references, onProgress,
     ai_confirm_per_reference_cap: aiConfirmPerReferenceCap,
     hybrid_enabled: MATCHING_HYBRID_ENABLED,
     autoconfirm_enabled: MATCHING_AUTOCONFIRM_ENABLED,
+    skip_confirm_low_confidence_enabled: MATCHING_SKIP_CONFIRM_LOW_CONFIDENCE_ENABLED,
+    skip_confirm_max_semantic: SKIP_CONFIRM_MAX_SEMANTIC,
+    skip_confirm_max_hybrid: SKIP_CONFIRM_MAX_HYBRID,
+    skip_confirm_max_keyword: SKIP_CONFIRM_MAX_KEYWORD,
     confirm_diversity_enabled: MATCHING_CONFIRM_DIVERSITY_ENABLED
   }
 
@@ -791,12 +863,18 @@ export async function matchAllClaimsToReferences(claims, references, onProgress,
             : copyMatchToDuplicateClaim(claim, primaryResult)
 
           completed += 1
-          onProgress?.({
+          const stage = isPrimary ? 'done' : 'dedup'
+          const progressPayload = {
             current: completed,
             total: claims.length,
             claim,
             claimIndex: claimIndex + 1,
-            stage: isPrimary ? 'done' : 'dedup'
+            stage
+          }
+          onProgress?.(progressPayload)
+          onClaimResult?.({
+            ...progressPayload,
+            claim: results[claimIndex]
           })
         }
       }).catch((error) => {
@@ -810,12 +888,17 @@ export async function matchAllClaimsToReferences(claims, references, onProgress,
             matchReasoning: `Matching error: ${error.message}`
           }
           completed += 1
-          onProgress?.({
+          const progressPayload = {
             current: completed,
             total: claims.length,
             claim,
             claimIndex: claimIndex + 1,
             stage: 'done'
+          }
+          onProgress?.(progressPayload)
+          onClaimResult?.({
+            ...progressPayload,
+            claim: results[claimIndex]
           })
         }
         telemetry.failed_claim_count = (telemetry.failed_claim_count || 0) + group.indices.length
