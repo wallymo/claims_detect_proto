@@ -1,8 +1,8 @@
 /**
- * Anthropic API Service - Claude Sonnet 4.5 for PDF/Vision analysis
+ * Anthropic API Service - Claude Opus 4.6 for PDF/Vision analysis
  *
  * This service handles:
- * - PDF document analysis and claim detection using Claude Sonnet 4.5
+ * - PDF document analysis and claim detection using Claude Opus 4.6
  * - Maintains same interface as gemini.js for easy swapping
  *
  * NOTE: Anthropic API has CORS restrictions. This service uses direct fetch
@@ -13,10 +13,11 @@ import { MEDICATION_PROMPT_USER, ALL_CLAIMS_PROMPT_USER, DISEASE_STATE_PROMPT_US
 import { logger } from '@/utils/logger'
 
 // Model configuration
-export const ANTHROPIC_MODEL = 'claude-sonnet-4-5-20250929'
+export const ANTHROPIC_MODEL = 'claude-opus-4-6'
 
 // Friendly display names
 export const MODEL_DISPLAY_NAMES = {
+  'claude-opus-4-6': 'Claude Opus 4.6',
   'claude-sonnet-4-5-20250929': 'Claude Sonnet 4.5',
   'claude-sonnet-4-20250514': 'Claude Sonnet 4',
   'claude-opus-4-5-20251101': 'Claude Opus 4.5'
@@ -24,6 +25,7 @@ export const MODEL_DISPLAY_NAMES = {
 
 // Pricing per 1M tokens (USD)
 const PRICING = {
+  'claude-opus-4-6': { input: 5.00, output: 25.00 },
   'claude-sonnet-4-5-20250929': { input: 3.00, output: 15.00 },
   'claude-sonnet-4-20250514': { input: 3.00, output: 15.00 },
   'claude-opus-4-5-20251101': { input: 5.00, output: 25.00 },
@@ -102,7 +104,7 @@ Respond with this exact JSON structure (no other text):
 {"claims": [{"claim": "[Exact phrase]", "confidence": 85, "page": 1, "x": 25.0, "y": 14.5}]}`
 
 /**
- * Analyze a document and detect claims using Claude Sonnet 4.5
+ * Analyze a document and detect claims using Claude Opus 4.6
  *
  * @param {File|Blob} pdfFile - PDF file (unused when pageImages provided)
  * @param {Function} onProgress - Optional progress callback
@@ -138,7 +140,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     throw new Error('VITE_ANTHROPIC_API_KEY is not set in .env.local')
   }
 
-  onProgress?.(25, 'Sending to Claude Sonnet 4.5...')
+  onProgress?.(25, 'Sending to Claude Opus 4.6...')
 
   try {
     // Build content array - use page images if provided, otherwise fall back to PDF
@@ -191,7 +193,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
       },
       body: JSON.stringify({
         model: ANTHROPIC_MODEL,
-        max_tokens: 64000, // Max for Claude Sonnet 4.5
+        max_tokens: 64000, // Max for Claude Opus 4.6
         temperature: 0,    // Deterministic sampling
         messages: [
           {

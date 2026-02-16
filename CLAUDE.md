@@ -84,6 +84,11 @@ node scripts/index-references.js          # Batch-index all refs for fact extrac
 node scripts/index-references.js --force  # Re-index all (even already indexed)
 node scripts/index-references.js --brand "MKG Reference Library"  # Index one brand only
 node scripts/index-references.js --force --concurrency 5  # Control parallel extractions (default: 10)
+node scripts/embed-references.js                         # Batch-embed all refs for semantic search (requires VITE_GEMINI_API_KEY)
+node scripts/embed-references.js --force                 # Re-embed all (even already embedded)
+node scripts/embed-references.js --brand "MKG Reference Library"  # Embed one brand only
+node scripts/embed-references.js --force --concurrency 3 # Control parallel embeddings (default: 5)
+node scripts/benchmark-passages-search.js --claims-file path/to/claims.json --brand-id 1 --spawn-local  # Benchmark search recall/latency
 ```
 
 **Full development requires two terminals:**
@@ -105,11 +110,24 @@ VITE_ANTHROPIC_API_KEY=your_key
 
 Backend uses `backend/.env`:
 ```
-VITE_GEMINI_API_KEY=your_key     # Gemini access (frontend + backend fact indexing)
+VITE_GEMINI_API_KEY=your_key     # Gemini access (frontend + backend fact indexing + embeddings)
 VITE_OPENAI_API_KEY=your_key
 VITE_ANTHROPIC_API_KEY=your_key
+MATCHING_EMBED_CACHE_TTL_MS=300000       # Query embedding cache TTL (5 min default)
+MATCHING_EMBED_CACHE_MAX_ENTRIES=500     # Query embedding cache max size
 ```
 Defaults: port 3001, `./data/claims_detector.db`. No `.env.local` — all config lives in `.env`.
+
+Frontend matching tuning (optional, in `app/.env.local`):
+```
+VITE_MATCHING_HYBRID_ENABLED=true              # Hybrid reranking (default: true)
+VITE_MATCHING_AUTOCONFIRM_ENABLED=false        # Auto-confirm high-confidence matches (default: false)
+VITE_MATCHING_TOPK=20                          # Top-K passages to retrieve (default: 20)
+VITE_MATCHING_CANDIDATE_POOL=40               # Internal ranking depth (default: 40)
+VITE_MATCHING_CONFIRM_TOPN=8                  # Passages sent to AI confirmation (default: 8)
+VITE_MATCHING_CONFIRM_DIVERSITY_ENABLED=true  # Cap passages per reference in AI confirmation (default: true)
+VITE_MATCHING_CONFIRM_PER_REFERENCE_CAP=2     # Max passages per reference sent to AI (default: 2)
+```
 
 **Deployment:** Vercel config in `app/vercel.json`. Production redirects `/` → `/mkg`. SPA rewrites for `/mkg2`, `/demo`, and catch-all to `index.html`.
 
@@ -131,14 +149,14 @@ claims_detector/
 ├── backend/                      # Express + SQLite API
 │   ├── server.js                 # Entry point
 │   ├── migrations/               # SQL schema files (run on startup)
-│   ├── scripts/                  # preload-references.js, index-references.js
+│   ├── scripts/                  # preload-references.js, index-references.js, embed-references.js, benchmark-passages-search.js
 │   └── src/
 │       ├── app.js                # Express factory, CORS, route registration
 │       ├── config/               # database.js (SQLite + WAL), env.js
-│       ├── models/               # Brand, Reference, ClaimFeedback, Folder, ReferenceFact
-│       ├── controllers/          # brand, reference, file, feedback, fact controllers
+│       ├── models/               # Brand, Reference, ClaimFeedback, Folder, ReferenceFact, ReferencePassage
+│       ├── controllers/          # brand, reference, file, feedback, fact, passage controllers
 │       ├── routes/               # REST route wiring
-│       ├── services/             # textExtractor, aliasGenerator, factExtractor
+│       ├── services/             # textExtractor, aliasGenerator, factExtractor, passageEmbedder
 │       └── middleware/           # errorHandler, upload (Multer), validate
 ├── docs/                         # Briefs and plans
 └── MKG Knowledge Base/           # Source reference PDFs (54 files)
@@ -157,8 +175,8 @@ claims_detector/
 | `gemini.js` | Gemini claim detection + `matchClaimToReferences()` for reference mapping |
 | `openai.js` | GPT-4o claim detection (same interface) |
 | `anthropic.js` | Claude claim detection (same interface) |
-| `api.js` | Backend REST client (brands, references, folders, feedback, files, facts) |
-| `referenceMatching.js` | Three-tier pipeline: Tier 0 fact lookup → Tier 1 keyword pre-filter → Tier 2 Gemini AI matching |
+| `api.js` | Backend REST client (brands, references, folders, feedback, files, facts, passages) |
+| `referenceMatching.js` | Hybrid matching pipeline: semantic search → hybrid rerank → diversity selection → AI confirmation (keyword fallback) |
 
 ### Backend API
 
@@ -167,7 +185,10 @@ claims_detector/
 | `GET/POST/DELETE /api/brands` | Brand CRUD |
 | `GET/POST/PATCH/DELETE /api/brands/:brandId/references` | Reference document CRUD with file upload |
 | `POST /api/brands/:brandId/references/bulk-move` | Move refs to folder |
-| `POST /api/brands/:brandId/references/bulk-delete` | Bulk delete refs |
+| `POST /api/brands/:brandId/references/bulk-delete` | Bulk soft-delete refs (move to trash) |
+| `GET /api/brands/:brandId/references/trash` | List trashed references |
+| `POST /api/brands/:brandId/references/restore` | Bulk restore from trash |
+| `DELETE /api/brands/:brandId/references/permanent` | Bulk permanent delete (removes files from disk) |
 | `GET /api/files/references/:refId` | Serve reference PDF file |
 | `GET /api/files/references/:refId/text` | Get extracted text |
 | `GET/POST/PATCH /api/feedback` | Claim feedback persistence |
@@ -176,17 +197,22 @@ claims_detector/
 | `POST /api/references/:refId/facts/extract` | Trigger fact extraction for one reference |
 | `GET /api/brands/:brandId/facts/summary` | Fact counts + status for all refs in a brand |
 | `PATCH /api/facts/:factId/feedback` | Confirm or reject a specific fact |
+| `POST /api/brands/:brandId/passages/search` | Semantic search: embed claim, return top-K similar passages |
+| `GET /api/brands/:brandId/passages/status` | Embedding status per reference in a brand |
 
 ### Database
 
-SQLite with WAL mode, better-sqlite3 (synchronous). Key tables:
+SQLite with WAL mode, better-sqlite3 (synchronous), sqlite-vec extension loaded. Key tables:
 - `brands` — brand/client groupings
-- `reference_documents` — PDFs with pre-extracted `content_text`, `filename` (original), `display_alias` (editable name)
+- `reference_documents` — PDFs with pre-extracted `content_text`, `filename` (original), `display_alias` (editable name), `deleted_at` (soft delete timestamp, NULL = active)
 - `reference_facts` — pre-extracted structured facts per reference (`facts_json`, `extraction_status`, `confirmed_count`, `rejected_count`, `model_used`)
+- `reference_passages` — chunked passages with embedding vectors for semantic search (`passage_text`, `embedding` BLOB as Float32Array buffer 768-dim, `passage_index`, `page_estimate`, `start_char`, `end_char`)
 - `claim_feedback` — approve/reject decisions per claim
 - `folders` — organize reference documents
 
-Migrations run automatically on startup (001 → 002 → 003). The `preload` script reads PDFs from `MKG Knowledge Base/References/`, extracts text via pdf-parse, and inserts into DB. The `index-references` script batch-extracts structured facts from all references via Gemini.
+**Soft delete pattern:** `DELETE /api/brands/:brandId/references/:refId` sets `deleted_at` timestamp (soft delete). All queries filter `WHERE deleted_at IS NULL` by default. Restore sets `deleted_at = NULL` and moves to root folder (`folder_id = NULL`). Permanent delete removes the DB row and file from disk.
+
+Migrations run automatically on startup (001 → 002 → 003 → 004 → 005). The `preload` script reads PDFs from `MKG Knowledge Base/References/`, extracts text via pdf-parse, and inserts into DB. The `index-references` script batch-extracts structured facts from all references via Gemini. The `embed-references` script batch-embeds all reference passages for semantic search.
 
 ### AI Service Architecture
 
@@ -196,12 +222,20 @@ Three interchangeable AI backends in `src/services/`. All send PDFs as base64 wi
 
 ### POC2 Reference Matching Pipeline (MKG2)
 
-1. **Step 1:** Detect claims using selected AI model (same as POC1). If brand has indexed facts, a condensed fact inventory is appended to the detection prompt for grounded knowledge.
-2. **Step 2:** For each claim, three-tier matching:
-   - **Tier 0 (fast path):** Compare claim text against pre-extracted fact keywords. If >=75% keyword overlap, return match immediately (no AI call needed).
-   - **Tier 1:** Keyword pre-filter narrows 54 references to top 5-8.
-   - **Tier 2:** Gemini AI matches claim → reference with page/excerpt.
-3. **All claims always shown** — over-flag principle means we never hide unmatched claims. AI Discovery toggle was removed.
+1. **Step 1: Claim Detection** — selected AI model (same as POC1). If brand has indexed facts, a condensed fact inventory is appended to the detection prompt for grounded knowledge.
+2. **Step 2: Hybrid Matching** — for each claim (deduplicated, concurrent batches of 3):
+   - **Semantic search** — backend embeds claim via Gemini `gemini-embedding-001` (768-dim, cached 5 min), KNN cosine similarity across all brand passages (computed in JS, not sqlite-vec virtual tables)
+   - **Hybrid reranking** — combines semantic (75%), keyword (15%), and numeric overlap (10%) into a `hybrid_score`
+   - **Diversity selection** — caps passages per reference (default 2) before AI confirmation to avoid one reference dominating
+   - **AI confirmation** — top 8 diverse candidates sent to Gemini 2.0 Flash (passage text truncated to ~3000 chars). AI returns `referenceIndex`, `referenceName`, `supportingExcerpt`, `confidence`
+   - **Auto-confirm** (disabled by default) — skips AI call if semantic >= 0.92, hybrid >= 0.76, keyword >= 0.10, lead margin >= 0.10
+   - **Fallback** — keyword matching if backend semantic search fails (e.g., embeddings not generated)
+   - **AI failure fallback** — if AI confirmation errors, uses top semantic result directly if similarity >= 0.85 or hybrid >= 0.78
+3. **Claim dedup at matching stage** — identical claim texts are matched once; result is fanned out to duplicates
+4. **All claims always shown** — over-flag principle means we never hide unmatched claims
+5. **Telemetry** — `matchAllClaimsToReferences()` returns `{ claims, telemetry }` with timing stats, cache hits, tier counts, diversity metrics
+
+**Match tiers:** `hybrid-semantic` (AI confirmed), `hybrid-autoconfirm` (score gating), `hybrid-direct` (AI error fallback), `keyword-fallback` (no embeddings)
 
 ### Reference Fact Indexing
 
@@ -210,9 +244,19 @@ Pre-extracts structured facts (efficacy, safety, dosage, mechanism, population, 
 - **Batch indexing:** `node scripts/index-references.js` processes unindexed refs in parallel (default concurrency: 10, configurable via `--concurrency <n>`)
 - **Auto-index on upload:** New references are automatically indexed async after upload (non-blocking, requires `VITE_GEMINI_API_KEY`)
 - **Detection integration:** Fact inventory appended to all 3 AI prompts when brand has indexed refs
-- **Matching integration:** Tier 0 uses fact keywords for fast direct matching before keyword pre-filter
-- **Feedback weighting:** Confirmed facts get +10% boost in Tier 0 scoring; mostly-rejected facts get -20% penalty
 - **Library UI:** "Indexing..." badge on pending refs, "Index failed" with retry button on failed refs, no badge when indexed
+
+### Reference Passage Embeddings
+
+Pre-chunks reference documents into overlapping passages and embeds each via Gemini `gemini-embedding-001` (768-dim vectors via MRL dimensionality reduction from 3072). Stored as `Float32Array` buffers in `reference_passages` table, searched via JS cosine similarity.
+
+- **Chunking:** `passageEmbedder.js` — 2400 chars / 400 overlap for normal docs; 1800 chars / 300 overlap for dense docs (120K+ chars). Breaks at sentence boundaries when possible.
+- **Batch embedding:** `node scripts/embed-references.js` with `--force`, `--brand`, `--concurrency`, `--chunk-size`, `--chunk-overlap`, `--limit`, `--dry-run` flags. Default concurrency: 5. Retry logic for 429 rate limit errors.
+- **Auto-embed on upload:** New references are automatically chunked and embedded async after upload (non-blocking, requires `VITE_GEMINI_API_KEY`)
+- **Search:** `POST /api/brands/:brandId/passages/search` — embeds query text (LRU-cached 5 min, 500 entries max), KNN cosine similarity in JS across all brand passages, returns candidate pool with `passage_text` hydrated only for top results
+- **Status:** `GET /api/brands/:brandId/passages/status` — embedding status per reference
+- **Benchmarking:** `node scripts/benchmark-passages-search.js` — tests semantic search recall (recall@1, recall@5, recall@20) and latency (p50/p95/p99). Accepts JSON claims file with expected reference labels. Flags: `--claims-file`, `--brand-id`, `--spawn-local`, `--top-k`, `--candidate-pool`, `--scorecard`, `--label`
+- **Dependencies:** `sqlite-vec` (loaded into better-sqlite3), `gemini-embedding-001` via `@google/genai`
 
 ### Claim Schema
 ```javascript
@@ -266,3 +310,6 @@ The prompt includes: "Combine related statements into ONE claim if same substant
 | Same stat in slide + notes = 1 pin | Deduplication rule | Expected behavior |
 | `/api` routes return 404 | Backend not running | Start backend: `cd backend && npm run dev` |
 | Build warning >500KB chunk | pdf.js worker | Expected, not an error |
+| Reference matching returns very few matches | `matchClaimToReferences()` returns array instead of object | Gemini AI sometimes returns `[{matched:true,...}]` array; `referenceMatching.js` normalizes with `Array.isArray()` check |
+| `response.embedding.values` is undefined | `@google/genai` SDK response format | Use `response.embeddings[0].values` (plural `embeddings`, array index) |
+| Passage search returns 0 results | Embeddings not generated for brand | Run `cd backend && node scripts/embed-references.js` |

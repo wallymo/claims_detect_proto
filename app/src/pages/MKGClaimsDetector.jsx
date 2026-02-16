@@ -29,15 +29,15 @@ import { logger } from '@/utils/logger'
 // Model routing map
 const MODEL_ANALYZERS = {
   'gemini-3-pro': analyzeWithGemini,
-  'claude-sonnet-4.5': analyzeWithAnthropic,
-  'gpt-4o': analyzeWithOpenAI
+  'claude-opus-4.6': analyzeWithAnthropic,
+  'gpt-5.2-codex': analyzeWithOpenAI
 }
 
 // AI Model options - SSOT
 const MODEL_OPTIONS = [
   { id: 'gemini-3-pro', label: 'Google Gemini 3 Pro' },
-  { id: 'claude-sonnet-4.5', label: 'Claude Sonnet 4.5' },
-  { id: 'gpt-4o', label: 'OpenAI GPT-4o' }
+  { id: 'claude-opus-4.6', label: 'Claude Opus 4.6' },
+  { id: 'gpt-5.2-codex', label: 'OpenAI GPT-5.2 Codex' }
 ]
 
 // Prompt options for Claim Focus dropdown

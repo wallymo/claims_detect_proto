@@ -23,8 +23,8 @@ import { getClaimsForDocument, CLAIM_TYPES } from '@/mocks/claims'
 
 const MODEL_OPTIONS = [
   { id: 'gemini-3', label: 'Google Gemini 3' },
-  { id: 'claude-opus', label: 'Claude Opus 4.5' },
-  { id: 'gpt-4o', label: 'OpenAI GPT-4o' }
+  { id: 'claude-opus', label: 'Claude Opus 4.6' },
+  { id: 'codex-5.3', label: 'OpenAI GPT-5.2 Codex' }
 ]
 
 export default function Home() {

@@ -9,6 +9,10 @@
   z-index: 10;
 }
 
+[data-theme="dark"] .overlay {
+  background: rgba(26, 26, 26, 0.85);
+}
+
 .scanLine {
   position: absolute;
   left: 0;

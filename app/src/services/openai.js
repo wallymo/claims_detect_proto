@@ -1,8 +1,8 @@
 /**
- * OpenAI API Service - GPT-4o for PDF/Vision analysis
+ * OpenAI API Service - GPT-5.2 Codex for PDF/Vision analysis
  *
  * This service handles:
- * - PDF document analysis and claim detection using GPT-4o vision
+ * - PDF document analysis and claim detection using GPT-5.2 Codex vision
  * - Maintains same interface as gemini.js for easy swapping
  *
  * Updated to use the new Responses API (2025):
@@ -33,11 +33,12 @@ const getOpenAIClient = () => {
   return openaiClient
 }
 
-// Model configuration - using GPT-4o (gpt-5 available but keeping 4o for cost)
-export const OPENAI_MODEL = 'gpt-4o'
+// Model configuration
+export const OPENAI_MODEL = 'gpt-5.2-codex'
 
 // Friendly display names
 export const MODEL_DISPLAY_NAMES = {
+  'gpt-5.2-codex': 'GPT-5.2 Codex',
   'gpt-4o': 'GPT-4o',
   'gpt-4o-mini': 'GPT-4o Mini',
   'gpt-5': 'GPT-5'
@@ -45,9 +46,10 @@ export const MODEL_DISPLAY_NAMES = {
 
 // Pricing per 1M tokens (USD)
 const PRICING = {
+  'gpt-5.2-codex': { input: 2.50, output: 10.00 }, // Placeholder - update when pricing confirmed
   'gpt-4o': { input: 2.50, output: 10.00 },
   'gpt-4o-mini': { input: 0.15, output: 0.60 },
-  'gpt-5': { input: 2.50, output: 10.00 }, // Placeholder - update when pricing confirmed
+  'gpt-5': { input: 2.50, output: 10.00 },
   'default': { input: 2.50, output: 10.00 }
 }
 
@@ -179,7 +181,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
         ...pageImages.map(img => ({
           type: 'input_image',
           image_url: `data:image/png;base64,${img.base64}`,
-          detail: 'high'
+          detail: 'auto'
         }))
       ]
     } else {
@@ -236,8 +238,6 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
           strict: true
         }
       },
-      temperature: 0,
-      top_p: 0.1  // Low top_p for more deterministic sampling
     })
 
     onProgress?.(75, 'Processing results...')
