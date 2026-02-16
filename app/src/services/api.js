@@ -190,6 +190,24 @@ export async function updateFactFeedback(factId, { reference_id, decision }) {
   })
 }
 
+// ========== Passages (Semantic Search) ==========
+
+export async function searchPassages(brandId, claimText, topK = 5, options = {}) {
+  const body = { claim_text: claimText, top_k: topK }
+  if (Number.isFinite(options.candidatePool) && options.candidatePool > 0) {
+    body.candidate_pool = options.candidatePool
+  }
+
+  return request(`/brands/${brandId}/passages/search`, {
+    method: 'POST',
+    body: JSON.stringify(body)
+  })
+}
+
+export async function fetchPassageStatus(brandId) {
+  return request(`/brands/${brandId}/passages/status`)
+}
+
 // ========== Feedback ==========
 
 export async function createFeedback({ claim_id, document_id, reference_doc_id, decision, reason, confidence_score }) {

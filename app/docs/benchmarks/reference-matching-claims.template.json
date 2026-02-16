@@ -1,0 +1,17 @@
+{
+  "dataset_name": "reference-matching-benchmark-v1",
+  "claims": [
+    {
+      "id": "claim-001",
+      "brand_id": 1,
+      "claim_text": "Replace with a real claim sentence from your benchmark set.",
+      "expected_reference_alias": "Reference Display Alias Here"
+    },
+    {
+      "id": "claim-002",
+      "brand_id": 1,
+      "claim_text": "Replace with another benchmark claim.",
+      "expected_reference_id": 123
+    }
+  ]
+}

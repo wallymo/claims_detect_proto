@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3'
+import * as sqliteVec from 'sqlite-vec'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -20,6 +21,8 @@ export function initDb() {
   db = new Database(path.resolve(env.DB_PATH))
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
+
+  sqliteVec.load(db)
 
   // Run migrations
   const migrationPath = path.resolve(__dirname, '../../migrations/001_initial_schema.sql')
@@ -58,6 +61,11 @@ export function initDb() {
       }
     }
   }
+
+  // 005: reference_passages for semantic search embeddings
+  const migration005Path = path.resolve(__dirname, '../../migrations/005_reference_passages.sql')
+  const migration005 = fs.readFileSync(migration005Path, 'utf-8')
+  db.exec(migration005)
 
   console.log('Database initialized:', env.DB_PATH)
   return db

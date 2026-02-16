@@ -4,10 +4,12 @@ import fileRoutes from './files.js'
 import feedbackRoutes from './feedback.js'
 import folderRoutes from './folders.js'
 import { brandFactRoutes, referenceFactRoutes, factRoutes } from './facts.js'
+import passageRoutes from './passages.js'
 
 export function registerRoutes(app) {
   app.use('/api/brands', brandRoutes)
   app.use('/api/brands/:brandId/references', referenceRoutes)
+  app.use('/api/brands/:brandId/passages', passageRoutes)
   app.use('/api/brands/:brandId', brandFactRoutes)
   app.use('/api/references', referenceFactRoutes)
   app.use('/api/facts', factRoutes)

@@ -33,14 +33,14 @@ import { logger } from '@/utils/logger'
 // Model routing
 const MODEL_ANALYZERS = {
   'gemini-3-pro': analyzeWithGemini,
-  'claude-sonnet-4.5': analyzeWithAnthropic,
-  'gpt-4o': analyzeWithOpenAI
+  'claude-opus-4.6': analyzeWithAnthropic,
+  'gpt-5.2-codex': analyzeWithOpenAI
 }
 
 const MODEL_OPTIONS = [
   { id: 'gemini-3-pro', label: 'Google Gemini 3 Pro' },
-  { id: 'claude-sonnet-4.5', label: 'Claude Sonnet 4.5' },
-  { id: 'gpt-4o', label: 'OpenAI GPT-4o' }
+  { id: 'claude-opus-4.6', label: 'Claude Opus 4.6' },
+  { id: 'gpt-5.2-codex', label: 'OpenAI GPT-5.2 Codex' }
 ]
 
 const PROMPT_OPTIONS = [
@@ -63,7 +63,7 @@ export default function MKG2ClaimsDetector() {
 
   // Settings state
   const [selectedModel, setSelectedModel] = useState('gemini-3-pro')
-  const [selectedPrompt, setSelectedPrompt] = useState('all-claims')
+  const [selectedPrompt, _setSelectedPrompt] = useState('all-claims')
   const [editablePrompt, setEditablePrompt] = useState('')
   const [isEditingPrompt, setIsEditingPrompt] = useState(false)
   const [selectedDocType, setSelectedDocType] = useState('speaker-notes')
@@ -94,7 +94,7 @@ export default function MKG2ClaimsDetector() {
 
   // Reference matching state
   const [isMatching, setIsMatching] = useState(false)
-  const [matchingComplete, setMatchingComplete] = useState(false)
+  const [_matchingComplete, setMatchingComplete] = useState(false)
   const [matchingProgress, setMatchingProgress] = useState('')
   const [matchingStats, setMatchingStats] = useState(null)
 
@@ -264,7 +264,7 @@ export default function MKG2ClaimsDetector() {
           facts_count: ref.facts_count || 0
         })))
       } catch (err) {
-        console.warn('Failed to load trash:', err)
+        logger.warn('Failed to load trash:', err)
       }
     } catch (err) {
       logger.error('Failed to load references:', err)
@@ -450,7 +450,7 @@ export default function MKG2ClaimsDetector() {
     setAnalysisProgress(0)
     setAnalysisStatus('Starting...')
     setMatchingStats(null)
-    const startTime = Date.now()
+    const analysisStartedAt = Date.now()
 
     try {
       const analyzeDocument = MODEL_ANALYZERS[selectedModel] || analyzeWithGemini
@@ -516,7 +516,8 @@ export default function MKG2ClaimsDetector() {
 
       const indexedClaims = addGlobalIndices(claimsWithPositions)
       setClaims(indexedClaims)
-      setProcessingTime(Date.now() - startTime)
+      const analysisTotalMs = Date.now() - analysisStartedAt
+      setProcessingTime(analysisTotalMs)
 
       // Track cost
       if (result.usage) {
@@ -532,10 +533,17 @@ export default function MKG2ClaimsDetector() {
       setAnalysisStatus('Claims detected')
       setAnalysisComplete(true)
       setIsAnalyzing(false)
+      logger.info({
+        event: 'mkg2_analysis_summary',
+        analysis_total_ms: analysisTotalMs,
+        total_claims: indexedClaims.length,
+        model: selectedModel,
+        doc_type: selectedDocType
+      })
 
       // Step 2: Auto-trigger reference matching
       if (selectedBrandId && referenceDocuments.length > 0) {
-        await runReferenceMatching(indexedClaims)
+        await runReferenceMatching(indexedClaims, analysisTotalMs)
       }
     } catch (error) {
       logger.error('Analysis error:', error)
@@ -546,82 +554,103 @@ export default function MKG2ClaimsDetector() {
 
   // ===== Reference Matching (Step 2) =====
 
-  const runReferenceMatching = async (detectedClaims) => {
+  const runReferenceMatching = async (detectedClaims, analysisTotalMs = null) => {
     setIsMatching(true)
-    setMatchingProgress('Loading reference texts...')
+    setMatchingProgress('Preparing semantic retrieval...')
+    const matchingStartedAt = Date.now()
 
     try {
-      // Fetch full text for all references
-      const refsWithText = await Promise.all(
-        referenceDocuments.map(async (ref) => {
-          try {
-            const textData = await api.fetchReferenceText(ref.id)
-            return {
-              id: ref.id,
-              display_alias: ref.name,
-              content_text: textData.content_text
-            }
-          } catch {
-            return {
-              id: ref.id,
-              display_alias: ref.name,
-              content_text: null
-            }
-          }
-        })
-      )
-
-      const validRefs = refsWithText.filter(r => r.content_text)
-      if (validRefs.length === 0) {
-        setMatchingProgress('No reference texts available for matching')
+      if (!detectedClaims.length) {
+        setMatchingProgress('No claims detected for matching')
         setIsMatching(false)
         return
       }
 
-      setMatchingProgress(`Matching claims to ${validRefs.length} references...`)
+      const referencesForMatch = referenceDocuments.map(ref => ({
+        id: ref.id,
+        display_alias: ref.name
+      }))
 
-      // Fetch brand facts for Tier 0 matching
-      let brandFacts = []
-      const matchFactBrandId = libraryBrandId || selectedBrandId
-      if (matchFactBrandId) {
-        try {
-          const factRefs = await api.fetchFactsSummary(matchFactBrandId)
-          const indexedRefIds = factRefs
-            .filter(r => r.extraction_status === 'indexed' && r.facts_count > 0)
-            .map(r => r.reference_id)
-
-          if (indexedRefIds.length > 0) {
-            const factsResults = await Promise.all(
-              indexedRefIds.map(refId => api.fetchFacts(matchFactBrandId, refId))
-            )
-            brandFacts = factsResults.map(r => ({
-              reference_id: r.reference_id,
-              display_alias: validRefs.find(v => v.id === r.reference_id)?.display_alias || '',
-              facts: r.facts || [],
-              confirmed_count: r.confirmed_count || 0,
-              rejected_count: r.rejected_count || 0
-            }))
-            logger.info(`Loaded facts from ${brandFacts.length} refs for Tier 0 matching`)
-          }
-        } catch (err) {
-          logger.warn('Could not load brand facts for matching:', err.message)
-        }
+      if (referencesForMatch.length === 0) {
+        setMatchingProgress('No references available for matching')
+        setIsMatching(false)
+        return
       }
 
-      const enrichedClaims = await matchAllClaimsToReferences(
+      const matchBrandId = libraryBrandId || selectedBrandId
+      if (!matchBrandId) {
+        throw new Error('No brand selected for reference matching')
+      }
+
+      const { claims: enrichedClaims, telemetry } = await matchAllClaimsToReferences(
         detectedClaims,
-        validRefs,
-        (current, total) => {
-          setMatchingProgress(`Matching claim ${current} of ${total}...`)
+        referencesForMatch,
+        ({ current, total, claimIndex, stage }) => {
+          const claimNumber = stage === 'done'
+            ? current
+            : claimIndex || Math.min(current + 1, total)
+
+          if (stage === 'retrieve') {
+            setMatchingProgress(`Retrieving candidates for claim ${claimNumber} of ${total}...`)
+            return
+          }
+
+          if (stage === 'confirm') {
+            setMatchingProgress(`Confirming support for claim ${claimNumber} of ${total}...`)
+            return
+          }
+
+          if (stage === 'fallback') {
+            setMatchingProgress(`Running fallback matching for claim ${claimNumber} of ${total}...`)
+            return
+          }
+
+          setMatchingProgress(`Matched claim ${claimNumber} of ${total}...`)
         },
-        brandFacts
+        matchBrandId
       )
 
+      const matchingTotalMs = Date.now() - matchingStartedAt
       setClaims(enrichedClaims)
       const stats = getMatchingStats(enrichedClaims)
-      setMatchingStats(stats)
+      const enrichedStats = {
+        ...stats,
+        matching_total_ms: telemetry?.matching_total_ms ?? matchingTotalMs,
+        reference_fetch_ms: telemetry?.reference_fetch_ms ?? 0,
+        per_claim_match_ms: telemetry?.per_claim_match_ms,
+        top_k: telemetry?.top_k,
+        candidate_pool: telemetry?.candidate_pool,
+        unique_claims: telemetry?.unique_claims,
+        duplicate_claims: telemetry?.duplicate_claims,
+        autoconfirm_count: telemetry?.autoconfirm_count,
+        confirmation_count: telemetry?.confirmation_count,
+        confirmation_skipped_count: telemetry?.confirmation_skipped_count,
+        hybrid_enabled: telemetry?.hybrid_enabled,
+        autoconfirm_enabled: telemetry?.autoconfirm_enabled
+      }
+      setMatchingStats(enrichedStats)
       setMatchingComplete(true)
       setMatchingProgress('')
+      logger.info({
+        event: 'mkg2_matching_summary',
+        analysis_total_ms: analysisTotalMs,
+        matching_total_ms: enrichedStats.matching_total_ms,
+        reference_fetch_ms: enrichedStats.reference_fetch_ms,
+        per_claim_match_ms: enrichedStats.per_claim_match_ms,
+        top_k: enrichedStats.top_k,
+        candidate_pool: enrichedStats.candidate_pool,
+        unique_claims: enrichedStats.unique_claims,
+        duplicate_claims: enrichedStats.duplicate_claims,
+        autoconfirm_count: enrichedStats.autoconfirm_count,
+        confirmation_count: enrichedStats.confirmation_count,
+        confirmation_skipped_count: enrichedStats.confirmation_skipped_count,
+        hybrid_enabled: enrichedStats.hybrid_enabled,
+        autoconfirm_enabled: enrichedStats.autoconfirm_enabled,
+        total_claims: stats.total,
+        matched_count: stats.matched,
+        unmatched_count: stats.unmatched,
+        tier_breakdown: stats.tiers
+      })
     } catch (error) {
       logger.error('Reference matching error:', error)
       setMatchingProgress(`Matching error: ${error.message}`)

@@ -37,6 +37,13 @@
 ## Security and Operations
 - AI provider API keys are currently used in the browser. For production, move provider calls to a backend proxy and remove keys from client-side code.
 - Use `VITE_LOG_LEVEL` to control client logging (`error`, `warn`, `info`, `debug`).
+- Reference matching flags (frontend):
+  - `VITE_MATCHING_HYBRID_ENABLED` (default `true`)
+  - `VITE_MATCHING_AUTOCONFIRM_ENABLED` (default `false`)
+  - `VITE_MATCHING_TOPK` (default `20`)
+  - `VITE_MATCHING_CANDIDATE_POOL` (default `40`)
+  - `VITE_MATCHING_CONFIRM_TOPN` (default `8`)
+- Benchmark runbook: `docs/workflow/reference-matching-benchmark.md`
 
 ## Contributing
 See CONTRIBUTING.md.

@@ -1,8 +1,10 @@
 import { Reference } from '../models/Reference.js'
 import { Brand } from '../models/Brand.js'
 import { ReferenceFact } from '../models/ReferenceFact.js'
+import { ReferencePassage } from '../models/ReferencePassage.js'
 import { extractText } from '../services/textExtractor.js'
 import { extractFacts } from '../services/factExtractor.js'
+import { embedReference } from '../services/passageEmbedder.js'
 import { generateAlias } from '../services/aliasGenerator.js'
 import { AppError } from '../middleware/errorHandler.js'
 import path from 'path'
@@ -48,6 +50,16 @@ export const referenceController = {
           .catch(err => {
             console.error(`Auto-index failed for ref ${ref.id}:`, err.message)
             ReferenceFact.updateStatus(ref.id, 'failed', err.message)
+          })
+
+        // Auto-embed: create passage embeddings for semantic search
+        embedReference(text)
+          .then(passages => {
+            ReferencePassage.createPassages(ref.id, passages)
+            console.log(`Auto-embedded ref ${ref.id} (${displayAlias}): ${passages.length} passages`)
+          })
+          .catch(err => {
+            console.error(`Auto-embed failed for ref ${ref.id}:`, err.message)
           })
       }
 
