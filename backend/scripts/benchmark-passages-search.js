@@ -133,7 +133,7 @@ function normalizeClaims(raw, defaultBrandId) {
       claimText: String(claimText).trim(),
       brandId: parsePositiveInt(entry.brand_id || entry.brandId, defaultBrandId),
       expectedReferenceId: parsePositiveInt(entry.expected_reference_id || entry.expectedReferenceId, null),
-      expectedAlias: entry.expected_alias || entry.expectedAlias || entry.expected_display_alias || null
+      expectedAlias: entry.expected_reference_alias || entry.expected_alias || entry.expectedAlias || entry.expected_display_alias || null
     }
   })
 }

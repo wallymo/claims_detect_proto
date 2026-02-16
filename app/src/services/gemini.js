@@ -113,6 +113,58 @@ function calculateCost(model, inputTokens, outputTokens) {
 }
 
 /**
+ * Parse model JSON output robustly.
+ * Some responses still include markdown fences or extra text around JSON.
+ */
+function parseJsonResponse(rawText, contextLabel = 'Gemini response') {
+  const text = typeof rawText === 'string' ? rawText.trim() : ''
+  if (!text) {
+    throw new Error(`${contextLabel} was empty`)
+  }
+
+  const candidates = []
+  const seen = new Set()
+  const pushCandidate = (value) => {
+    const normalized = String(value || '').trim()
+    if (!normalized || seen.has(normalized)) return
+    seen.add(normalized)
+    candidates.push(normalized)
+  }
+
+  pushCandidate(text)
+
+  const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fencedMatch?.[1]) {
+    pushCandidate(fencedMatch[1])
+  }
+
+  const objectStart = text.indexOf('{')
+  const arrayStart = text.indexOf('[')
+  const hasObject = objectStart >= 0
+  const hasArray = arrayStart >= 0
+
+  if (hasObject || hasArray) {
+    const start = hasObject && hasArray
+      ? Math.min(objectStart, arrayStart)
+      : hasObject ? objectStart : arrayStart
+    const end = Math.max(text.lastIndexOf('}'), text.lastIndexOf(']'))
+    if (start >= 0 && end > start) {
+      pushCandidate(text.slice(start, end + 1))
+    }
+  }
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate)
+    } catch {
+      // Try the next candidate variant.
+    }
+  }
+
+  throw new Error(`Failed to parse ${contextLabel} as JSON`)
+}
+
+/**
  * Convert a File object to base64 for Gemini API
  */
 export async function fileToBase64(file) {
@@ -521,9 +573,19 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
 export async function matchClaimToReferences(claimText, references) {
   const client = getGeminiClient()
 
-  const referenceList = references.map((ref, i) =>
-    `[${i + 1}] ${ref.name}\nContent excerpt: ${ref.excerpt || 'No excerpt available'}`
-  ).join('\n\n')
+  const referenceList = references.map((ref, i) => {
+    const scoreHints = []
+    if (Number.isFinite(ref.hybridScore)) scoreHints.push(`hybrid ${(ref.hybridScore * 100).toFixed(0)}%`)
+    if (Number.isFinite(ref.similarity)) scoreHints.push(`semantic ${(ref.similarity * 100).toFixed(0)}%`)
+    if (Number.isFinite(ref.keywordOverlap)) scoreHints.push(`keyword ${(ref.keywordOverlap * 100).toFixed(0)}%`)
+    if (Number.isFinite(ref.numericOverlap)) scoreHints.push(`numeric ${(ref.numericOverlap * 100).toFixed(0)}%`)
+
+    const meta = []
+    if (ref.page) meta.push(`Page: ${ref.page}`)
+    if (scoreHints.length > 0) meta.push(`Ranking hints: ${scoreHints.join(', ')}`)
+
+    return `[${i + 1}] ${ref.name}${meta.length ? `\n${meta.join('\n')}` : ''}\nContent excerpt: ${ref.excerpt || 'No excerpt available'}`
+  }).join('\n\n')
 
   const prompt = `You are a pharmaceutical reference matcher for MLR (Medical, Legal, Regulatory) review.
 
@@ -546,7 +608,10 @@ Return JSON with this structure:
   "reasoning": "Brief explanation of why this reference does or doesn't support the claim"
 }
 
-Only match if the reference actually substantiates the claim. A low confidence match is better than a false positive.`
+Rules:
+- If "matched" is true, "referenceIndex" MUST be a valid index from the list above.
+- Keep "referenceName" identical to the selected list entry name.
+- Only match if the reference actually substantiates the claim. A low confidence match is better than a false positive.`
 
   try {
     // Use gemini-2.0-flash for matching — gemini-3-pro-preview doesn't support responseMimeType JSON
@@ -561,13 +626,10 @@ Only match if the reference actually substantiates the claim. A low confidence m
     })
 
     const text = response.candidates?.[0]?.content?.parts?.[0]?.text || response.text
-    return JSON.parse(text)
+    return parseJsonResponse(text, 'Gemini reference matching response')
   } catch (error) {
     logger.error('Reference matching error:', error)
-    return {
-      matched: false,
-      error: error.message
-    }
+    throw new Error(`Reference matching request failed: ${error.message}`)
   }
 }
 

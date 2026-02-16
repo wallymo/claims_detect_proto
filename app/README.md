@@ -43,6 +43,8 @@
   - `VITE_MATCHING_TOPK` (default `20`)
   - `VITE_MATCHING_CANDIDATE_POOL` (default `40`)
   - `VITE_MATCHING_CONFIRM_TOPN` (default `8`)
+  - `VITE_MATCHING_CONFIRM_DIVERSITY_ENABLED` (default `true`)
+  - `VITE_MATCHING_CONFIRM_PER_REFERENCE_CAP` (default `2`)
 - Benchmark runbook: `docs/workflow/reference-matching-benchmark.md`
 
 ## Contributing

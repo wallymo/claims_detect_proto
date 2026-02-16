@@ -23,6 +23,8 @@ const MATCHING_AUTOCONFIRM_ENABLED = parseBooleanEnvFlag(viteEnv.VITE_MATCHING_A
 const DEFAULT_TOP_K = parsePositiveIntEnv(viteEnv.VITE_MATCHING_TOPK, 20)
 const DEFAULT_CANDIDATE_POOL = parsePositiveIntEnv(viteEnv.VITE_MATCHING_CANDIDATE_POOL, 40)
 const DEFAULT_AI_CONFIRMATION_CANDIDATES = parsePositiveIntEnv(viteEnv.VITE_MATCHING_CONFIRM_TOPN, 8)
+const MATCHING_CONFIRM_DIVERSITY_ENABLED = parseBooleanEnvFlag(viteEnv.VITE_MATCHING_CONFIRM_DIVERSITY_ENABLED, true)
+const DEFAULT_AI_CONFIRM_PER_REFERENCE_CAP = parsePositiveIntEnv(viteEnv.VITE_MATCHING_CONFIRM_PER_REFERENCE_CAP, 2)
 
 const HYBRID_WEIGHTS = {
   semantic: 0.75,
@@ -98,6 +100,163 @@ function normalizeClaimDedupKey(text) {
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+function normalizeAlias(text) {
+  if (!text) return ''
+  return String(text)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function parseReferenceIndex(value, maxCandidates) {
+  if (!maxCandidates || maxCandidates < 1 || value === null || value === undefined) {
+    return null
+  }
+
+  if (Number.isFinite(value)) {
+    const parsed = Math.trunc(value)
+    return parsed >= 1 && parsed <= maxCandidates ? parsed : null
+  }
+
+  const asText = String(value).trim()
+  if (!asText) return null
+
+  const direct = Number.parseInt(asText, 10)
+  if (Number.isFinite(direct) && direct >= 1 && direct <= maxCandidates) {
+    return direct
+  }
+
+  const extracted = asText.match(/\d+/)
+  if (extracted) {
+    const parsed = Number.parseInt(extracted[0], 10)
+    if (Number.isFinite(parsed) && parsed >= 1 && parsed <= maxCandidates) {
+      return parsed
+    }
+  }
+
+  return null
+}
+
+function candidateSelectionKey(candidate, fallbackIndex = 0) {
+  if (!candidate) return `candidate:${fallbackIndex}`
+
+  if (candidate.passage_id !== undefined && candidate.passage_id !== null) {
+    return `passage:${candidate.passage_id}`
+  }
+
+  if (candidate.id !== undefined && candidate.id !== null) {
+    return `id:${candidate.id}`
+  }
+
+  const refId = candidate.reference_id ?? candidate.display_alias ?? 'unknown'
+  const page = candidate.page_estimate ?? candidate.page ?? 'na'
+  const textSnippet = String(candidate.passage_text || candidate.excerpt || candidate.content_text || '')
+    .slice(0, 80)
+  return `fallback:${refId}:${page}:${textSnippet}:${fallbackIndex}`
+}
+
+function selectConfirmationCandidates(candidates, maxCandidates, perReferenceCap, diversityEnabled = true) {
+  const source = Array.isArray(candidates) ? candidates : []
+  if (!diversityEnabled || source.length <= 1 || perReferenceCap < 1) {
+    return source.slice(0, maxCandidates)
+  }
+
+  const selected = []
+  const selectedKeys = new Set()
+  const perRefCounts = new Map()
+
+  source.forEach((candidate, index) => {
+    if (selected.length >= maxCandidates) return
+
+    const key = candidateSelectionKey(candidate, index)
+    if (selectedKeys.has(key)) return
+
+    const refKey = candidate.reference_id ?? candidate.display_alias ?? `unknown-${index}`
+    const refCount = perRefCounts.get(refKey) || 0
+    if (refCount >= perReferenceCap) return
+
+    selected.push(candidate)
+    selectedKeys.add(key)
+    perRefCounts.set(refKey, refCount + 1)
+  })
+
+  if (selected.length < maxCandidates) {
+    source.forEach((candidate, index) => {
+      if (selected.length >= maxCandidates) return
+      const key = candidateSelectionKey(candidate, index)
+      if (selectedKeys.has(key)) return
+      selected.push(candidate)
+      selectedKeys.add(key)
+    })
+  }
+
+  return selected
+}
+
+function resolveMatchConfidence(rawConfidence, fallback) {
+  if (Number.isFinite(rawConfidence)) {
+    if (rawConfidence > 1 && rawConfidence <= 100) {
+      return clamp(rawConfidence / 100, 0, 1)
+    }
+    return clamp(rawConfidence, 0, 1)
+  }
+
+  if (typeof rawConfidence === 'string') {
+    const parsed = Number.parseFloat(rawConfidence)
+    if (Number.isFinite(parsed)) {
+      if (parsed > 1 && parsed <= 100) {
+        return clamp(parsed / 100, 0, 1)
+      }
+      return clamp(parsed, 0, 1)
+    }
+  }
+
+  return fallback
+}
+
+function selectAICandidate(result, candidates) {
+  if (!result?.matched || !Array.isArray(candidates) || candidates.length === 0) {
+    return null
+  }
+
+  if (candidates.length === 1) {
+    return candidates[0]
+  }
+
+  const index = parseReferenceIndex(result.referenceIndex, candidates.length)
+  if (index) {
+    return candidates[index - 1]
+  }
+
+  const resultName = normalizeAlias(result.referenceName)
+  if (resultName) {
+    const exactNameMatch = candidates.find(candidate => {
+      const candidateName = normalizeAlias(candidate.display_alias || candidate.name)
+      return candidateName === resultName
+    })
+    if (exactNameMatch) return exactNameMatch
+
+    const fuzzyNameMatch = candidates.find(candidate => {
+      const candidateName = normalizeAlias(candidate.display_alias || candidate.name)
+      return candidateName.includes(resultName) || resultName.includes(candidateName)
+    })
+    if (fuzzyNameMatch) return fuzzyNameMatch
+  }
+
+  const excerpt = normalizeAlias(result.supportingExcerpt)
+  if (excerpt.length >= 20) {
+    const excerptNeedle = excerpt.slice(0, 180)
+    const excerptMatch = candidates.find(candidate => {
+      const candidateText = normalizeAlias(candidate.passage_text || candidate.content_text || candidate.excerpt)
+      return candidateText.includes(excerptNeedle)
+    })
+    if (excerptMatch) return excerptMatch
+  }
+
+  return null
 }
 
 function buildClaimGroups(claims) {
@@ -291,6 +450,7 @@ async function matchSingleClaim(claim, brandId, allReferences, options = {}) {
     topK = DEFAULT_TOP_K,
     candidatePool = DEFAULT_CANDIDATE_POOL,
     aiConfirmationCandidates = DEFAULT_AI_CONFIRMATION_CANDIDATES,
+    aiConfirmPerReferenceCap = DEFAULT_AI_CONFIRM_PER_REFERENCE_CAP,
     telemetry,
     onStage,
     getFallbackReferencesWithText
@@ -304,8 +464,9 @@ async function matchSingleClaim(claim, brandId, allReferences, options = {}) {
     try {
       telemetry.semantic_search_count++
       onStage?.('retrieve')
-      const response = await api.searchPassages(brandId, claim.text, topK, { candidatePool })
-      searchResults = response.results || []
+      const retrievalTopK = Math.max(topK, candidatePool)
+      const response = await api.searchPassages(brandId, claim.text, retrievalTopK, { candidatePool })
+      searchResults = (response.results || []).slice(0, candidatePool)
     } catch (err) {
       telemetry.keyword_fallback_count++
       onStage?.('fallback')
@@ -346,8 +507,22 @@ async function matchSingleClaim(claim, brandId, allReferences, options = {}) {
     }
 
     // Step 3: AI confirmation for ambiguous cases only
-    const aiCandidates = rerankedResults.slice(0, aiConfirmationCandidates)
+    const baselineCandidates = rerankedResults.slice(0, aiConfirmationCandidates)
+    const preDiversityCount = baselineCandidates.length
+    const aiCandidates = selectConfirmationCandidates(
+      rerankedResults,
+      aiConfirmationCandidates,
+      aiConfirmPerReferenceCap,
+      MATCHING_CONFIRM_DIVERSITY_ENABLED
+    )
     telemetry.ai_candidates_total += aiCandidates.length
+    telemetry.ai_candidates_pre_diversity_total += preDiversityCount
+    telemetry.ai_diversity_pruned_total += Math.max(0, preDiversityCount - aiCandidates.length)
+    const baselineKeys = new Set(baselineCandidates.map((candidate, index) => candidateSelectionKey(candidate, index)))
+    const replacementCount = aiCandidates.reduce((count, candidate, index) => (
+      baselineKeys.has(candidateSelectionKey(candidate, index)) ? count : count + 1
+    ), 0)
+    telemetry.ai_diversity_replacements_total += replacementCount
 
     const refsForAI = aiCandidates.map((result) => ({
       name: result.display_alias,
@@ -369,30 +544,34 @@ async function matchSingleClaim(claim, brandId, allReferences, options = {}) {
         result = result.find(r => r.matched) || result[0] || { matched: false }
       }
 
-      const referenceIndex = Number.parseInt(result.referenceIndex, 10)
-      if (result.matched && Number.isFinite(referenceIndex) && referenceIndex > 0) {
-        const matchedResult = aiCandidates[referenceIndex - 1]
-        if (matchedResult) {
-          // Look up the full reference object to get the ID
-          const refObj = allReferences.find(r =>
-            r.display_alias === matchedResult.display_alias ||
-            r.id === matchedResult.reference_id
-          )
+      const matchedResult = selectAICandidate(result, aiCandidates)
+      if (result.matched && matchedResult) {
+        // Look up the full reference object to get the ID
+        const refObj = allReferences.find(r =>
+          normalizeAlias(r.display_alias) === normalizeAlias(matchedResult.display_alias) ||
+          r.id === matchedResult.reference_id
+        )
 
-          return {
-            ...claim,
-            matched: true,
-            matchConfidence: result.confidence ?? matchedResult.hybrid_score,
-            matchTier: 'hybrid-semantic',
-            reference: {
-              id: refObj?.id || matchedResult.reference_id,
-              name: result.referenceName || matchedResult.display_alias,
-              page: result.pageInReference || matchedResult.page_estimate,
-              excerpt: result.supportingExcerpt
-            },
-            matchReasoning: result.reasoning
-          }
+        return {
+          ...claim,
+          matched: true,
+          matchConfidence: resolveMatchConfidence(result.confidence, matchedResult.hybrid_score),
+          matchTier: 'hybrid-semantic',
+          reference: {
+            id: refObj?.id || matchedResult.reference_id,
+            name: result.referenceName || matchedResult.display_alias,
+            page: result.pageInReference || matchedResult.page_estimate,
+            excerpt: result.supportingExcerpt || matchedResult.passage_text?.slice(0, 400)
+          },
+          matchReasoning: result.reasoning
         }
+      }
+
+      if (result.matched && !matchedResult) {
+        logger.warn(`AI confirmed claim ${claim.id} but did not return a resolvable reference identifier`, {
+          referenceIndex: result.referenceIndex,
+          referenceName: result.referenceName
+        })
       }
 
       return {
@@ -492,24 +671,29 @@ async function keywordFallbackMatch(claim, allReferences) {
     if (Array.isArray(result)) {
       result = result.find(r => r.matched) || result[0] || { matched: false }
     }
-    const referenceIndex = Number.parseInt(result.referenceIndex, 10)
-    if (result.matched && Number.isFinite(referenceIndex) && referenceIndex > 0) {
-      const matched = scored[referenceIndex - 1]
-      if (matched) {
-        return {
-          ...claim,
-          matched: true,
-          matchConfidence: result.confidence,
-          matchTier: 'keyword-fallback',
-          reference: {
-            id: matched.id,
-            name: result.referenceName || matched.display_alias,
-            page: result.pageInReference,
-            excerpt: result.supportingExcerpt
-          },
-          matchReasoning: result.reasoning + ' (keyword fallback)'
-        }
+
+    const matched = selectAICandidate(result, scored)
+    if (result.matched && matched) {
+      return {
+        ...claim,
+        matched: true,
+        matchConfidence: resolveMatchConfidence(result.confidence, matched.score),
+        matchTier: 'keyword-fallback',
+        reference: {
+          id: matched.id,
+          name: result.referenceName || matched.display_alias,
+          page: result.pageInReference,
+          excerpt: result.supportingExcerpt || matched.content_text?.slice(0, 300)
+        },
+        matchReasoning: result.reasoning + ' (keyword fallback)'
       }
+    }
+
+    if (result.matched && !matched) {
+      logger.warn(`Keyword fallback AI matched claim ${claim.id} without resolvable candidate`, {
+        referenceIndex: result.referenceIndex,
+        referenceName: result.referenceName
+      })
     }
     return { ...claim, matched: false, reference: null, matchReasoning: result.reasoning || 'No match found (fallback)' }
   } catch (error) {
@@ -533,7 +717,9 @@ export async function matchAllClaimsToReferences(claims, references, onProgress,
   const CONCURRENCY = options.concurrency || 3
   const topK = options.topK || DEFAULT_TOP_K
   const candidatePool = Math.max(topK, options.candidatePool || DEFAULT_CANDIDATE_POOL)
+  const retrievalTopK = Math.max(topK, candidatePool)
   const aiConfirmationCandidates = options.aiConfirmationCandidates || DEFAULT_AI_CONFIRMATION_CANDIDATES
+  const aiConfirmPerReferenceCap = options.aiConfirmPerReferenceCap || DEFAULT_AI_CONFIRM_PER_REFERENCE_CAP
   let completed = 0
   const results = new Array(claims.length)
   const startedAt = Date.now()
@@ -558,12 +744,18 @@ export async function matchAllClaimsToReferences(claims, references, onProgress,
     confirmation_count: 0,
     autoconfirm_count: 0,
     ai_candidates_total: 0,
+    ai_candidates_pre_diversity_total: 0,
+    ai_diversity_pruned_total: 0,
+    ai_diversity_replacements_total: 0,
     keyword_fallback_count: 0,
     top_k: topK,
+    retrieval_top_k: retrievalTopK,
     candidate_pool: candidatePool,
     ai_confirmation_candidates: aiConfirmationCandidates,
+    ai_confirm_per_reference_cap: aiConfirmPerReferenceCap,
     hybrid_enabled: MATCHING_HYBRID_ENABLED,
-    autoconfirm_enabled: MATCHING_AUTOCONFIRM_ENABLED
+    autoconfirm_enabled: MATCHING_AUTOCONFIRM_ENABLED,
+    confirm_diversity_enabled: MATCHING_CONFIRM_DIVERSITY_ENABLED
   }
 
   const getFallbackReferencesWithText = createFallbackReferenceLoader(references, telemetry)
@@ -578,6 +770,7 @@ export async function matchAllClaimsToReferences(claims, references, onProgress,
         topK,
         candidatePool,
         aiConfirmationCandidates,
+        aiConfirmPerReferenceCap,
         telemetry,
         getFallbackReferencesWithText,
         onStage: (stage) => {

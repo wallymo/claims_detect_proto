@@ -120,8 +120,7 @@ export const ReferencePassage = {
     const topCandidates = ranked.slice(0, poolSize)
     if (topCandidates.length === 0) return []
 
-    const responseCandidates = topCandidates.slice(0, topK)
-    const candidateIds = responseCandidates.map(candidate => candidate.passage_id)
+    const candidateIds = topCandidates.map(candidate => candidate.passage_id)
     const placeholders = candidateIds.map(() => '?').join(', ')
     const candidateTexts = db.prepare(`
       SELECT id, passage_text
@@ -131,9 +130,11 @@ export const ReferencePassage = {
 
     const textByPassageId = new Map(candidateTexts.map(row => [row.id, row.passage_text]))
 
-    return responseCandidates
-      .map(candidate => ({
+    return topCandidates
+      .map((candidate, index) => ({
         ...candidate,
+        rank: index + 1,
+        is_top_k: index < topK,
         passage_text: textByPassageId.get(candidate.passage_id) || ''
       }))
   }

@@ -112,6 +112,8 @@ export const passageController = {
 
       res.json({
         claim_text: claim_text.trim(),
+        top_k: topK,
+        candidate_pool: candidatePool,
         results,
         count: results.length
       })
