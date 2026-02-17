@@ -90,6 +90,44 @@ export function estimatePage(charOffset, charsPerPage = 3000) {
 }
 
 /**
+ * Resolve actual page number from character offset using page boundaries.
+ * Uses binary search for efficiency. Falls back to estimatePage if no boundaries.
+ */
+export function resolvePageFromBoundaries(charOffset, pageBoundaries) {
+  if (!pageBoundaries || pageBoundaries.length === 0) return null
+
+  // Handle underflow: offset before first boundary → first page
+  if (charOffset < pageBoundaries[0].startChar) {
+    return pageBoundaries[0].page
+  }
+
+  // Handle overflow: offset beyond last boundary → last page
+  const last = pageBoundaries[pageBoundaries.length - 1]
+  if (charOffset >= last.endChar) {
+    return last.page
+  }
+
+  // Binary search: find the page whose range contains charOffset
+  let lo = 0
+  let hi = pageBoundaries.length - 1
+
+  while (lo <= hi) {
+    const mid = (lo + hi) >>> 1
+    const boundary = pageBoundaries[mid]
+    if (charOffset < boundary.startChar) {
+      hi = mid - 1
+    } else if (charOffset >= boundary.endChar) {
+      lo = mid + 1
+    } else {
+      return boundary.page
+    }
+  }
+
+  // Fallback (shouldn't reach here with valid boundaries)
+  return last.page
+}
+
+/**
  * Generate embedding for a single text using Gemini embedding API.
  * Returns a Buffer containing the Float32Array data.
  */
@@ -116,10 +154,21 @@ export async function embedText(text, options = {}) {
 /**
  * Chunk and embed a full reference document.
  * Returns array of passage objects ready for ReferencePassage.createPassages().
+ *
+ * @param {string} contentText - Full document text
+ * @param {Object} options
+ * @param {Array} options.pageBoundaries - From extractTextByPage(). Provides real page numbers.
+ * @param {number} options.pageCount - Total page count. Used for improved estimation when no boundaries.
  */
 export async function embedReference(contentText, options = {}) {
   const { chunkSize, overlap } = resolveChunkingOptions(contentText.length, options)
   const chunks = chunkText(contentText, chunkSize, overlap)
+  const { pageBoundaries, pageCount } = options
+
+  // Compute improved charsPerPage when boundaries aren't available
+  const charsPerPage = (pageCount && pageCount > 0)
+    ? Math.max(1, Math.round(contentText.length / pageCount))
+    : 3000
 
   const passages = []
   for (let i = 0; i < chunks.length; i++) {
@@ -127,12 +176,16 @@ export async function embedReference(contentText, options = {}) {
 
     const embedding = await embedText(chunk.text, options)
 
+    // Resolve page: real boundaries > improved estimate > default estimate
+    const pageEstimate = resolvePageFromBoundaries(chunk.startChar, pageBoundaries)
+      ?? estimatePage(chunk.startChar, charsPerPage)
+
     passages.push({
       passage_index: i,
       passage_text: chunk.text,
       start_char: chunk.startChar,
       end_char: chunk.endChar,
-      page_estimate: estimatePage(chunk.startChar),
+      page_estimate: pageEstimate,
       embedding,
       embedding_model: options.model || EMBEDDING_MODEL
     })

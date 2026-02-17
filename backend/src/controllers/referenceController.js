@@ -2,7 +2,7 @@ import { Reference } from '../models/Reference.js'
 import { Brand } from '../models/Brand.js'
 import { ReferenceFact } from '../models/ReferenceFact.js'
 import { ReferencePassage } from '../models/ReferencePassage.js'
-import { extractText } from '../services/textExtractor.js'
+import { extractText, extractTextByPage } from '../services/textExtractor.js'
 import { extractFacts } from '../services/factExtractor.js'
 import { embedReference } from '../services/passageEmbedder.js'
 import { generateAlias } from '../services/aliasGenerator.js'
@@ -25,7 +25,19 @@ export const referenceController = {
 
       const displayAlias = req.body.display_alias?.trim() || generateAlias(file.originalname)
 
-      const { text, pageCount } = await extractText(file.path, docType)
+      // Extract text — use page-aware extraction for PDFs
+      let text, pageCount, pageBoundaries
+      if (docType === 'pdf') {
+        const result = await extractTextByPage(file.path)
+        text = result.fullText
+        pageCount = result.pageCount
+        pageBoundaries = result.pageBoundaries
+      } else {
+        const result = await extractText(file.path, docType)
+        text = result.text
+        pageCount = result.pageCount
+        pageBoundaries = null
+      }
 
       const ref = Reference.create({
         brand_id: brandId,
@@ -42,7 +54,7 @@ export const referenceController = {
       // Auto-index: create pending facts row and kick off async extraction
       if (text && process.env.VITE_GEMINI_API_KEY) {
         ReferenceFact.createPending(ref.id)
-        extractFacts(text)
+        extractFacts(text, { pageCount })
           .then(facts => {
             ReferenceFact.createOrUpdate(ref.id, facts, 'indexed', 'gemini-2.5-flash')
             console.log(`Auto-indexed ref ${ref.id} (${displayAlias}): ${facts.length} facts`)
@@ -53,7 +65,7 @@ export const referenceController = {
           })
 
         // Auto-embed: create passage embeddings for semantic search
-        embedReference(text)
+        embedReference(text, { pageBoundaries, pageCount })
           .then(passages => {
             ReferencePassage.createPassages(ref.id, passages)
             console.log(`Auto-embedded ref ${ref.id} (${displayAlias}): ${passages.length} passages`)

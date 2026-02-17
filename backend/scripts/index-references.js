@@ -26,10 +26,10 @@ function parseArgs() {
   return flags
 }
 
-async function extractWithRetry(contentText, maxRetries = 3) {
+async function extractWithRetry(contentText, pageCount, maxRetries = 3) {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      return await extractFacts(contentText)
+      return await extractFacts(contentText, { pageCount })
     } catch (err) {
       const is429 = err.message?.includes('429') || err.message?.includes('rate') || err.message?.includes('quota')
       if (is429 && attempt < maxRetries) {
@@ -62,7 +62,7 @@ async function main() {
 
   // Build query for references needing indexing
   let query = `
-    SELECT rd.id, rd.display_alias, rd.filename, rd.content_text, b.name as brand_name
+    SELECT rd.id, rd.display_alias, rd.filename, rd.content_text, rd.page_count, b.name as brand_name
     FROM reference_documents rd
     JOIN brands b ON b.id = rd.brand_id
     WHERE rd.content_text IS NOT NULL
@@ -116,7 +116,7 @@ async function main() {
           ).run(ref.id)
         }
 
-        const facts = await extractWithRetry(ref.content_text)
+        const facts = await extractWithRetry(ref.content_text, ref.page_count)
 
         // Store results
         db.prepare(`

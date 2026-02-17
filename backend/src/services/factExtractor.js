@@ -76,6 +76,18 @@ function deduplicateFacts(facts) {
   }))
 }
 
+/**
+ * Sanitize a fact's page number against the actual document page count.
+ * Only clamps finite integers. Preserves null/undefined/non-numeric as null.
+ * NEVER fabricates a page number from nothing.
+ */
+export function sanitizeFactPage(page, pageCount) {
+  const parsed = typeof page === 'number' ? page : parseInt(page, 10)
+  if (!Number.isFinite(parsed)) return null
+  if (!Number.isFinite(pageCount) || pageCount <= 0) return parsed
+  return Math.min(Math.max(Math.round(parsed), 1), pageCount)
+}
+
 export async function extractFacts(contentText, options = {}) {
   const apiKey = process.env.VITE_GEMINI_API_KEY
   if (!apiKey) {
@@ -120,5 +132,13 @@ export async function extractFacts(contentText, options = {}) {
     }
   }
 
-  return deduplicateFacts(allFacts)
+  // Deduplicate then clamp pages to valid range
+  const deduplicated = deduplicateFacts(allFacts)
+  const { pageCount } = options
+  if (pageCount) {
+    for (const fact of deduplicated) {
+      fact.page = sanitizeFactPage(fact.page, pageCount)
+    }
+  }
+  return deduplicated
 }

@@ -3,6 +3,9 @@ import pLimit from 'p-limit'
 import { initDb, getDb, closeDb } from '../src/config/database.js'
 import { ReferencePassage } from '../src/models/ReferencePassage.js'
 import { embedReference, chunkText, resolveChunkingOptions } from '../src/services/passageEmbedder.js'
+import { extractTextByPage } from '../src/services/textExtractor.js'
+import fs from 'fs'
+import path from 'path'
 
 function parseArgs() {
   const args = process.argv.slice(2)
@@ -76,7 +79,7 @@ async function main() {
 
   // Build query to find references that need embedding
   let query = `
-    SELECT rd.id, rd.display_alias, rd.content_text, rd.brand_id, b.name as brand_name
+    SELECT rd.id, rd.display_alias, rd.content_text, rd.brand_id, rd.doc_type, rd.page_count, rd.file_path, b.name as brand_name
     FROM reference_documents rd
     JOIN brands b ON b.id = rd.brand_id
     WHERE rd.deleted_at IS NULL
@@ -160,7 +163,27 @@ async function main() {
     limit(async () => {
       const label = `${ref.display_alias} (${ref.brand_name})`
       try {
-        const passages = await embedWithRetry(ref.content_text, chunkingOptions)
+        // Get real page boundaries for PDFs
+        let embedOptions = { ...chunkingOptions }
+        if (ref.doc_type === 'pdf' && ref.file_path) {
+          const fullPath = path.resolve(ref.file_path)
+          if (fs.existsSync(fullPath)) {
+            try {
+              const { pageBoundaries, pageCount } = await extractTextByPage(fullPath)
+              embedOptions.pageBoundaries = pageBoundaries
+              embedOptions.pageCount = pageCount
+            } catch (err) {
+              console.warn(`  Could not extract page boundaries for ${label}: ${err.message}`)
+            }
+          } else {
+            console.warn(`  File not found for ${label}, using estimated pages`)
+          }
+        }
+        if ((!embedOptions.pageBoundaries || embedOptions.pageBoundaries.length === 0) && ref.page_count) {
+          embedOptions.pageCount = ref.page_count
+        }
+
+        const passages = await embedWithRetry(ref.content_text, embedOptions)
         ReferencePassage.createPassages(ref.id, passages)
         succeeded++
         console.log(`${label}: ${passages.length} passages embedded`)
