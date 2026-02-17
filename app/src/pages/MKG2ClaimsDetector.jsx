@@ -1263,7 +1263,7 @@ export default function MKG2ClaimsDetector() {
             )}
 
             {!selectedBrandId && (
-              <div className="analysisError" style={{ background: 'var(--amber-1)', borderColor: 'var(--amber-6)', color: 'var(--amber-9)' }}>
+              <div className="analysisError analysisWarning">
                 <Icon name="alertCircle" size={16} />
                 <span>Select a brand to enable reference matching</span>
               </div>

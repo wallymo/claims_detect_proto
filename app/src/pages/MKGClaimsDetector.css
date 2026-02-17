@@ -97,6 +97,26 @@
   font-size: 13px;
 }
 
+.analysisWarning {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(217, 119, 6, 0.3);
+  color: #7c4a10;
+}
+
+.analysisWarning svg {
+  color: #b45309;
+}
+
+[data-theme="dark"] .analysisWarning {
+  background: rgba(255, 167, 38, 0.16);
+  border-color: rgba(255, 167, 38, 0.38);
+  color: #f1d4a8;
+}
+
+[data-theme="dark"] .analysisWarning svg {
+  color: #ffd180;
+}
+
 /* Results Summary */
 .resultRow {
   display: flex;

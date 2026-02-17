@@ -120,13 +120,19 @@ Defaults: port 3001, `./data/claims_detector.db`. No `.env.local` — all config
 
 Frontend matching tuning (optional, in `app/.env.local`):
 ```
-VITE_MATCHING_HYBRID_ENABLED=true              # Hybrid reranking (default: true)
-VITE_MATCHING_AUTOCONFIRM_ENABLED=false        # Auto-confirm high-confidence matches (default: false)
-VITE_MATCHING_TOPK=20                          # Top-K passages to retrieve (default: 20)
-VITE_MATCHING_CANDIDATE_POOL=40               # Internal ranking depth (default: 40)
-VITE_MATCHING_CONFIRM_TOPN=8                  # Passages sent to AI confirmation (default: 8)
-VITE_MATCHING_CONFIRM_DIVERSITY_ENABLED=true  # Cap passages per reference in AI confirmation (default: true)
-VITE_MATCHING_CONFIRM_PER_REFERENCE_CAP=2     # Max passages per reference sent to AI (default: 2)
+VITE_LOG_LEVEL=info                                    # Client logging level: error|warn|info|debug
+VITE_MATCHING_CONCURRENCY=4                            # Parallel claim matching workers (default: 4)
+VITE_MATCHING_HYBRID_ENABLED=true                      # Hybrid reranking (default: true)
+VITE_MATCHING_AUTOCONFIRM_ENABLED=false                # Auto-confirm high-confidence matches (default: false)
+VITE_MATCHING_TOPK=20                                  # Top-K passages to retrieve (default: 20)
+VITE_MATCHING_CANDIDATE_POOL=40                        # Internal ranking depth (default: 40)
+VITE_MATCHING_CONFIRM_TOPN=8                           # Passages sent to AI confirmation (default: 8)
+VITE_MATCHING_CONFIRM_DIVERSITY_ENABLED=true           # Cap passages per reference in AI confirmation (default: true)
+VITE_MATCHING_CONFIRM_PER_REFERENCE_CAP=2              # Max passages per reference sent to AI (default: 2)
+VITE_MATCHING_SKIP_CONFIRM_LOW_CONFIDENCE_ENABLED=true # Skip AI confirmation for low-confidence matches (default: true)
+VITE_MATCHING_SKIP_CONFIRM_MAX_SEMANTIC=0.50           # Max semantic score to skip confirmation (default: 0.50)
+VITE_MATCHING_SKIP_CONFIRM_MAX_HYBRID=0.46             # Max hybrid score to skip confirmation (default: 0.46)
+VITE_MATCHING_SKIP_CONFIRM_MAX_KEYWORD=0.08            # Max keyword score to skip confirmation (default: 0.08)
 ```
 
 **Deployment:** Vercel config in `app/vercel.json`. Production redirects `/` → `/mkg`. SPA rewrites for `/mkg2`, `/demo`, and catch-all to `index.html`.
@@ -173,9 +179,10 @@ claims_detector/
 | Service | Purpose |
 |---------|---------|
 | `gemini.js` | Gemini claim detection + `matchClaimToReferences()` for reference mapping |
-| `openai.js` | GPT-4o claim detection (same interface) |
+| `openai.js` | GPT-5.2 Codex claim detection (same interface) |
 | `anthropic.js` | Claude claim detection (same interface) |
 | `api.js` | Backend REST client (brands, references, folders, feedback, files, facts, passages) |
+| `normalizer.js` | Document normalization client (DOCX/PPTX/PDF → canonical PDF + page images via backend) |
 | `referenceMatching.js` | Hybrid matching pipeline: semantic search → hybrid rerank → diversity selection → AI confirmation (keyword fallback) |
 
 ### Backend API
@@ -280,6 +287,7 @@ Pre-chunks reference documents into overlapping passages and embeds each via Gem
 - Shared upload drop zone: use `dropZone`, `dropZoneIcon`, `dropZoneText`, `dropZoneHint` classes from `App.css` for any file upload UI
 - Empty states: use `flex: 1` (not fixed height) to fill container — prevents layout jumps between tab panels
 - Backend uses ESM modules (`"type": "module"` in package.json)
+- ESLint enforces `no-console: error` — use `logger` from `@/utils/logger` instead of `console.log` (only `logger.js` itself is exempted)
 - pdf-parse import quirk: `import pdfParse from 'pdf-parse/lib/pdf-parse.js'` then `pdfParse.default()`
 
 ## Gemini API Notes
