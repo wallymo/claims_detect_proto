@@ -190,6 +190,15 @@ export async function updateFactFeedback(factId, { reference_id, decision }) {
   })
 }
 
+// ========== Fact Search ==========
+
+export async function searchFacts(brandId, claimText) {
+  return request(`/brands/${brandId}/facts/search`, {
+    method: 'POST',
+    body: JSON.stringify({ claim_text: claimText })
+  })
+}
+
 // ========== Passages (Semantic Search) ==========
 
 export async function searchPassages(brandId, claimText, topK = 5, options = {}) {

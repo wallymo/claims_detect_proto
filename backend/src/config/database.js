@@ -67,6 +67,19 @@ export function initDb() {
   const migration005 = fs.readFileSync(migration005Path, 'utf-8')
   db.exec(migration005)
 
+  // 006: fact embeddings (embedding + embedding_model columns on reference_facts)
+  const migration006Path = path.resolve(__dirname, '../../migrations/006_fact_embeddings.sql')
+  const migration006 = fs.readFileSync(migration006Path, 'utf-8')
+  for (const stmt of migration006.split(';').map(s => s.trim()).filter(Boolean)) {
+    try {
+      db.exec(stmt)
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        throw err
+      }
+    }
+  }
+
   console.log('Database initialized:', env.DB_PATH)
   return db
 }

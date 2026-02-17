@@ -795,6 +795,83 @@ Rules:
 }
 
 /**
+ * Extract a verbatim supporting quote from a full reference document.
+ * Used by Matching V2 Tier 2 — sends full reference text and asks AI to find exact quotes.
+ *
+ * @param {string} claimText - The claim needing substantiation
+ * @param {string} referenceText - Full extracted text of the reference document
+ * @param {string} referenceName - Display name of the reference
+ * @returns {Promise<Object>} - { result: { supported, quotes, reasoning }, usage }
+ */
+export async function extractSupportingQuote(claimText, referenceText, referenceName) {
+  const client = getGeminiClient()
+
+  const prompt = `You are an MLR (Medical, Legal, Regulatory) reviewer checking whether a reference document contains content relevant to a specific claim. Your job is to help human reviewers find the right passages — err on the side of INCLUSION.
+
+CLAIM: "${claimText}"
+
+REFERENCE DOCUMENT (${referenceName}):
+${referenceText}
+
+TASK: Find the exact sentence(s) in this reference that support, partially support, or are directly relevant to this claim. Quote them VERBATIM — do not paraphrase, do not combine sentences, do not add words.
+
+Return JSON:
+{
+  "supported": true or false,
+  "quotes": [
+    {
+      "text": "exact verbatim quote copied from the reference above",
+      "page_estimate": number or null
+    }
+  ],
+  "reasoning": "1-2 sentence explanation of how the quote relates to the claim"
+}
+
+Rules:
+- Return supported=true if the reference contains text that SUBSTANTIATES, PARTIALLY SUPPORTS, or is DIRECTLY RELEVANT to the claim. This includes:
+  - Exact data that the claim cites or derives from
+  - Source statistics from which the claim's numbers could be calculated or inferred
+  - Related efficacy, safety, or endpoint data on the same topic
+  - Context that a human reviewer would want to see alongside this claim
+- Quotes must be VERBATIM text from the reference document above. Copy-paste, do not rephrase.
+- Multiple quotes are allowed if multiple sentences together relate to the claim.
+- Only return supported=false if the reference contains NO content relevant to the claim's topic.
+- When in doubt, return supported=true — it is better to surface a potentially relevant quote than to miss a real match. Human reviewers will make the final call.`
+
+  try {
+    const matchingModel = 'gemini-2.0-flash'
+    const response = await client.models.generateContent({
+      model: matchingModel,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: {
+        temperature: 0,
+        maxOutputTokens: 4096,
+        responseMimeType: 'application/json'
+      }
+    })
+
+    const text = response.candidates?.[0]?.content?.parts?.[0]?.text || response.text
+    const parsedResult = parseJsonResponse(text, 'Gemini quote extraction response')
+    const usage = extractUsageMetadata(response)
+    const cost = calculateCost(matchingModel, usage.inputTokens, usage.outputTokens)
+
+    return {
+      result: parsedResult,
+      usage: {
+        model: matchingModel,
+        modelDisplayName: MODEL_DISPLAY_NAMES[matchingModel] || matchingModel,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        cost
+      }
+    }
+  } catch (error) {
+    logger.error('Quote extraction error:', error)
+    throw new Error(`Quote extraction failed: ${error.message}`)
+  }
+}
+
+/**
  * Extract text content from a PDF for reference indexing
  *
  * @param {File} pdfFile - The PDF file to extract text from

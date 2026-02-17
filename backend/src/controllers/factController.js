@@ -4,6 +4,19 @@ import { Brand } from '../models/Brand.js'
 import { extractFacts } from '../services/factExtractor.js'
 import { AppError } from '../middleware/errorHandler.js'
 
+function cosineSimilarity(bufA, bufB) {
+  const a = new Float32Array(bufA.buffer, bufA.byteOffset, bufA.byteLength / 4)
+  const b = new Float32Array(bufB.buffer, bufB.byteOffset, bufB.byteLength / 4)
+  let dot = 0, normA = 0, normB = 0
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i]
+    normA += a[i] * a[i]
+    normB += b[i] * b[i]
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB)
+  return denom === 0 ? 0 : dot / denom
+}
+
 export const factController = {
   getFacts(req, res, next) {
     try {
@@ -63,6 +76,48 @@ export const factController = {
 
       const summary = ReferenceFact.getSummaryByBrandId(brandId)
       res.json({ brand_id: brandId, references: summary })
+    } catch (err) {
+      next(err)
+    }
+  },
+
+  async searchFacts(req, res, next) {
+    try {
+      const brandId = parseInt(req.params.brandId, 10)
+      const brand = Brand.findById(brandId)
+      if (!brand) throw new AppError('Brand not found', 404)
+
+      const { claim_text } = req.body
+      if (!claim_text || typeof claim_text !== 'string' || claim_text.trim().length === 0) {
+        throw new AppError('claim_text is required and must be a non-empty string', 400)
+      }
+
+      // Get all facts with embeddings for this brand
+      const factSets = ReferenceFact.findByBrandIdWithEmbeddings(brandId)
+      if (factSets.length === 0) {
+        return res.json({ results: [], count: 0 })
+      }
+
+      // Embed the claim
+      const { embedText } = await import('../services/passageEmbedder.js')
+      const queryEmbedding = await embedText(claim_text.trim())
+
+      // Cosine similarity search across fact embeddings
+      const results = factSets
+        .filter(fs => fs.embedding)
+        .map(fs => {
+          const similarity = cosineSimilarity(queryEmbedding, fs.embedding)
+          return {
+            reference_id: fs.reference_id,
+            display_alias: fs.display_alias,
+            facts: fs.facts,
+            similarity
+          }
+        })
+        .sort((a, b) => b.similarity - a.similarity)
+        .slice(0, 5)
+
+      res.json({ results, count: results.length })
     } catch (err) {
       next(err)
     }

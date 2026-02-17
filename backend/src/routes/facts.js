@@ -6,6 +6,7 @@ import { validateIdParam } from '../middleware/validate.js'
 export const brandFactRoutes = Router({ mergeParams: true })
 brandFactRoutes.get('/references/:refId/facts', validateIdParam('refId'), factController.getFacts)
 brandFactRoutes.get('/facts/summary', factController.getSummary)
+brandFactRoutes.post('/facts/search', factController.searchFacts)
 
 // Reference-scoped routes (mounted at /api/references)
 export const referenceFactRoutes = Router()

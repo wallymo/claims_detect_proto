@@ -790,7 +790,13 @@ export default function MKG2ClaimsDetector() {
         skip_confirm_max_hybrid: telemetry?.skip_confirm_max_hybrid,
         skip_confirm_max_keyword: telemetry?.skip_confirm_max_keyword,
         confirm_diversity_enabled: telemetry?.confirm_diversity_enabled,
-        ai_confirm_per_reference_cap: telemetry?.ai_confirm_per_reference_cap
+        ai_confirm_per_reference_cap: telemetry?.ai_confirm_per_reference_cap,
+        pipeline_summary: telemetry?.pipeline_summary,
+        fact_anchored_count: telemetry?.fact_anchored_count,
+        extraction_ai_calls: telemetry?.extraction_ai_calls,
+        verified_quotes: telemetry?.verified_quotes,
+        unverified_quotes: telemetry?.unverified_quotes,
+        semantic_search_count: telemetry?.semantic_search_count
       }
       setMatchingStats(enrichedStats)
       setMatchingComplete(true)
@@ -830,8 +836,47 @@ export default function MKG2ClaimsDetector() {
         total_claims: stats.total,
         matched_count: stats.matched,
         unmatched_count: stats.unmatched,
-        tier_breakdown: stats.tiers
+        tier_breakdown: stats.tiers,
+        pipeline_summary: telemetry?.pipeline_summary,
+        fact_anchored_count: telemetry?.fact_anchored_count,
+        extraction_ai_calls: telemetry?.extraction_ai_calls,
+        verified_quotes: telemetry?.verified_quotes,
+        unverified_quotes: telemetry?.unverified_quotes,
+        semantic_search_count: telemetry?.semantic_search_count
       })
+
+      // V2 diagnostics: log per-claim pipeline traces for debugging
+      if (telemetry?.pipeline_summary) {
+        logger.info({ event: 'mkg2_pipeline_summary', ...telemetry.pipeline_summary })
+      }
+      const unmatchedWithDiag = enrichedClaims
+        .filter(c => !c.matched && c.diagnostics)
+        .map(c => ({ id: c.id, text: c.text?.slice(0, 100), diagnostics: c.diagnostics }))
+      if (unmatchedWithDiag.length > 0) {
+        logger.info({ event: 'mkg2_unmatched_diagnostics', claims: unmatchedWithDiag })
+      }
+
+      // Save full diagnostics to disk for analysis
+      fetch('/api/diagnostics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          timestamp: new Date().toISOString(),
+          pipeline_summary: telemetry?.pipeline_summary,
+          telemetry: { ...telemetry, pipeline_summary: undefined },
+          stats,
+          claims: enrichedClaims.map(c => ({
+            id: c.id,
+            text: c.text?.slice(0, 200),
+            matched: c.matched,
+            matchTier: c.matchTier,
+            matchConfidence: c.matchConfidence,
+            referenceName: c.reference?.name,
+            matchReasoning: c.matchReasoning,
+            diagnostics: c.diagnostics
+          }))
+        })
+      }).catch(() => { /* best-effort */ })
     } catch (error) {
       logger.error('Reference matching error:', error)
       setMatchingProgress(`Matching error: ${error.message}`)

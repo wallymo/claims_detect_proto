@@ -28,6 +28,33 @@ export const ReferenceFact = {
     }))
   },
 
+  findByBrandIdWithEmbeddings(brandId) {
+    const db = getDb()
+    const rows = db.prepare(`
+      SELECT rf.*, rd.display_alias, rd.filename, rd.id as ref_doc_id
+      FROM reference_facts rf
+      JOIN reference_documents rd ON rd.id = rf.reference_id
+      WHERE rd.brand_id = ?
+        AND rd.deleted_at IS NULL
+        AND rf.extraction_status = 'indexed'
+        AND rf.embedding IS NOT NULL
+    `).all(brandId)
+    return rows.map(row => ({
+      ...row,
+      facts: row.facts_json ? JSON.parse(row.facts_json) : []
+    }))
+  },
+
+  updateEmbedding(referenceId, embedding, embeddingModel) {
+    const db = getDb()
+    db.prepare(`
+      UPDATE reference_facts
+      SET embedding = ?, embedding_model = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE reference_id = ?
+    `).run(embedding, embeddingModel, referenceId)
+    return this.findByReferenceId(referenceId)
+  },
+
   createOrUpdate(referenceId, factsJson, status, model) {
     const db = getDb()
     const existing = db.prepare(
