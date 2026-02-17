@@ -55,6 +55,20 @@ const PROMPT_DISPLAY_TEXT = {
   'drug': MEDICATION_PROMPT_USER
 }
 
+const FACT_INVENTORY_MAX_REFERENCES = 14
+const FACT_INVENTORY_MAX_FACTS_PER_REFERENCE = 5
+const FACT_INVENTORY_MAX_TOTAL_FACTS = 140
+const FACT_INVENTORY_MAX_CHARS = 18000
+const FACT_INVENTORY_FACT_TEXT_MAX_CHARS = 260
+const FACT_INVENTORY_HEADER = '\n\nREFERENCE FACT INVENTORY (background context only; do NOT limit extraction to these facts):\n'
+
+function normalizeFactText(text) {
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim()
+  if (!normalized) return ''
+  if (normalized.length <= FACT_INVENTORY_FACT_TEXT_MAX_CHARS) return normalized
+  return `${normalized.slice(0, FACT_INVENTORY_FACT_TEXT_MAX_CHARS - 3).trimEnd()}...`
+}
+
 const MATCHED_CLAIM_FIELDS = ['matched', 'matchConfidence', 'matchTier', 'reference', 'matchReasoning']
 
 function mergeMatchFields(existingClaim, matchedClaim) {
@@ -499,20 +513,65 @@ export default function MKG2ClaimsDetector() {
           const factRefs = await api.fetchFactsSummary(factBrandId)
           const indexedRefs = factRefs.filter(r => r.extraction_status === 'indexed' && r.facts_count > 0)
           if (indexedRefs.length > 0) {
+            const candidateRefs = indexedRefs.slice(0, FACT_INVENTORY_MAX_REFERENCES)
             const lines = []
-            for (const ref of indexedRefs) {
-              // Fetch full facts for each indexed reference
+            let totalFacts = 0
+            let totalChars = FACT_INVENTORY_HEADER.length
+            let truncated = candidateRefs.length < indexedRefs.length
+
+            for (const ref of candidateRefs) {
+              if (totalFacts >= FACT_INVENTORY_MAX_TOTAL_FACTS) {
+                truncated = true
+                break
+              }
+
+              // Fetch facts for indexed references, then cap per reference and total prompt size.
               const factsData = await api.fetchFacts(factBrandId, ref.reference_id)
-              if (factsData.facts?.length > 0) {
-                for (const fact of factsData.facts) {
-                  lines.push(`- [${ref.display_alias}] ${fact.text} | ${fact.category}`)
+              const facts = Array.isArray(factsData.facts) ? factsData.facts : []
+              let perReferenceFacts = 0
+
+              for (const fact of facts) {
+                if (perReferenceFacts >= FACT_INVENTORY_MAX_FACTS_PER_REFERENCE) {
+                  truncated = true
+                  break
                 }
+                if (totalFacts >= FACT_INVENTORY_MAX_TOTAL_FACTS) {
+                  truncated = true
+                  break
+                }
+
+                const factText = normalizeFactText(fact.text)
+                if (!factText) continue
+
+                const category = String(fact.category || '').replace(/\s+/g, ' ').trim()
+                const line = `- [${ref.display_alias}] ${factText}${category ? ` | ${category}` : ''}`
+
+                if (totalChars + line.length + 1 > FACT_INVENTORY_MAX_CHARS) {
+                  truncated = true
+                  break
+                }
+
+                lines.push(line)
+                perReferenceFacts += 1
+                totalFacts += 1
+                totalChars += line.length + 1
+              }
+
+              if (totalChars >= FACT_INVENTORY_MAX_CHARS) {
+                truncated = true
+                break
               }
             }
+
             if (lines.length > 0) {
-              factInventory = `\n\nREFERENCE FACT INVENTORY (use these known facts to identify substantiable claims):\n${lines.join('\n')}`
+              factInventory = `${FACT_INVENTORY_HEADER}${lines.join('\n')}`
+              if (truncated) {
+                factInventory += '\n- [context] Additional indexed facts were omitted for brevity. Treat this inventory as optional background only.'
+              }
             }
-            logger.info(`Loaded ${lines.length} facts from ${indexedRefs.length} indexed references`)
+            logger.info(
+              `Loaded ${lines.length} fact lines from up to ${candidateRefs.length}/${indexedRefs.length} indexed references (truncated=${truncated})`
+            )
           }
         } catch (err) {
           logger.warn('Could not load fact inventory:', err.message)
@@ -718,6 +777,10 @@ export default function MKG2ClaimsDetector() {
         ai_candidates_pre_diversity_total: telemetry?.ai_candidates_pre_diversity_total,
         ai_diversity_pruned_total: telemetry?.ai_diversity_pruned_total,
         ai_diversity_replacements_total: telemetry?.ai_diversity_replacements_total,
+        matching_ai_calls: telemetry?.matching_ai_calls,
+        matching_ai_input_tokens: telemetry?.matching_ai_input_tokens,
+        matching_ai_output_tokens: telemetry?.matching_ai_output_tokens,
+        matching_ai_cost: telemetry?.matching_ai_cost,
         confirmation_skipped_count: telemetry?.confirmation_skipped_count,
         confirmation_skipped_low_confidence_count: telemetry?.confirmation_skipped_low_confidence_count,
         hybrid_enabled: telemetry?.hybrid_enabled,
@@ -750,6 +813,10 @@ export default function MKG2ClaimsDetector() {
         ai_candidates_pre_diversity_total: enrichedStats.ai_candidates_pre_diversity_total,
         ai_diversity_pruned_total: enrichedStats.ai_diversity_pruned_total,
         ai_diversity_replacements_total: enrichedStats.ai_diversity_replacements_total,
+        matching_ai_calls: enrichedStats.matching_ai_calls,
+        matching_ai_input_tokens: enrichedStats.matching_ai_input_tokens,
+        matching_ai_output_tokens: enrichedStats.matching_ai_output_tokens,
+        matching_ai_cost: enrichedStats.matching_ai_cost,
         confirmation_skipped_count: enrichedStats.confirmation_skipped_count,
         confirmation_skipped_low_confidence_count: enrichedStats.confirmation_skipped_low_confidence_count,
         hybrid_enabled: enrichedStats.hybrid_enabled,
@@ -989,6 +1056,15 @@ export default function MKG2ClaimsDetector() {
   const pendingCount = claims.filter(c => c.status === 'pending').length
   const approvedCount = claims.filter(c => c.status === 'approved').length
   const rejectedCount = claims.filter(c => c.status === 'rejected').length
+  const matchedRateLabel = matchingStats ? `${matchingStats.matchRate}%` : 'N/A'
+
+  const analysisMs = processingTime || 0
+  const matchingMs = matchingStats?.matching_total_ms || 0
+  const endToEndMs = analysisMs + matchingMs
+
+  const claimDetectionRunCost = lastUsage?.cost || 0
+  const referenceMatchingRunCost = matchingStats?.matching_ai_cost || 0
+  const totalRunAICost = claimDetectionRunCost + referenceMatchingRunCost
 
   // Always show all claims — better to over-flag than miss a claim
   const displayedClaims = claims
@@ -1236,16 +1312,41 @@ export default function MKG2ClaimsDetector() {
                         <span className="resultValue">{lastUsage?.modelDisplayName || 'Gemini 3 Pro'}</span>
                       </div>
                       <div className="resultRow">
-                        <span className="resultLabel">Latency</span>
-                        <span className="resultValue">{(processingTime / 1000).toFixed(1)}s</span>
+                        <span className="resultLabel">Claims Detected</span>
+                        <span className="resultValue">{claims.length}</span>
+                      </div>
+                      <div className="resultRow">
+                        <span className="resultLabel">Matched to References</span>
+                        <span className="resultValue">{matchedRateLabel}</span>
                       </div>
                       <div className="divider" />
                       <div className="resultRow">
-                        <span className="resultLabel">Run Cost</span>
-                        <span className="resultValue">${lastUsage?.cost?.toFixed(4) || '0.0000'}</span>
+                        <span className="resultLabel">End-to-End Time</span>
+                        <span className="resultValue">{(endToEndMs / 1000).toFixed(1)}s</span>
                       </div>
                       <div className="resultRow">
-                        <span className="resultLabel">Session</span>
+                        <span className="resultLabel">Claim Detection Time</span>
+                        <span className="resultValue">{(analysisMs / 1000).toFixed(1)}s</span>
+                      </div>
+                      <div className="resultRow">
+                        <span className="resultLabel">Reference Matching Time</span>
+                        <span className="resultValue">{matchingStats ? `${(matchingMs / 1000).toFixed(1)}s` : 'N/A'}</span>
+                      </div>
+                      <div className="divider" />
+                      <div className="resultRow">
+                        <span className="resultLabel">Claim Detection Cost</span>
+                        <span className="resultValue">${claimDetectionRunCost.toFixed(4)}</span>
+                      </div>
+                      <div className="resultRow">
+                        <span className="resultLabel">Reference Matching Cost</span>
+                        <span className="resultValue">{matchingStats ? `$${referenceMatchingRunCost.toFixed(4)}` : 'N/A'}</span>
+                      </div>
+                      <div className="resultRow">
+                        <span className="resultLabel">Total Run AI Cost</span>
+                        <span className="resultValue">${totalRunAICost.toFixed(4)}</span>
+                      </div>
+                      <div className="resultRow">
+                        <span className="resultLabel">Session Cost (Detection)</span>
                         <span className="resultValue">${sessionCost.toFixed(4)}</span>
                       </div>
                     </div>

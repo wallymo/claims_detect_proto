@@ -247,6 +247,14 @@ function resolveMatchConfidence(rawConfidence, fallback) {
   return fallback
 }
 
+function accumulateMatchingUsage(telemetry, usage) {
+  if (!telemetry || !usage) return
+  telemetry.matching_ai_calls = (telemetry.matching_ai_calls || 0) + 1
+  telemetry.matching_ai_input_tokens = (telemetry.matching_ai_input_tokens || 0) + (usage.inputTokens || 0)
+  telemetry.matching_ai_output_tokens = (telemetry.matching_ai_output_tokens || 0) + (usage.outputTokens || 0)
+  telemetry.matching_ai_cost = (telemetry.matching_ai_cost || 0) + (usage.cost || 0)
+}
+
 function selectAICandidate(result, candidates) {
   if (!result?.matched || !Array.isArray(candidates) || candidates.length === 0) {
     return null
@@ -523,7 +531,7 @@ async function matchSingleClaim(claim, brandId, allReferences, options = {}) {
       telemetry.keyword_fallback_count++
       onStage?.('fallback')
       logger.warn(`Semantic search failed for claim ${claim.id}, falling back to keyword matching:`, err.message)
-      return keywordFallbackMatch(claim, getFallbackReferencesWithText)
+      return keywordFallbackMatch(claim, getFallbackReferencesWithText, telemetry)
     }
 
     if (searchResults.length === 0) {
@@ -600,11 +608,16 @@ async function matchSingleClaim(claim, brandId, allReferences, options = {}) {
     try {
       telemetry.confirmation_count++
       onStage?.('confirm')
-      let result = await matchClaimToReferences(claim.text, refsForAI)
+      const matchResponse = await matchClaimToReferences(claim.text, refsForAI)
+      accumulateMatchingUsage(telemetry, matchResponse?.usage)
+      let result = matchResponse?.result
 
       // AI sometimes returns an array of matches — normalize to single best match
       if (Array.isArray(result)) {
         result = result.find(r => r.matched) || result[0] || { matched: false }
+      }
+      if (!result || typeof result !== 'object') {
+        result = { matched: false }
       }
 
       const matchedResult = selectAICandidate(result, aiCandidates)
@@ -688,7 +701,7 @@ function extractKeywords(text) {
     .filter((word, i, arr) => arr.indexOf(word) === i)
 }
 
-async function keywordFallbackMatch(claim, allReferences) {
+async function keywordFallbackMatch(claim, allReferences, telemetry = null) {
   const refsForKeywordMatch = typeof allReferences === 'function'
     ? await allReferences()
     : allReferences
@@ -730,9 +743,14 @@ async function keywordFallbackMatch(claim, allReferences) {
   }))
 
   try {
-    let result = await matchClaimToReferences(claim.text, refsForAI)
+    const matchResponse = await matchClaimToReferences(claim.text, refsForAI)
+    accumulateMatchingUsage(telemetry, matchResponse?.usage)
+    let result = matchResponse?.result
     if (Array.isArray(result)) {
       result = result.find(r => r.matched) || result[0] || { matched: false }
+    }
+    if (!result || typeof result !== 'object') {
+      result = { matched: false }
     }
 
     const matched = selectAICandidate(result, scored)
@@ -814,6 +832,10 @@ export async function matchAllClaimsToReferences(claims, references, onProgress,
     ai_diversity_pruned_total: 0,
     ai_diversity_replacements_total: 0,
     keyword_fallback_count: 0,
+    matching_ai_calls: 0,
+    matching_ai_input_tokens: 0,
+    matching_ai_output_tokens: 0,
+    matching_ai_cost: 0,
     confirmation_skipped_low_confidence_count: 0,
     concurrency: CONCURRENCY,
     top_k: topK,

@@ -30,11 +30,14 @@ const getGeminiClient = () => {
 }
 
 // Model configuration - SSOT for model selection
-export const GEMINI_MODEL = 'gemini-3-pro-preview'
+const GEMINI_MODEL_FROM_ENV = String(import.meta.env.VITE_GEMINI_MODEL || '').trim()
+export const GEMINI_MODEL = GEMINI_MODEL_FROM_ENV || 'gemini-3-pro-preview'
 
 // Friendly display names for models
 export const MODEL_DISPLAY_NAMES = {
   'gemini-3-pro-preview': 'Gemini 3 Pro',
+  'gemini-2.5-pro': 'Gemini 2.5 Pro',
+  'gemini-2.5-flash': 'Gemini 2.5 Flash',
   'gemini-2.0-flash': 'Gemini 2.0 Flash',
   'gemini-2.0-flash-exp': 'Gemini 2.0 Flash',
   'gemini-1.5-flash': 'Gemini 1.5 Flash',
@@ -45,11 +48,46 @@ export const MODEL_DISPLAY_NAMES = {
 // Update these based on current Google AI pricing
 const PRICING = {
   'gemini-3-pro-preview': { input: 1.25, output: 5.00 },  // $/1M tokens
+  'gemini-2.5-pro': { input: 1.25, output: 5.00 }, // keep in sync with current Google pricing
+  'gemini-2.5-flash': { input: 0.075, output: 0.30 },
   'gemini-2.0-flash': { input: 0.075, output: 0.30 },
   'gemini-1.5-flash': { input: 0.075, output: 0.30 },
   'gemini-1.5-pro': { input: 1.25, output: 5.00 },
   'default': { input: 1.25, output: 5.00 }
 }
+
+const VALID_MEDIA_RESOLUTIONS = new Set([
+  'MEDIA_RESOLUTION_LOW',
+  'MEDIA_RESOLUTION_MEDIUM',
+  'MEDIA_RESOLUTION_HIGH'
+])
+
+function parseBooleanEnvFlag(value, fallback) {
+  if (value === undefined || value === null || value === '') return fallback
+  const normalized = String(value).trim().toLowerCase()
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false
+  return fallback
+}
+
+function resolveMediaResolution(value, fallback = 'MEDIA_RESOLUTION_HIGH') {
+  const candidate = String(value || '').trim().toUpperCase()
+  if (VALID_MEDIA_RESOLUTIONS.has(candidate)) return candidate
+  return fallback
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value))
+}
+
+const GEMINI_VISUAL_SWEEP_ENABLED = parseBooleanEnvFlag(
+  import.meta.env.VITE_GEMINI_VISUAL_SWEEP_ENABLED,
+  true
+)
+const GEMINI_MEDIA_RESOLUTION = resolveMediaResolution(
+  import.meta.env.VITE_GEMINI_MEDIA_RESOLUTION,
+  'MEDIA_RESOLUTION_HIGH'
+)
 
 // System instruction (moved out of user prompt for efficiency)
 // Generic — doc-type-specific guidance is in the user prompt
@@ -162,6 +200,121 @@ function parseJsonResponse(rawText, contextLabel = 'Gemini response') {
   }
 
   throw new Error(`Failed to parse ${contextLabel} as JSON`)
+}
+
+function extractUsageMetadata(response) {
+  const usageMetadata = response?.usageMetadata || {}
+  const inputTokens = usageMetadata.promptTokenCount || 0
+  const outputTokens = usageMetadata.candidatesTokenCount || 0
+  return { inputTokens, outputTokens }
+}
+
+function normalizeClaimText(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function sanitizeRawClaim(rawClaim) {
+  if (!rawClaim || typeof rawClaim !== 'object') return null
+
+  const text = String(rawClaim.claim || '').replace(/\s+/g, ' ').trim()
+  if (!text) return null
+
+  const page = Math.max(1, Number.parseInt(rawClaim.page, 10) || 1)
+  const confidenceRaw = Number(rawClaim.confidence)
+  const confidence = Number.isFinite(confidenceRaw)
+    ? clamp(Math.round(confidenceRaw), 0, 100)
+    : 60
+
+  const xRaw = Number(rawClaim.x)
+  const yRaw = Number(rawClaim.y)
+  const x = Number.isFinite(xRaw) ? clamp(xRaw, 0, 100) : 0
+  const y = Number.isFinite(yRaw) ? clamp(yRaw, 0, 100) : 0
+
+  return {
+    claim: text,
+    confidence,
+    page,
+    x,
+    y
+  }
+}
+
+function normalizeRawClaims(rawClaims) {
+  if (!Array.isArray(rawClaims)) return []
+  return rawClaims
+    .map(sanitizeRawClaim)
+    .filter(Boolean)
+}
+
+function mergeRawClaims(primaryClaims, visualClaims) {
+  const merged = []
+  const byKey = new Map()
+
+  const upsert = (claim, source) => {
+    const dedupeKey = `${claim.page}|${normalizeClaimText(claim.claim)}`
+    const existingIndex = byKey.get(dedupeKey)
+    if (existingIndex === undefined) {
+      byKey.set(dedupeKey, merged.length)
+      merged.push({ ...claim, _source: source })
+      return
+    }
+
+    const existing = merged[existingIndex]
+    if (claim.confidence > existing.confidence) {
+      merged[existingIndex] = { ...claim, _source: source }
+      return
+    }
+
+    // Keep stronger claim text/confidence, but fill missing coordinate fidelity when needed.
+    if ((existing.x === 0 && existing.y === 0) && (claim.x !== 0 || claim.y !== 0)) {
+      merged[existingIndex] = { ...existing, x: claim.x, y: claim.y }
+    }
+  }
+
+  primaryClaims.forEach(claim => upsert(claim, 'primary'))
+  visualClaims.forEach(claim => upsert(claim, 'visual-sweep'))
+
+  return merged
+}
+
+function rawClaimsToFrontendClaims(rawClaims) {
+  return rawClaims.map((claim, index) => ({
+    id: `claim_${String(index + 1).padStart(3, '0')}`,
+    text: claim.claim,
+    confidence: claim.confidence / 100,
+    status: 'pending',
+    page: claim.page,
+    position: { x: claim.x, y: claim.y }
+  }))
+}
+
+function buildVisualSweepPrompt(docType) {
+  const docLabel = docType || 'speaker-notes'
+  const topRegionHint = docLabel === 'speaker-notes'
+    ? '- For speaker-notes layouts, prioritize the top slide region (y < 55) and extract every chart/table statistic there.'
+    : ''
+
+  return `# Task
+Run a SECOND PASS focused only on visual data claims. Return claims missed in a broad first pass.
+
+# Scope
+- Charts: titles, legends, axis labels, series labels, bar/line labels, percentages, p-values, N counts, confidence intervals.
+- Tables: column headers, row headers, cells with outcomes, rates, hazards, deltas, and statistical qualifiers.
+- Figure callouts, superscripts (†, ‡, §, *), and corresponding footnotes/small print tied to visual data.
+${topRegionHint}
+
+# Rules
+- Prefer exact visual wording and exact numeric values from the slide.
+- Split separate substantiation points into separate claims.
+- Do not invent values not present in the visual.
+- If uncertain, include with lower confidence rather than omitting.
+
+# Output
+Return ONLY JSON matching the required schema.`
 }
 
 /**
@@ -334,6 +487,19 @@ export function getDocTypeInstructions(docType) {
   return { structure: instructions.structure, position: instructions.position }
 }
 
+/**
+ * Detect whether a custom prompt already includes doc-type structure/position scaffolding.
+ * This avoids injecting structure + position twice (which can dilute extraction focus).
+ */
+export function promptHasDocTypeScaffold(promptText) {
+  const text = String(promptText || '')
+  if (!text.trim()) return false
+
+  const hasDocStructureHeading = /(^|\n)\s*#\s*(critical:\s*)?(two-region document structure|document format)\b/i.test(text)
+  const hasPositionHeading = /(^|\n)\s*#\s*position\b/i.test(text)
+  return hasDocStructureHeading && hasPositionHeading
+}
+
 // User-facing prompt for All Claims (shown in UI, editable)
 export const ALL_CLAIMS_PROMPT_USER = `# Task
 Extract ALL claims requiring MLR substantiation from this pharmaceutical document.
@@ -417,16 +583,21 @@ Analyze now. Find all medication claims.`
  * @param {string} docType - Document type: 'speaker-notes', 'trifold', 'slides-only'
  * @returns {Promise<Object>} - Result with claims array
  */
-export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null, pageImages = null, docType = 'speaker-notes', factInventory = '') {
+export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null, _pageImages = null, docType = 'speaker-notes', factInventory = '') {
   const client = getGeminiClient()
+  // Kept for API-compat with other providers; Gemini uses native PDF input.
+  void _pageImages
 
   // Get doc-type-specific instructions
   const { structure, position } = getDocTypeInstructions(docType)
 
-  // Build final prompt: custom prompt (if provided) or default, plus position instructions
+  // Build final prompt: custom prompt (if provided) or default.
+  // If custom prompt already contains doc scaffolding, don't prepend/append it again.
   let userPrompt
+  let customPromptHasScaffold = false
   if (customPrompt) {
     userPrompt = customPrompt
+    customPromptHasScaffold = promptHasDocTypeScaffold(customPrompt)
     logger.debug(`Using custom prompt (${customPrompt.length} chars)`)
   } else {
     if (promptKey === 'drug') {
@@ -438,10 +609,20 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     }
     logger.info(`Using default prompt for: ${promptKey}`)
   }
-  // Prepend document structure instructions and append position instructions (doc-type-aware)
-  const finalPrompt = structure + userPrompt + position + factInventory
 
-  logger.info(`Final prompt: ${finalPrompt.length} chars, docType: ${docType}`)
+  const promptBody = customPromptHasScaffold
+    ? userPrompt
+    : structure + userPrompt + position
+
+  // Keep supplemental context first, then keep the extraction instruction closest to the end.
+  const finalPrompt = `${factInventory || ''}${promptBody}
+
+# Final Instruction
+Extract all substantiation-requiring claims now and return ONLY JSON.`
+
+  logger.info(
+    `Final prompt: ${finalPrompt.length} chars, docType: ${docType}, custom_scaffold=${customPromptHasScaffold}`
+  )
 
   onProgress?.(10, 'Preparing document...')
   const base64Data = await fileToBase64(pdfFile)
@@ -449,11 +630,8 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
   onProgress?.(25, 'Sending to AI...')
 
   try {
-    // Use stable generateContent API with optimized config:
-    // - systemInstruction: role/persona moved out of user prompt
-    // - responseJsonSchema: strict output validation
-    // - Document-first ordering: PDF before text prompt (per Gemini best practices)
-    const response = await client.models.generateContent({
+    // Primary pass: full-document extraction.
+    const primaryResponse = await client.models.generateContent({
       model: GEMINI_MODEL,
       contents: [
         {
@@ -476,67 +654,74 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
         temperature: 0,    // Zero for deterministic output
         topP: 0.1,         // Low top_p for more consistent sampling
         topK: 1,           // Only consider top token (most deterministic)
+        mediaResolution: GEMINI_MEDIA_RESOLUTION,
         maxOutputTokens: 64000,
         responseMimeType: 'application/json',
         responseJsonSchema: CLAIMS_JSON_SCHEMA
       }
     })
 
-    onProgress?.(75, 'Processing results...')
+    onProgress?.(72, 'Processing primary claims...')
+    const primaryText = primaryResponse.candidates?.[0]?.content?.parts?.[0]?.text || primaryResponse.text
+    const primaryJson = parseJsonResponse(primaryText, 'Gemini primary claim detection response')
+    const primaryClaims = normalizeRawClaims(primaryJson.claims)
 
-    // Extract text from response
-    const text = response.candidates?.[0]?.content?.parts?.[0]?.text || response.text
+    let visualSweepResponse = null
+    let visualClaims = []
+    if (GEMINI_VISUAL_SWEEP_ENABLED) {
+      onProgress?.(84, 'Running visual chart/table sweep...')
+      const visualSweepPrompt = buildVisualSweepPrompt(docType)
 
-    logger.debug('Raw Gemini response (first 500 chars):', text?.substring(0, 500))
+      visualSweepResponse = await client.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                inlineData: {
+                  mimeType: 'application/pdf',
+                  data: base64Data
+                }
+              },
+              { text: visualSweepPrompt }
+            ]
+          }
+        ],
+        config: {
+          systemInstruction: SYSTEM_INSTRUCTION,
+          temperature: 0.15,
+          topP: 0.9,
+          topK: 24,
+          mediaResolution: GEMINI_MEDIA_RESOLUTION,
+          maxOutputTokens: 64000,
+          responseMimeType: 'application/json',
+          responseJsonSchema: CLAIMS_JSON_SCHEMA
+        }
+      })
 
-    // Parse JSON from response (Gemini may wrap in markdown code blocks despite responseMimeType)
-    let jsonText = text
-    const jsonMatch = text?.match(/```(?:json)?\s*([\s\S]*?)```/)
-    if (jsonMatch) {
-      logger.debug('Extracted JSON from markdown code block')
-      jsonText = jsonMatch[1].trim()
+      const visualText = visualSweepResponse.candidates?.[0]?.content?.parts?.[0]?.text || visualSweepResponse.text
+      const visualJson = parseJsonResponse(visualText, 'Gemini visual sweep response')
+      visualClaims = normalizeRawClaims(visualJson.claims)
     }
 
-    let result
-    try {
-      result = JSON.parse(jsonText)
-    } catch (parseError) {
-      logger.error('Gemini JSON parse failed. Raw text:', jsonText?.substring(0, 1000))
-      throw new Error(`Failed to parse AI response as JSON: ${parseError.message}`)
-    }
-
-    // Transform to frontend format
-    const claims = (result.claims || []).map((claim, index) => {
-      const pageNumber = Math.max(1, Number(claim.page) || 1)
-      // Position from Gemini (x/y as % of page), with fallback for older responses
-      const position = (claim.x !== undefined && claim.y !== undefined)
-        ? { x: Number(claim.x) || 0, y: Number(claim.y) || 0 }
-        : null
-
-      // Debug: log what Gemini returned for each claim
-      logger.debug(`Claim ${index + 1}: x=${claim.x}, y=${claim.y}, text="${claim.claim?.slice(0, 50)}..."`)
-
-      return {
-        id: `claim_${String(index + 1).padStart(3, '0')}`,
-        text: claim.claim,
-        confidence: claim.confidence / 100, // Convert 0-100 to 0-1 for frontend
-        status: 'pending',
-        page: pageNumber,
-        position // { x, y } as % of page, or null if not provided
-      }
-    })
+    onProgress?.(92, 'Merging claim passes...')
+    const mergedRawClaims = mergeRawClaims(primaryClaims, visualClaims)
+    const claims = rawClaimsToFrontendClaims(mergedRawClaims)
 
     onProgress?.(95, 'Finalizing...')
 
-    // Extract usage metadata for cost tracking
-    const usageMetadata = response.usageMetadata || {}
-    const inputTokens = usageMetadata.promptTokenCount || 0
-    const outputTokens = usageMetadata.candidatesTokenCount || 0
+    const primaryUsage = extractUsageMetadata(primaryResponse)
+    const visualUsage = extractUsageMetadata(visualSweepResponse)
+    const inputTokens = primaryUsage.inputTokens + visualUsage.inputTokens
+    const outputTokens = primaryUsage.outputTokens + visualUsage.outputTokens
     const cost = calculateCost(GEMINI_MODEL, inputTokens, outputTokens)
 
     // Log for reproducibility tracking
-    const modelVersion = response.modelVersion || GEMINI_MODEL
-    logger.info(`[Gemini] Model: ${modelVersion}, Claims: ${claims.length}, Tokens: ${inputTokens}/${outputTokens}, Cost: $${cost.toFixed(4)}`)
+    const modelVersion = primaryResponse.modelVersion || GEMINI_MODEL
+    logger.info(
+      `[Gemini] Model: ${modelVersion}, Claims: ${claims.length} (primary=${primaryClaims.length}, visual=${visualClaims.length}, visual_enabled=${GEMINI_VISUAL_SWEEP_ENABLED}), Tokens: ${inputTokens}/${outputTokens}, Cost: $${cost.toFixed(4)}, media_resolution=${GEMINI_MEDIA_RESOLUTION}`
+    )
 
     const pricing = PRICING[GEMINI_MODEL] || PRICING['default']
     return {
@@ -568,7 +753,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
  *
  * @param {string} claimText - The claim text to match
  * @param {Array} references - Array of reference objects with name and content
- * @returns {Promise<Object>} - Matched reference with confidence and excerpt
+ * @returns {Promise<Object>} - { result, usage }
  */
 export async function matchClaimToReferences(claimText, references) {
   const client = getGeminiClient()
@@ -615,8 +800,9 @@ Rules:
 
   try {
     // Use gemini-2.0-flash for matching — gemini-3-pro-preview doesn't support responseMimeType JSON
+    const matchingModel = 'gemini-2.0-flash'
     const response = await client.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model: matchingModel,
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
         temperature: 0,
@@ -626,7 +812,20 @@ Rules:
     })
 
     const text = response.candidates?.[0]?.content?.parts?.[0]?.text || response.text
-    return parseJsonResponse(text, 'Gemini reference matching response')
+    const parsedResult = parseJsonResponse(text, 'Gemini reference matching response')
+    const usage = extractUsageMetadata(response)
+    const cost = calculateCost(matchingModel, usage.inputTokens, usage.outputTokens)
+
+    return {
+      result: parsedResult,
+      usage: {
+        model: matchingModel,
+        modelDisplayName: MODEL_DISPLAY_NAMES[matchingModel] || matchingModel,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        cost
+      }
+    }
   } catch (error) {
     logger.error('Reference matching error:', error)
     throw new Error(`Reference matching request failed: ${error.message}`)
