@@ -1,4 +1,5 @@
-import { matchClaimToReferences } from './gemini.js'
+import { matchClaimToReferences, extractSupportingQuote } from './gemini.js'
+import { verifyQuote } from '@/utils/quoteVerifier.js'
 import * as api from './api.js'
 import { logger } from '@/utils/logger'
 
@@ -15,26 +16,12 @@ function parsePositiveIntEnv(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
-function parseBoundedFloatEnv(value, fallback, min = 0, max = 1) {
-  const parsed = Number.parseFloat(value)
-  if (!Number.isFinite(parsed)) return fallback
-  return Math.max(min, Math.min(max, parsed))
-}
-
 const viteEnv = typeof import.meta !== 'undefined' ? import.meta.env : {}
 
 const MATCHING_HYBRID_ENABLED = parseBooleanEnvFlag(viteEnv.VITE_MATCHING_HYBRID_ENABLED, true)
-const MATCHING_AUTOCONFIRM_ENABLED = parseBooleanEnvFlag(viteEnv.VITE_MATCHING_AUTOCONFIRM_ENABLED, false)
-const MATCHING_SKIP_CONFIRM_LOW_CONFIDENCE_ENABLED = parseBooleanEnvFlag(
-  viteEnv.VITE_MATCHING_SKIP_CONFIRM_LOW_CONFIDENCE_ENABLED,
-  false
-)
 
 const DEFAULT_TOP_K = parsePositiveIntEnv(viteEnv.VITE_MATCHING_TOPK, 20)
 const DEFAULT_CANDIDATE_POOL = parsePositiveIntEnv(viteEnv.VITE_MATCHING_CANDIDATE_POOL, 40)
-const DEFAULT_AI_CONFIRMATION_CANDIDATES = parsePositiveIntEnv(viteEnv.VITE_MATCHING_CONFIRM_TOPN, 8)
-const MATCHING_CONFIRM_DIVERSITY_ENABLED = parseBooleanEnvFlag(viteEnv.VITE_MATCHING_CONFIRM_DIVERSITY_ENABLED, true)
-const DEFAULT_AI_CONFIRM_PER_REFERENCE_CAP = parsePositiveIntEnv(viteEnv.VITE_MATCHING_CONFIRM_PER_REFERENCE_CAP, 2)
 const DEFAULT_MATCHING_CONCURRENCY = parsePositiveIntEnv(viteEnv.VITE_MATCHING_CONCURRENCY, 4)
 
 const HYBRID_WEIGHTS = {
@@ -42,24 +29,6 @@ const HYBRID_WEIGHTS = {
   keyword: 0.15,
   numeric: 0.10
 }
-
-const AUTO_CONFIRM_MIN_SEMANTIC = 0.92
-const AUTO_CONFIRM_MIN_HYBRID = 0.76
-const AUTO_CONFIRM_MIN_MARGIN = 0.10
-const AUTO_CONFIRM_MIN_KEYWORD = 0.10
-
-const SKIP_CONFIRM_MAX_SEMANTIC = parseBoundedFloatEnv(
-  viteEnv.VITE_MATCHING_SKIP_CONFIRM_MAX_SEMANTIC,
-  0.50
-)
-const SKIP_CONFIRM_MAX_HYBRID = parseBoundedFloatEnv(
-  viteEnv.VITE_MATCHING_SKIP_CONFIRM_MAX_HYBRID,
-  0.46
-)
-const SKIP_CONFIRM_MAX_KEYWORD = parseBoundedFloatEnv(
-  viteEnv.VITE_MATCHING_SKIP_CONFIRM_MAX_KEYWORD,
-  0.08
-)
 
 const STOP_WORDS = new Set([
   'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
@@ -75,15 +44,6 @@ const STOP_WORDS = new Set([
   'so', 'we', 'they', 'he', 'she', 'me', 'him', 'her', 'my', 'your',
   'our', 'their', 'us', 'them'
 ])
-
-/**
- * Truncate text to a reasonable excerpt length for the AI prompt.
- * Takes first ~3000 chars — enough for ~750 words of context per passage.
- */
-function truncateForPrompt(text, maxChars = 3000) {
-  if (!text || text.length <= maxChars) return text
-  return text.slice(0, maxChars) + '...'
-}
 
 function roundMs(value) {
   return Math.round(value || 0)
@@ -123,15 +83,6 @@ function resolveConcurrency(value, fallback) {
   return clamp(parsed, 1, 12)
 }
 
-function normalizeClaimDedupKey(text) {
-  if (!text) return ''
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
 function normalizeAlias(text) {
   if (!text) return ''
   return String(text)
@@ -139,91 +90,6 @@ function normalizeAlias(text) {
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-}
-
-function parseReferenceIndex(value, maxCandidates) {
-  if (!maxCandidates || maxCandidates < 1 || value === null || value === undefined) {
-    return null
-  }
-
-  if (Number.isFinite(value)) {
-    const parsed = Math.trunc(value)
-    return parsed >= 1 && parsed <= maxCandidates ? parsed : null
-  }
-
-  const asText = String(value).trim()
-  if (!asText) return null
-
-  const direct = Number.parseInt(asText, 10)
-  if (Number.isFinite(direct) && direct >= 1 && direct <= maxCandidates) {
-    return direct
-  }
-
-  const extracted = asText.match(/\d+/)
-  if (extracted) {
-    const parsed = Number.parseInt(extracted[0], 10)
-    if (Number.isFinite(parsed) && parsed >= 1 && parsed <= maxCandidates) {
-      return parsed
-    }
-  }
-
-  return null
-}
-
-function candidateSelectionKey(candidate, fallbackIndex = 0) {
-  if (!candidate) return `candidate:${fallbackIndex}`
-
-  if (candidate.passage_id !== undefined && candidate.passage_id !== null) {
-    return `passage:${candidate.passage_id}`
-  }
-
-  if (candidate.id !== undefined && candidate.id !== null) {
-    return `id:${candidate.id}`
-  }
-
-  const refId = candidate.reference_id ?? candidate.display_alias ?? 'unknown'
-  const page = candidate.page_estimate ?? candidate.page ?? 'na'
-  const textSnippet = String(candidate.passage_text || candidate.excerpt || candidate.content_text || '')
-    .slice(0, 80)
-  return `fallback:${refId}:${page}:${textSnippet}:${fallbackIndex}`
-}
-
-function selectConfirmationCandidates(candidates, maxCandidates, perReferenceCap, diversityEnabled = true) {
-  const source = Array.isArray(candidates) ? candidates : []
-  if (!diversityEnabled || source.length <= 1 || perReferenceCap < 1) {
-    return source.slice(0, maxCandidates)
-  }
-
-  const selected = []
-  const selectedKeys = new Set()
-  const perRefCounts = new Map()
-
-  source.forEach((candidate, index) => {
-    if (selected.length >= maxCandidates) return
-
-    const key = candidateSelectionKey(candidate, index)
-    if (selectedKeys.has(key)) return
-
-    const refKey = candidate.reference_id ?? candidate.display_alias ?? `unknown-${index}`
-    const refCount = perRefCounts.get(refKey) || 0
-    if (refCount >= perReferenceCap) return
-
-    selected.push(candidate)
-    selectedKeys.add(key)
-    perRefCounts.set(refKey, refCount + 1)
-  })
-
-  if (selected.length < maxCandidates) {
-    source.forEach((candidate, index) => {
-      if (selected.length >= maxCandidates) return
-      const key = candidateSelectionKey(candidate, index)
-      if (selectedKeys.has(key)) return
-      selected.push(candidate)
-      selectedKeys.add(key)
-    })
-  }
-
-  return selected
 }
 
 function resolveMatchConfidence(rawConfidence, fallback) {
@@ -255,66 +121,44 @@ function accumulateMatchingUsage(telemetry, usage) {
   telemetry.matching_ai_cost = (telemetry.matching_ai_cost || 0) + (usage.cost || 0)
 }
 
-function selectAICandidate(result, candidates) {
-  if (!result?.matched || !Array.isArray(candidates) || candidates.length === 0) {
+function parseReferenceIndex(value, maxCandidates) {
+  if (!maxCandidates || maxCandidates < 1 || value === null || value === undefined) {
     return null
   }
-
-  if (candidates.length === 1) {
-    return candidates[0]
+  if (Number.isFinite(value)) {
+    const parsed = Math.trunc(value)
+    return parsed >= 1 && parsed <= maxCandidates ? parsed : null
   }
-
-  const index = parseReferenceIndex(result.referenceIndex, candidates.length)
-  if (index) {
-    return candidates[index - 1]
+  const asText = String(value).trim()
+  if (!asText) return null
+  const direct = Number.parseInt(asText, 10)
+  if (Number.isFinite(direct) && direct >= 1 && direct <= maxCandidates) return direct
+  const extracted = asText.match(/\d+/)
+  if (extracted) {
+    const parsed = Number.parseInt(extracted[0], 10)
+    if (Number.isFinite(parsed) && parsed >= 1 && parsed <= maxCandidates) return parsed
   }
-
-  const resultName = normalizeAlias(result.referenceName)
-  if (resultName) {
-    const exactNameMatch = candidates.find(candidate => {
-      const candidateName = normalizeAlias(candidate.display_alias || candidate.name)
-      return candidateName === resultName
-    })
-    if (exactNameMatch) return exactNameMatch
-
-    const fuzzyNameMatch = candidates.find(candidate => {
-      const candidateName = normalizeAlias(candidate.display_alias || candidate.name)
-      return candidateName.includes(resultName) || resultName.includes(candidateName)
-    })
-    if (fuzzyNameMatch) return fuzzyNameMatch
-  }
-
-  const excerpt = normalizeAlias(result.supportingExcerpt)
-  if (excerpt.length >= 20) {
-    const excerptNeedle = excerpt.slice(0, 180)
-    const excerptMatch = candidates.find(candidate => {
-      const candidateText = normalizeAlias(candidate.passage_text || candidate.content_text || candidate.excerpt)
-      return candidateText.includes(excerptNeedle)
-    })
-    if (excerptMatch) return excerptMatch
-  }
-
   return null
 }
 
-function buildClaimGroups(claims) {
-  const groupsByKey = new Map()
+function selectAICandidate(result, candidates) {
+  if (!result?.matched || !Array.isArray(candidates) || candidates.length === 0) return null
+  if (candidates.length === 1) return candidates[0]
 
-  claims.forEach((claim, index) => {
-    const key = normalizeClaimDedupKey(claim.text) || `claim-${index}`
-    const existing = groupsByKey.get(key)
-    if (existing) {
-      existing.indices.push(index)
-      return
-    }
-    groupsByKey.set(key, {
-      key,
-      primaryIndex: index,
-      indices: [index]
+  const index = parseReferenceIndex(result.referenceIndex, candidates.length)
+  if (index) return candidates[index - 1]
+
+  const resultName = normalizeAlias(result.referenceName)
+  if (resultName) {
+    const exactMatch = candidates.find(c => normalizeAlias(c.display_alias || c.name) === resultName)
+    if (exactMatch) return exactMatch
+    const fuzzyMatch = candidates.find(c => {
+      const n = normalizeAlias(c.display_alias || c.name)
+      return n.includes(resultName) || resultName.includes(n)
     })
-  })
-
-  return Array.from(groupsByKey.values())
+    if (fuzzyMatch) return fuzzyMatch
+  }
+  return null
 }
 
 function extractNumericTokens(text) {
@@ -395,66 +239,6 @@ function enrichSemanticOnlyResults(searchResults) {
     .sort((a, b) => (b.semantic_score || 0) - (a.semantic_score || 0))
 }
 
-function evaluateAutoConfirm(candidates) {
-  if (!candidates.length) {
-    return {
-      shouldAutoConfirm: false,
-      topCandidate: null,
-      leadMargin: 0
-    }
-  }
-
-  const topCandidate = candidates[0]
-  const secondCandidate = candidates[1]
-  const leadMargin = topCandidate.hybrid_score - (secondCandidate?.hybrid_score || 0)
-
-  const shouldAutoConfirm = (
-    topCandidate.semantic_score >= AUTO_CONFIRM_MIN_SEMANTIC &&
-    topCandidate.hybrid_score >= AUTO_CONFIRM_MIN_HYBRID &&
-    topCandidate.keyword_overlap >= AUTO_CONFIRM_MIN_KEYWORD &&
-    leadMargin >= AUTO_CONFIRM_MIN_MARGIN
-  )
-
-  return {
-    shouldAutoConfirm,
-    topCandidate,
-    leadMargin
-  }
-}
-
-function evaluateSkipConfirmation(candidates) {
-  if (!candidates.length) {
-    return {
-      shouldSkip: false,
-      topCandidate: null
-    }
-  }
-
-  const topCandidate = candidates[0]
-  const semantic = topCandidate.semantic_score ?? 0
-  const hybrid = topCandidate.hybrid_score ?? 0
-  const keyword = topCandidate.keyword_overlap ?? 0
-
-  const shouldSkip = (
-    semantic <= SKIP_CONFIRM_MAX_SEMANTIC &&
-    hybrid <= SKIP_CONFIRM_MAX_HYBRID &&
-    keyword <= SKIP_CONFIRM_MAX_KEYWORD
-  )
-
-  return { shouldSkip, topCandidate }
-}
-
-function copyMatchToDuplicateClaim(targetClaim, sourceClaimResult) {
-  return {
-    ...targetClaim,
-    matched: sourceClaimResult.matched,
-    matchConfidence: sourceClaimResult.matchConfidence,
-    matchTier: sourceClaimResult.matchTier,
-    reference: sourceClaimResult.reference ? { ...sourceClaimResult.reference } : null,
-    matchReasoning: sourceClaimResult.matchReasoning
-  }
-}
-
 function createFallbackReferenceLoader(allReferences, telemetry) {
   let allReferencesWithTextPromise = null
 
@@ -493,33 +277,245 @@ function createFallbackReferenceLoader(allReferences, telemetry) {
   }
 }
 
+// ========== V2 Pipeline Helpers ==========
+
+const FACT_ANCHOR_MIN_SIMILARITY = 0.90
+const FACT_ANCHOR_MIN_KEYWORD_OVERLAP = 2
+const TIER2_MAX_REFERENCES = 3
+
+async function factAnchoredSearch(claim, brandId, telemetry) {
+  try {
+    const response = await api.searchFacts(brandId, claim.text)
+    const results = response.results || []
+    if (results.length === 0) return null
+
+    const top = results[0]
+    if (top.similarity < FACT_ANCHOR_MIN_SIMILARITY) return null
+
+    // Check keyword overlap — need at least 2 shared keywords or 1 shared numeric
+    const claimKeywords = extractKeywords(claim.text)
+    const claimNumerics = extractNumericTokens(claim.text)
+    const factTexts = (top.facts || []).map(f => f.text || '').join(' ').toLowerCase()
+
+    const keywordMatches = claimKeywords.filter(kw => factTexts.includes(kw))
+    const numericMatches = claimNumerics.filter(n => factTexts.includes(n))
+
+    if (keywordMatches.length < FACT_ANCHOR_MIN_KEYWORD_OVERLAP && numericMatches.length === 0) {
+      return null
+    }
+
+    // Find the best matching individual fact
+    const bestFact = (top.facts || []).reduce((best, fact) => {
+      const factLower = (fact.text || '').toLowerCase()
+      const score = claimKeywords.filter(kw => factLower.includes(kw)).length
+      return score > (best?.score || 0) ? { ...fact, score } : best
+    }, null)
+
+    telemetry.fact_anchored_count = (telemetry.fact_anchored_count || 0) + 1
+    return {
+      matched: true,
+      matchConfidence: top.similarity,
+      matchTier: 'fact-anchored',
+      reference: {
+        id: top.reference_id,
+        name: top.display_alias,
+        page: bestFact?.page || null,
+        excerpt: bestFact?.text || top.facts?.[0]?.text || null
+      },
+      matchReasoning: `Fact-anchored match (similarity ${(top.similarity * 100).toFixed(0)}%, ${keywordMatches.length} keywords, ${numericMatches.length} numerics)`,
+      _diag: {
+        similarity: Number(top.similarity?.toFixed(3)),
+        keywordMatches: keywordMatches.length,
+        numericMatches: numericMatches.length,
+        refName: top.display_alias
+      }
+    }
+  } catch (err) {
+    logger.warn('Fact-anchored search failed, falling through:', err.message)
+    return null
+  }
+}
+
+function groupByReference(rerankedResults, maxRefs = 3) {
+  const refMap = new Map()
+  for (const result of rerankedResults) {
+    const refId = result.reference_id
+    if (!refMap.has(refId)) {
+      refMap.set(refId, {
+        reference_id: refId,
+        display_alias: result.display_alias,
+        bestHybridScore: result.hybrid_score,
+        bestSemanticScore: result.semantic_score
+      })
+    }
+  }
+  return Array.from(refMap.values())
+    .sort((a, b) => b.bestHybridScore - a.bestHybridScore)
+    .slice(0, maxRefs)
+}
+
+async function fullReferenceExtraction(claim, candidateRefs, allReferences, telemetry, diagnostics = []) {
+  for (const candidateRef of candidateRefs) {
+    const refDiag = {
+      tier: '2-extraction',
+      refName: candidateRef.display_alias,
+      refId: candidateRef.reference_id
+    }
+
+    try {
+      const refObj = allReferences.find(r => r.id === candidateRef.reference_id)
+      if (!refObj) {
+        refDiag.result = 'ref-not-found'
+        diagnostics.push(refDiag)
+        continue
+      }
+
+      const textData = await api.fetchReferenceText(candidateRef.reference_id)
+      if (!textData?.content_text) {
+        refDiag.result = 'no-text'
+        diagnostics.push(refDiag)
+        continue
+      }
+
+      refDiag.textLength = textData.content_text.length
+      telemetry.extraction_ai_calls = (telemetry.extraction_ai_calls || 0) + 1
+
+      const extractionResult = await extractSupportingQuote(
+        claim.text,
+        textData.content_text,
+        candidateRef.display_alias
+      )
+
+      accumulateMatchingUsage(telemetry, extractionResult?.usage)
+
+      const result = extractionResult?.result
+      if (!result || !result.supported || !result.quotes?.length) {
+        refDiag.result = 'not-supported'
+        refDiag.supported = result?.supported ?? null
+        refDiag.quoteCount = result?.quotes?.length ?? 0
+        refDiag.reasoning = result?.reasoning?.slice(0, 200) ?? null
+        diagnostics.push(refDiag)
+        continue
+      }
+
+      // Tier 2b: Verify the quote
+      const bestQuote = result.quotes[0]
+      const verification = verifyQuote(bestQuote.text, textData.content_text)
+
+      refDiag.quoteLength = bestQuote.text?.length ?? 0
+      refDiag.verificationStatus = verification.status
+      refDiag.quotePreview = bestQuote.text?.slice(0, 120) ?? null
+
+      if (verification.status === 'unverified') {
+        telemetry.unverified_quotes = (telemetry.unverified_quotes || 0) + 1
+
+        // Try second quote if available
+        if (result.quotes.length > 1) {
+          const altVerification = verifyQuote(result.quotes[1].text, textData.content_text)
+          refDiag.altQuoteStatus = altVerification.status
+          refDiag.altQuotePreview = result.quotes[1].text?.slice(0, 120) ?? null
+
+          if (altVerification.status !== 'unverified') {
+            refDiag.result = 'matched-alt-quote'
+            diagnostics.push(refDiag)
+
+            const pageEstimate = altVerification.charOffset != null && textData.page_count
+              ? Math.floor(altVerification.charOffset / (textData.content_text.length / textData.page_count)) + 1
+              : result.quotes[1].page_estimate
+            return {
+              matched: true,
+              matchConfidence: altVerification.status === 'verified' ? 0.90 : 0.75,
+              matchTier: altVerification.status === 'verified' ? 'verified-extraction' : 'partial-extraction',
+              reference: {
+                id: candidateRef.reference_id,
+                name: candidateRef.display_alias,
+                page: pageEstimate,
+                excerpt: result.quotes[1].text
+              },
+              matchReasoning: result.reasoning
+            }
+          }
+        }
+
+        refDiag.result = 'unverified'
+        diagnostics.push(refDiag)
+        continue
+      }
+
+      // Verified or partial match
+      const pageEstimate = verification.charOffset != null && textData.page_count
+        ? Math.floor(verification.charOffset / (textData.content_text.length / textData.page_count)) + 1
+        : bestQuote.page_estimate
+
+      telemetry.verified_quotes = (telemetry.verified_quotes || 0) + 1
+      refDiag.result = 'matched'
+      refDiag.matchTier = verification.status === 'verified' ? 'verified-extraction' : 'partial-extraction'
+      diagnostics.push(refDiag)
+
+      return {
+        matched: true,
+        matchConfidence: verification.status === 'verified' ? 0.95 : 0.80,
+        matchTier: verification.status === 'verified' ? 'verified-extraction' : 'partial-extraction',
+        reference: {
+          id: candidateRef.reference_id,
+          name: candidateRef.display_alias,
+          page: pageEstimate,
+          excerpt: bestQuote.text
+        },
+        matchReasoning: result.reasoning
+      }
+    } catch (err) {
+      logger.warn(`Extraction failed for ref ${candidateRef.reference_id}:`, err.message)
+      refDiag.result = 'error'
+      refDiag.error = err.message
+      diagnostics.push(refDiag)
+      continue
+    }
+  }
+
+  return null
+}
+
 /**
- * Match a single claim to references using semantic search.
+ * Match a single claim to references using V2 pipeline.
  *
  * Pipeline:
- * 1. Call backend to embed claim and retrieve top-K passages
- * 2. Hybrid-rerank candidates by semantic + keyword + numeric overlap
- * 3. Auto-confirm high-confidence matches; use Gemini only for ambiguous cases
- * 4. Return match result
+ * Tier 0.5: Fact-anchored search (fast, high-precision)
+ * Tier 1: Semantic retrieval → narrow to top references
+ * Tier 2: Full-reference extraction via Gemini Flash
+ * Tier 2b: Quote verification against actual text
  *
- * Falls back to the old keyword matching if the backend search fails
- * (e.g., if embeddings haven't been generated yet).
+ * Falls back to keyword matching if the backend search fails.
  */
 async function matchSingleClaim(claim, brandId, allReferences, options = {}) {
   const {
     topK = DEFAULT_TOP_K,
     candidatePool = DEFAULT_CANDIDATE_POOL,
-    aiConfirmationCandidates = DEFAULT_AI_CONFIRMATION_CANDIDATES,
-    aiConfirmPerReferenceCap = DEFAULT_AI_CONFIRM_PER_REFERENCE_CAP,
     telemetry,
     onStage,
     getFallbackReferencesWithText
   } = options
 
   const claimStartedAt = Date.now()
+  const diagnostics = []
 
   try {
-  // Step 1: Semantic search via backend
+    // Tier 0.5: Fact-anchored search
+    onStage?.('facts')
+    const factMatch = await factAnchoredSearch(claim, brandId, telemetry)
+    diagnostics.push({
+      tier: '0.5-facts',
+      result: factMatch ? 'matched' : 'no-match',
+      similarity: factMatch?._diag?.similarity ?? null,
+      keywordOverlap: factMatch?._diag?.keywordMatches ?? null,
+      numericOverlap: factMatch?._diag?.numericMatches ?? null
+    })
+    if (factMatch) {
+      delete factMatch._diag
+      return { ...claim, ...factMatch, diagnostics }
+    }
+
+    // Tier 1: Semantic retrieval → narrow to top references
     let searchResults = []
     try {
       telemetry.semantic_search_count++
@@ -531,157 +527,71 @@ async function matchSingleClaim(claim, brandId, allReferences, options = {}) {
       telemetry.keyword_fallback_count++
       onStage?.('fallback')
       logger.warn(`Semantic search failed for claim ${claim.id}, falling back to keyword matching:`, err.message)
-      return keywordFallbackMatch(claim, getFallbackReferencesWithText, telemetry)
+      diagnostics.push({ tier: '1-semantic', result: 'error', error: err.message })
+      const fallbackResult = await keywordFallbackMatch(claim, getFallbackReferencesWithText, telemetry)
+      return { ...fallbackResult, diagnostics }
     }
 
     if (searchResults.length === 0) {
+      diagnostics.push({ tier: '1-semantic', result: 'no-passages', passageCount: 0 })
       return {
         ...claim,
         matched: false,
         reference: null,
-        matchReasoning: 'No similar passages found in reference library'
+        matchReasoning: 'No similar passages found in reference library',
+        diagnostics
       }
     }
 
-    // Step 2: Hybrid rerank + confidence gating
+    // Hybrid rerank
     const rerankedResults = MATCHING_HYBRID_ENABLED
       ? rerankSemanticResults(claim.text, searchResults)
       : enrichSemanticOnlyResults(searchResults)
-    const { shouldAutoConfirm, topCandidate, leadMargin } = evaluateAutoConfirm(rerankedResults)
-    const { shouldSkip: shouldSkipConfirmation, topCandidate: lowConfidenceTop } = evaluateSkipConfirmation(rerankedResults)
 
-    if (MATCHING_AUTOCONFIRM_ENABLED && shouldAutoConfirm && topCandidate) {
-      telemetry.autoconfirm_count++
+    // Group by reference — pick top N
+    const candidateRefs = groupByReference(rerankedResults, TIER2_MAX_REFERENCES)
+
+    diagnostics.push({
+      tier: '1-semantic',
+      result: candidateRefs.length > 0 ? 'narrowed' : 'no-candidates',
+      passageCount: searchResults.length,
+      topPassageScores: rerankedResults.slice(0, 5).map(r => ({
+        refName: r.display_alias,
+        semantic: Number(r.semantic_score?.toFixed(3)),
+        hybrid: Number(r.hybrid_score?.toFixed(3))
+      })),
+      candidateRefCount: candidateRefs.length,
+      candidateRefs: candidateRefs.map(r => ({
+        refName: r.display_alias,
+        bestHybrid: Number(r.bestHybridScore?.toFixed(3)),
+        bestSemantic: Number(r.bestSemanticScore?.toFixed(3))
+      }))
+    })
+
+    if (candidateRefs.length === 0) {
       return {
         ...claim,
-        matched: true,
-        matchConfidence: topCandidate.hybrid_score,
-        matchTier: 'hybrid-autoconfirm',
-        reference: {
-          id: topCandidate.reference_id,
-          name: topCandidate.display_alias,
-          page: topCandidate.page_estimate,
-          excerpt: topCandidate.passage_text?.slice(0, 400)
-        },
-        matchReasoning: `Auto-confirmed by hybrid score (${(topCandidate.hybrid_score * 100).toFixed(0)}%), semantic ${(topCandidate.semantic_score * 100).toFixed(0)}%, lead +${(leadMargin * 100).toFixed(0)}`
+        matched: false,
+        reference: null,
+        matchReasoning: 'No candidate references found above threshold',
+        diagnostics
       }
     }
 
-    if (MATCHING_SKIP_CONFIRM_LOW_CONFIDENCE_ENABLED && shouldSkipConfirmation && lowConfidenceTop) {
-      telemetry.confirmation_skipped_low_confidence_count++
-      return {
-        ...claim,
-        matched: false,
-        reference: null,
-        matchReasoning: `Skipped AI confirmation: low retrieval confidence (hybrid ${(lowConfidenceTop.hybrid_score * 100).toFixed(0)}%, semantic ${(lowConfidenceTop.semantic_score * 100).toFixed(0)}%)`
-      }
+    // Tier 2 + 2b: Full-reference extraction with quote verification
+    onStage?.('extract')
+    const extractionMatch = await fullReferenceExtraction(claim, candidateRefs, allReferences, telemetry, diagnostics)
+    if (extractionMatch) {
+      return { ...claim, ...extractionMatch, diagnostics }
     }
 
-    // Step 3: AI confirmation for ambiguous cases only
-    const baselineCandidates = rerankedResults.slice(0, aiConfirmationCandidates)
-    const preDiversityCount = baselineCandidates.length
-    const aiCandidates = selectConfirmationCandidates(
-      rerankedResults,
-      aiConfirmationCandidates,
-      aiConfirmPerReferenceCap,
-      MATCHING_CONFIRM_DIVERSITY_ENABLED
-    )
-    telemetry.ai_candidates_total += aiCandidates.length
-    telemetry.ai_candidates_pre_diversity_total += preDiversityCount
-    telemetry.ai_diversity_pruned_total += Math.max(0, preDiversityCount - aiCandidates.length)
-    const baselineKeys = new Set(baselineCandidates.map((candidate, index) => candidateSelectionKey(candidate, index)))
-    const replacementCount = aiCandidates.reduce((count, candidate, index) => (
-      baselineKeys.has(candidateSelectionKey(candidate, index)) ? count : count + 1
-    ), 0)
-    telemetry.ai_diversity_replacements_total += replacementCount
-
-    const refsForAI = aiCandidates.map((result) => ({
-      name: result.display_alias,
-      excerpt: truncateForPrompt(result.passage_text),
-      page: result.page_estimate,
-      similarity: result.semantic_score,
-      hybridScore: result.hybrid_score,
-      keywordOverlap: result.keyword_overlap,
-      numericOverlap: result.numeric_overlap
-    }))
-
-    try {
-      telemetry.confirmation_count++
-      onStage?.('confirm')
-      const matchResponse = await matchClaimToReferences(claim.text, refsForAI)
-      accumulateMatchingUsage(telemetry, matchResponse?.usage)
-      let result = matchResponse?.result
-
-      // AI sometimes returns an array of matches — normalize to single best match
-      if (Array.isArray(result)) {
-        result = result.find(r => r.matched) || result[0] || { matched: false }
-      }
-      if (!result || typeof result !== 'object') {
-        result = { matched: false }
-      }
-
-      const matchedResult = selectAICandidate(result, aiCandidates)
-      if (result.matched && matchedResult) {
-        // Look up the full reference object to get the ID
-        const refObj = allReferences.find(r =>
-          normalizeAlias(r.display_alias) === normalizeAlias(matchedResult.display_alias) ||
-          r.id === matchedResult.reference_id
-        )
-
-        return {
-          ...claim,
-          matched: true,
-          matchConfidence: resolveMatchConfidence(result.confidence, matchedResult.hybrid_score),
-          matchTier: 'hybrid-semantic',
-          reference: {
-            id: refObj?.id || matchedResult.reference_id,
-            name: result.referenceName || matchedResult.display_alias,
-            page: result.pageInReference || matchedResult.page_estimate,
-            excerpt: result.supportingExcerpt || matchedResult.passage_text?.slice(0, 400)
-          },
-          matchReasoning: result.reasoning
-        }
-      }
-
-      if (result.matched && !matchedResult) {
-        logger.warn(`AI confirmed claim ${claim.id} but did not return a resolvable reference identifier`, {
-          referenceIndex: result.referenceIndex,
-          referenceName: result.referenceName
-        })
-      }
-
-      return {
-        ...claim,
-        matched: false,
-        reference: null,
-        matchReasoning: result.reasoning || 'AI could not confirm a supporting reference'
-      }
-    } catch (error) {
-      logger.error(`AI confirmation error for claim ${claim.id}:`, error)
-      // If AI fails, use the top semantic result directly if similarity is high enough
-      const top = rerankedResults[0]
-      if (top && (top.semantic_score >= 0.85 || top.hybrid_score >= 0.78)) {
-        const refObj = allReferences.find(r => r.id === top.reference_id)
-        return {
-          ...claim,
-          matched: true,
-          matchConfidence: top.hybrid_score,
-          matchTier: 'hybrid-direct',
-          reference: {
-            id: refObj?.id || top.reference_id,
-            name: top.display_alias,
-            page: top.page_estimate,
-            excerpt: top.passage_text?.slice(0, 300)
-          },
-          matchReasoning: `High-confidence fallback match (hybrid ${(top.hybrid_score * 100).toFixed(0)}%, semantic ${(top.semantic_score * 100).toFixed(0)}%)`
-        }
-      }
-      return {
-        ...claim,
-        matched: false,
-        reference: null,
-        matchReasoning: `Matching error: ${error.message}`
-      }
+    diagnostics.push({ tier: 'final', result: 'no-match', lastTier: 'extraction' })
+    return {
+      ...claim,
+      matched: false,
+      reference: null,
+      matchReasoning: 'No verified supporting quote found in top candidate references',
+      diagnostics
     }
   } finally {
     telemetry.per_claim_durations_ms.push(Date.now() - claimStartedAt)
@@ -783,13 +693,13 @@ async function keywordFallbackMatch(claim, allReferences, telemetry = null) {
 }
 
 /**
- * Match all claims to references using semantic search.
- * Processes claims in batches to manage API rate limits.
+ * Match all claims to references using V2 pipeline.
+ * Processes every claim individually — no dedup (MLR requires each instance annotated).
  *
  * @param {Array} claims - Array of detected claims
  * @param {Array} references - Array of reference objects with { id, display_alias }
  * @param {Function} onProgress - Progress callback ({ current, total, claim, claimIndex, stage })
- *   stage: retrieve | confirm | fallback | dedup | done
+ *   stage: facts | retrieve | extract | fallback | done
  * @param {number} brandId - Brand ID for semantic search
  * @param {Object} options - Optional matcher settings
  * @returns {Promise<Object>} - { claims, telemetry }
@@ -798,132 +708,92 @@ export async function matchAllClaimsToReferences(claims, references, onProgress,
   const CONCURRENCY = resolveConcurrency(options.concurrency, DEFAULT_MATCHING_CONCURRENCY)
   const topK = options.topK || DEFAULT_TOP_K
   const candidatePool = Math.max(topK, options.candidatePool || DEFAULT_CANDIDATE_POOL)
-  const retrievalTopK = Math.max(topK, candidatePool)
-  const aiConfirmationCandidates = options.aiConfirmationCandidates || DEFAULT_AI_CONFIRMATION_CANDIDATES
-  const aiConfirmPerReferenceCap = options.aiConfirmPerReferenceCap || DEFAULT_AI_CONFIRM_PER_REFERENCE_CAP
   const onClaimResult = typeof options.onClaimResult === 'function'
     ? options.onClaimResult
     : null
   let completed = 0
   const results = new Array(claims.length)
   const startedAt = Date.now()
-  const claimGroups = buildClaimGroups(claims)
 
   const telemetry = {
     total_claims: claims.length,
-    unique_claims: claimGroups.length,
-    duplicate_claims: claims.length - claimGroups.length,
-    dedup_fanout_count: claims.length - claimGroups.length,
     matching_total_ms: 0,
     reference_fetch_ms: 0,
     per_claim_durations_ms: [],
-    per_claim_match_ms: {
-      count: 0,
-      min: 0,
-      avg: 0,
-      p95: 0,
-      max: 0
-    },
+    per_claim_match_ms: { count: 0, min: 0, avg: 0, p95: 0, max: 0 },
     semantic_search_count: 0,
-    confirmation_count: 0,
-    autoconfirm_count: 0,
-    ai_candidates_total: 0,
-    ai_candidates_pre_diversity_total: 0,
-    ai_diversity_pruned_total: 0,
-    ai_diversity_replacements_total: 0,
+    fact_anchored_count: 0,
+    extraction_ai_calls: 0,
+    verified_quotes: 0,
+    unverified_quotes: 0,
     keyword_fallback_count: 0,
     matching_ai_calls: 0,
     matching_ai_input_tokens: 0,
     matching_ai_output_tokens: 0,
     matching_ai_cost: 0,
-    confirmation_skipped_low_confidence_count: 0,
     concurrency: CONCURRENCY,
     top_k: topK,
-    retrieval_top_k: retrievalTopK,
     candidate_pool: candidatePool,
-    ai_confirmation_candidates: aiConfirmationCandidates,
-    ai_confirm_per_reference_cap: aiConfirmPerReferenceCap,
-    hybrid_enabled: MATCHING_HYBRID_ENABLED,
-    autoconfirm_enabled: MATCHING_AUTOCONFIRM_ENABLED,
-    skip_confirm_low_confidence_enabled: MATCHING_SKIP_CONFIRM_LOW_CONFIDENCE_ENABLED,
-    skip_confirm_max_semantic: SKIP_CONFIRM_MAX_SEMANTIC,
-    skip_confirm_max_hybrid: SKIP_CONFIRM_MAX_HYBRID,
-    skip_confirm_max_keyword: SKIP_CONFIRM_MAX_KEYWORD,
-    confirm_diversity_enabled: MATCHING_CONFIRM_DIVERSITY_ENABLED
+    hybrid_enabled: MATCHING_HYBRID_ENABLED
   }
 
   const getFallbackReferencesWithText = createFallbackReferenceLoader(references, telemetry)
 
-  for (let start = 0; start < claimGroups.length; start += CONCURRENCY) {
-    const batch = claimGroups.slice(start, start + CONCURRENCY)
-    const batchPromises = batch.map((group) => {
-      const primaryIndex = group.primaryIndex
-      const primaryClaim = claims[primaryIndex]
+  // Process all claims individually — no dedup (MLR requires each instance annotated)
+  for (let start = 0; start < claims.length; start += CONCURRENCY) {
+    const batch = []
+    for (let i = start; i < Math.min(start + CONCURRENCY, claims.length); i++) {
+      batch.push(i)
+    }
 
-      return matchSingleClaim(primaryClaim, brandId, references, {
+    const batchPromises = batch.map((claimIndex) => {
+      const claim = claims[claimIndex]
+
+      return matchSingleClaim(claim, brandId, references, {
         topK,
         candidatePool,
-        aiConfirmationCandidates,
-        aiConfirmPerReferenceCap,
         telemetry,
         getFallbackReferencesWithText,
         onStage: (stage) => {
           onProgress?.({
             current: completed,
             total: claims.length,
-            claim: primaryClaim,
-            claimIndex: primaryIndex + 1,
-            stage
-          })
-        }
-      }).then((primaryResult) => {
-        for (const claimIndex of group.indices) {
-          const claim = claims[claimIndex]
-          const isPrimary = claimIndex === primaryIndex
-          results[claimIndex] = isPrimary
-            ? primaryResult
-            : copyMatchToDuplicateClaim(claim, primaryResult)
-
-          completed += 1
-          const stage = isPrimary ? 'done' : 'dedup'
-          const progressPayload = {
-            current: completed,
-            total: claims.length,
             claim,
             claimIndex: claimIndex + 1,
             stage
-          }
-          onProgress?.(progressPayload)
-          onClaimResult?.({
-            ...progressPayload,
-            claim: results[claimIndex]
           })
         }
+      }).then((matchResult) => {
+        results[claimIndex] = matchResult
+        completed += 1
+        const progressPayload = {
+          current: completed,
+          total: claims.length,
+          claim,
+          claimIndex: claimIndex + 1,
+          stage: 'done'
+        }
+        onProgress?.(progressPayload)
+        onClaimResult?.({ ...progressPayload, claim: matchResult })
       }).catch((error) => {
-        logger.error(`Claim matching failed for claim ${primaryClaim.id}:`, error)
-        for (const claimIndex of group.indices) {
-          const claim = claims[claimIndex]
-          results[claimIndex] = {
-            ...claim,
-            matched: false,
-            reference: null,
-            matchReasoning: `Matching error: ${error.message}`
-          }
-          completed += 1
-          const progressPayload = {
-            current: completed,
-            total: claims.length,
-            claim,
-            claimIndex: claimIndex + 1,
-            stage: 'done'
-          }
-          onProgress?.(progressPayload)
-          onClaimResult?.({
-            ...progressPayload,
-            claim: results[claimIndex]
-          })
+        logger.error(`Claim matching failed for claim ${claim.id}:`, error)
+        results[claimIndex] = {
+          ...claim,
+          matched: false,
+          reference: null,
+          matchReasoning: `Matching error: ${error.message}`
         }
-        telemetry.failed_claim_count = (telemetry.failed_claim_count || 0) + group.indices.length
+        completed += 1
+        const progressPayload = {
+          current: completed,
+          total: claims.length,
+          claim,
+          claimIndex: claimIndex + 1,
+          stage: 'done'
+        }
+        onProgress?.(progressPayload)
+        onClaimResult?.({ ...progressPayload, claim: results[claimIndex] })
+        telemetry.failed_claim_count = (telemetry.failed_claim_count || 0) + 1
       })
     })
     await Promise.all(batchPromises)
@@ -931,13 +801,39 @@ export async function matchAllClaimsToReferences(claims, references, onProgress,
 
   telemetry.matching_total_ms = Date.now() - startedAt
   telemetry.per_claim_match_ms = summarizeDurations(telemetry.per_claim_durations_ms)
-  telemetry.confirmation_skipped_count = Math.max(0, telemetry.unique_claims - telemetry.confirmation_count)
   delete telemetry.per_claim_durations_ms
 
-  return {
-    claims: results,
-    telemetry
+  // Pipeline summary: count outcomes by tier
+  const pipelineSummary = {
+    fact_anchored_matched: 0,
+    semantic_no_passages: 0,
+    semantic_narrowed: 0,
+    extraction_matched: 0,
+    extraction_not_supported: 0,
+    extraction_unverified: 0,
+    no_match: 0,
+    errors: 0
   }
+  for (const claim of results) {
+    if (!claim?.diagnostics) continue
+    const lastDiag = claim.diagnostics[claim.diagnostics.length - 1]
+    if (!lastDiag) continue
+
+    if (claim.matchTier === 'fact-anchored') pipelineSummary.fact_anchored_matched++
+    else if (claim.matchTier === 'verified-extraction' || claim.matchTier === 'partial-extraction') pipelineSummary.extraction_matched++
+    else if (claim.matchTier === 'keyword-fallback') pipelineSummary.errors++
+    else if (!claim.matched) {
+      const extractionDiags = claim.diagnostics.filter(d => d.tier === '2-extraction')
+      const hasUnverified = extractionDiags.some(d => d.result === 'unverified')
+      const hasNotSupported = extractionDiags.some(d => d.result === 'not-supported')
+      if (hasUnverified) pipelineSummary.extraction_unverified++
+      else if (hasNotSupported) pipelineSummary.extraction_not_supported++
+      else pipelineSummary.no_match++
+    }
+  }
+  telemetry.pipeline_summary = pipelineSummary
+
+  return { claims: results, telemetry }
 }
 
 /**
