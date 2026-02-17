@@ -290,7 +290,7 @@ async function factAnchoredSearch(claim, brandId, telemetry) {
     if (results.length === 0) return null
 
     const top = results[0]
-    if (top.similarity < FACT_ANCHOR_MIN_SIMILARITY) return null
+    if (!Number.isFinite(top.similarity) || top.similarity < FACT_ANCHOR_MIN_SIMILARITY) return null
 
     // Check keyword overlap — need at least 2 shared keywords or 1 shared numeric
     const claimKeywords = extractKeywords(claim.text)
@@ -407,15 +407,14 @@ async function fullReferenceExtraction(claim, candidateRefs, allReferences, tele
       refDiag.quotePreview = bestQuote.text?.slice(0, 120) ?? null
 
       if (verification.status === 'unverified') {
-        telemetry.unverified_quotes = (telemetry.unverified_quotes || 0) + 1
-
-        // Try second quote if available
+        // Try second quote if available before counting as unverified
         if (result.quotes.length > 1) {
           const altVerification = verifyQuote(result.quotes[1].text, textData.content_text)
           refDiag.altQuoteStatus = altVerification.status
           refDiag.altQuotePreview = result.quotes[1].text?.slice(0, 120) ?? null
 
           if (altVerification.status !== 'unverified') {
+            telemetry.verified_quotes = (telemetry.verified_quotes || 0) + 1
             refDiag.result = 'matched-alt-quote'
             diagnostics.push(refDiag)
 
@@ -437,6 +436,7 @@ async function fullReferenceExtraction(claim, candidateRefs, allReferences, tele
           }
         }
 
+        telemetry.unverified_quotes = (telemetry.unverified_quotes || 0) + 1
         refDiag.result = 'unverified'
         diagnostics.push(refDiag)
         continue
@@ -803,11 +803,11 @@ export async function matchAllClaimsToReferences(claims, references, onProgress,
   telemetry.per_claim_match_ms = summarizeDurations(telemetry.per_claim_durations_ms)
   delete telemetry.per_claim_durations_ms
 
-  // Pipeline summary: count outcomes by tier
+  // Pipeline summary: count outcomes by tier from diagnostics
   const pipelineSummary = {
     fact_anchored_matched: 0,
     semantic_no_passages: 0,
-    semantic_narrowed: 0,
+    keyword_fallback_matched: 0,
     extraction_matched: 0,
     extraction_not_supported: 0,
     extraction_unverified: 0,
@@ -815,14 +815,17 @@ export async function matchAllClaimsToReferences(claims, references, onProgress,
     errors: 0
   }
   for (const claim of results) {
-    if (!claim?.diagnostics) continue
-    const lastDiag = claim.diagnostics[claim.diagnostics.length - 1]
-    if (!lastDiag) continue
+    if (!claim?.diagnostics) { pipelineSummary.errors++; continue }
 
     if (claim.matchTier === 'fact-anchored') pipelineSummary.fact_anchored_matched++
     else if (claim.matchTier === 'verified-extraction' || claim.matchTier === 'partial-extraction') pipelineSummary.extraction_matched++
-    else if (claim.matchTier === 'keyword-fallback') pipelineSummary.errors++
+    else if (claim.matchTier === 'keyword-fallback') pipelineSummary.keyword_fallback_matched++
     else if (!claim.matched) {
+      // Determine why it didn't match from diagnostics
+      const semanticDiag = claim.diagnostics.find(d => d.tier === '1-semantic')
+      if (semanticDiag?.result === 'no-passages') { pipelineSummary.semantic_no_passages++; continue }
+      if (semanticDiag?.result === 'error') { pipelineSummary.errors++; continue }
+
       const extractionDiags = claim.diagnostics.filter(d => d.tier === '2-extraction')
       const hasUnverified = extractionDiags.some(d => d.result === 'unverified')
       const hasNotSupported = extractionDiags.some(d => d.result === 'not-supported')
