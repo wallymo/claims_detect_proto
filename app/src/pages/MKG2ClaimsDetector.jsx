@@ -135,7 +135,7 @@ export default function MKG2ClaimsDetector() {
   const [activeClaimId, setActiveClaimId] = useState(null)
   const [statusFilter, setStatusFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
-  const [sortOrder, setSortOrder] = useState('high-low')
+  const [sortOrder, setSortOrder] = useState('annotation')
   const [showClaimPins, setShowClaimPins] = useState(true)
 
   // Cost tracking
@@ -1118,10 +1118,11 @@ export default function MKG2ClaimsDetector() {
       if (searchQuery && !c.text.toLowerCase().includes(searchQuery.toLowerCase())) return false
       return true
     })
-    .sort((a, b) => sortOrder === 'high-low'
-      ? b.confidence - a.confidence
-      : a.confidence - b.confidence
-    )
+    .sort((a, b) => {
+      if (sortOrder === 'annotation') return (a.globalIndex ?? 0) - (b.globalIndex ?? 0)
+      if (sortOrder === 'confidence-desc') return b.confidence - a.confidence
+      return a.confidence - b.confidence
+    })
 
   const canAnalyze = uploadedFile && !isAnalyzing && !isMatching
 
@@ -1468,6 +1469,12 @@ export default function MKG2ClaimsDetector() {
                     <div className="claimsFilterBar">
                       <div className="statusToggleGroup">
                         <button
+                          className={`statusToggleBtn ${statusFilter === 'all' ? 'active' : ''}`}
+                          onClick={() => setStatusFilter('all')}
+                        >
+                          All ({claims.length})
+                        </button>
+                        <button
                           className={`statusToggleBtn ${statusFilter === 'pending' ? 'active' : ''}`}
                           onClick={() => setStatusFilter(statusFilter === 'pending' ? 'all' : 'pending')}
                         >
@@ -1493,12 +1500,15 @@ export default function MKG2ClaimsDetector() {
                           value={searchQuery}
                           onChange={(e) => setSearchQuery(e.target.value)}
                         />
-                        <button
-                          className="sortToggle"
-                          onClick={() => setSortOrder(prev => prev === 'high-low' ? 'low-high' : 'high-low')}
+                        <select
+                          className="sortSelect"
+                          value={sortOrder}
+                          onChange={(e) => setSortOrder(e.target.value)}
                         >
-                          Confidence {sortOrder === 'high-low' ? '↓' : '↑'}
-                        </button>
+                          <option value="annotation">Annotation #</option>
+                          <option value="confidence-desc">Confidence ↓</option>
+                          <option value="confidence-asc">Confidence ↑</option>
+                        </select>
                       </div>
                     </div>
                   )}

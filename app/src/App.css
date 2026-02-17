@@ -250,6 +250,22 @@ html, body {
   color: var(--color-text-primary);
 }
 
+.sortSelect {
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-border-default);
+  border-radius: 6px;
+  background: var(--color-background-primary);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sortSelect:focus {
+  outline: none;
+  border-color: var(--blue-5, #2196F3);
+}
+
 .claimsList {
   flex: 1;
   overflow-y: auto;
