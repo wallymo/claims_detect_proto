@@ -56,23 +56,11 @@ const PRICING = {
   'default': { input: 1.25, output: 5.00 }
 }
 
-const VALID_MEDIA_RESOLUTIONS = new Set([
-  'MEDIA_RESOLUTION_LOW',
-  'MEDIA_RESOLUTION_MEDIUM',
-  'MEDIA_RESOLUTION_HIGH'
-])
-
 function parseBooleanEnvFlag(value, fallback) {
   if (value === undefined || value === null || value === '') return fallback
   const normalized = String(value).trim().toLowerCase()
   if (['1', 'true', 'yes', 'on'].includes(normalized)) return true
   if (['0', 'false', 'no', 'off'].includes(normalized)) return false
-  return fallback
-}
-
-function resolveMediaResolution(value, fallback = 'MEDIA_RESOLUTION_HIGH') {
-  const candidate = String(value || '').trim().toUpperCase()
-  if (VALID_MEDIA_RESOLUTIONS.has(candidate)) return candidate
   return fallback
 }
 
@@ -84,11 +72,6 @@ const GEMINI_VISUAL_SWEEP_ENABLED = parseBooleanEnvFlag(
   import.meta.env.VITE_GEMINI_VISUAL_SWEEP_ENABLED,
   true
 )
-const GEMINI_MEDIA_RESOLUTION = resolveMediaResolution(
-  import.meta.env.VITE_GEMINI_MEDIA_RESOLUTION,
-  'MEDIA_RESOLUTION_HIGH'
-)
-
 // System instruction (moved out of user prompt for efficiency)
 // Generic — doc-type-specific guidance is in the user prompt
 const SYSTEM_INSTRUCTION = `You are a veteran MLR (Medical, Legal, Regulatory) reviewer for pharmaceutical promotional materials. Your mission: surface EVERY statement that could require substantiation. Flag 20 borderline phrases rather than let 1 slip through. When unsure, include it with lower confidence rather than omit.
@@ -209,14 +192,6 @@ function extractUsageMetadata(response) {
   return { inputTokens, outputTokens }
 }
 
-function normalizeClaimText(text) {
-  return String(text || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
 function sanitizeRawClaim(rawClaim) {
   if (!rawClaim || typeof rawClaim !== 'object') return null
 
@@ -251,34 +226,15 @@ function normalizeRawClaims(rawClaims) {
 }
 
 function mergeRawClaims(primaryClaims, visualClaims) {
-  const merged = []
-  const byKey = new Map()
-
-  const upsert = (claim, source) => {
-    const dedupeKey = `${claim.page}|${normalizeClaimText(claim.claim)}`
-    const existingIndex = byKey.get(dedupeKey)
-    if (existingIndex === undefined) {
-      byKey.set(dedupeKey, merged.length)
-      merged.push({ ...claim, _source: source })
-      return
-    }
-
-    const existing = merged[existingIndex]
-    if (claim.confidence > existing.confidence) {
-      merged[existingIndex] = { ...claim, _source: source }
-      return
-    }
-
-    // Keep stronger claim text/confidence, but fill missing coordinate fidelity when needed.
-    if ((existing.x === 0 && existing.y === 0) && (claim.x !== 0 || claim.y !== 0)) {
-      merged[existingIndex] = { ...existing, x: claim.x, y: claim.y }
-    }
-  }
-
-  primaryClaims.forEach(claim => upsert(claim, 'primary'))
-  visualClaims.forEach(claim => upsert(claim, 'visual-sweep'))
-
-  return merged
+  // Over-flag principle: keep EVERY claim from both passes, no dedup.
+  // Reviewers have final say — better to surface duplicates than miss a claim.
+  // Filter visual-sweep claims with (0,0) coords — those are text echoes without real
+  // position data that would produce ghost pins at the top-left corner of the page.
+  const validVisualClaims = visualClaims.filter(c => c.x !== 0 || c.y !== 0)
+  return [
+    ...primaryClaims.map(c => ({ ...c, _source: 'primary' })),
+    ...validVisualClaims.map(c => ({ ...c, _source: 'visual-sweep' }))
+  ]
 }
 
 function rawClaimsToFrontendClaims(rawClaims) {
@@ -295,22 +251,28 @@ function rawClaimsToFrontendClaims(rawClaims) {
 function buildVisualSweepPrompt(docType) {
   const docLabel = docType || 'speaker-notes'
   const topRegionHint = docLabel === 'speaker-notes'
-    ? '- For speaker-notes layouts, prioritize the top slide region (y < 55) and extract every chart/table statistic there.'
+    ? '- For speaker-notes layouts, focus on the top slide region (y < 55) where charts and tables live.'
     : ''
 
   return `# Task
-Run a SECOND PASS focused only on visual data claims. Return claims missed in a broad first pass.
+Run a SECOND PASS focused on claims embedded in GRAPHICAL elements — charts, graphs, tables, infographics, and diagrams. The first pass focused on text; this pass targets visual data representations.
 
-# Scope
-- Charts: titles, legends, axis labels, series labels, bar/line labels, percentages, p-values, N counts, confidence intervals.
-- Tables: column headers, row headers, cells with outcomes, rates, hazards, deltas, and statistical qualifiers.
-- Figure callouts, superscripts (†, ‡, §, *), and corresponding footnotes/small print tied to visual data.
+# What to Extract — VISUAL DATA, not just labels
+Focus on the DATA the graphic is communicating, not just text around it:
+- **Bar/line/pie charts**: What outcome does the chart show? If a bar represents "47% reduction" or a line shows a downward trend with a label, that is a claim. Extract the specific value and what it measures.
+- **Kaplan-Meier / survival curves**: Separation between curves, hazard ratios, median survival times shown graphically.
+- **Forest plots**: Point estimates, confidence intervals, overall effect sizes.
+- **Tables**: EVERY data cell that states an outcome, rate, percentage, p-value, hazard ratio, odds ratio, or delta. Each cell with a distinct substantiation point is a separate claim.
+- **Waterfall / spider / swimmer plots**: Individual response rates, durations, thresholds shown.
+- **Infographics with numbers**: Icons paired with statistics (e.g., clock icon + "Works in 3 days"), pictographs, percentage wheels.
+- **Annotation markers (†, ‡, §, *)**: Symbols appearing ON or NEAR visual elements that link to study qualifiers — both the annotated visual claim AND the footnote are claims.
 ${topRegionHint}
 
 # Rules
-- Prefer exact visual wording and exact numeric values from the slide.
-- Split separate substantiation points into separate claims.
-- Do not invent values not present in the visual.
+- Read the VISUAL representation, not just surrounding text. A bar at 47% is a claim even if no text label says "47%".
+- Extract only explicit values visible in the graphic. Do NOT estimate or fabricate numbers from bar heights or line positions — only extract values that are labeled or printed.
+- Split separate data points into separate claims — each table cell, each bar, each curve metric.
+- Do not invent values not visible in the graphic.
 - If uncertain, include with lower confidence rather than omitting.
 
 # Output
@@ -614,8 +576,8 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     ? userPrompt
     : structure + userPrompt + position
 
-  // Keep supplemental context first, then keep the extraction instruction closest to the end.
-  const finalPrompt = `${factInventory || ''}${promptBody}
+  // Extraction instructions first (strongest signal), supplemental context at end (matches pre-regression order).
+  const finalPrompt = `${promptBody}${factInventory || ''}
 
 # Final Instruction
 Extract all substantiation-requiring claims now and return ONLY JSON.`
@@ -654,7 +616,7 @@ Extract all substantiation-requiring claims now and return ONLY JSON.`
         temperature: 0,    // Zero for deterministic output
         topP: 0.1,         // Low top_p for more consistent sampling
         topK: 1,           // Only consider top token (most deterministic)
-        mediaResolution: GEMINI_MEDIA_RESOLUTION,
+        // mediaResolution omitted — use Google's default (was causing detection regression when set to HIGH)
         maxOutputTokens: 64000,
         responseMimeType: 'application/json',
         responseJsonSchema: CLAIMS_JSON_SCHEMA
@@ -693,7 +655,7 @@ Extract all substantiation-requiring claims now and return ONLY JSON.`
           temperature: 0.15,
           topP: 0.9,
           topK: 24,
-          mediaResolution: GEMINI_MEDIA_RESOLUTION,
+          mediaResolution: 'MEDIA_RESOLUTION_HIGH', // High-res needed for reading chart/table data from imagery
           maxOutputTokens: 64000,
           responseMimeType: 'application/json',
           responseJsonSchema: CLAIMS_JSON_SCHEMA
@@ -720,7 +682,7 @@ Extract all substantiation-requiring claims now and return ONLY JSON.`
     // Log for reproducibility tracking
     const modelVersion = primaryResponse.modelVersion || GEMINI_MODEL
     logger.info(
-      `[Gemini] Model: ${modelVersion}, Claims: ${claims.length} (primary=${primaryClaims.length}, visual=${visualClaims.length}, visual_enabled=${GEMINI_VISUAL_SWEEP_ENABLED}), Tokens: ${inputTokens}/${outputTokens}, Cost: $${cost.toFixed(4)}, media_resolution=${GEMINI_MEDIA_RESOLUTION}`
+      `[Gemini] Model: ${modelVersion}, Claims: ${claims.length} (primary=${primaryClaims.length}, visual=${visualClaims.length}, visual_enabled=${GEMINI_VISUAL_SWEEP_ENABLED}), Tokens: ${inputTokens}/${outputTokens}, Cost: $${cost.toFixed(4)}, primary_media_res=default, visual_media_res=HIGH`
     )
 
     const pricing = PRICING[GEMINI_MODEL] || PRICING['default']
