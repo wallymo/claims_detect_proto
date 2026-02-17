@@ -72,6 +72,16 @@ const GEMINI_VISUAL_SWEEP_ENABLED = parseBooleanEnvFlag(
   import.meta.env.VITE_GEMINI_VISUAL_SWEEP_ENABLED,
   true
 )
+
+function parsePositiveInt(value, fallback) {
+  const parsed = Number.parseInt(value, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+const DETECTION_PASSES = parsePositiveInt(
+  import.meta.env.VITE_DETECTION_PASSES,
+  2
+)
 // System instruction (moved out of user prompt for efficiency)
 // Generic — doc-type-specific guidance is in the user prompt
 const SYSTEM_INSTRUCTION = `You are a veteran MLR (Medical, Legal, Regulatory) reviewer for pharmaceutical promotional materials. Your mission: surface EVERY statement that could require substantiation. Flag 20 borderline phrases rather than let 1 slip through. When unsure, include it with lower confidence rather than omit.
@@ -225,16 +235,39 @@ function normalizeRawClaims(rawClaims) {
     .filter(Boolean)
 }
 
+function claimDeduplicationKey(claim) {
+  const text = String(claim.claim || '').replace(/\s+/g, ' ').trim().toLowerCase()
+  const page = claim.page || 0
+  const xBin = Math.round((claim.x || 0) / 5) * 5
+  const yBin = Math.round((claim.y || 0) / 5) * 5
+  return `${page}|${xBin}|${yBin}|${text}`
+}
+
 function mergeRawClaims(primaryClaims, visualClaims) {
-  // Over-flag principle: keep EVERY claim from both passes, no dedup.
-  // Reviewers have final say — better to surface duplicates than miss a claim.
-  // Filter visual-sweep claims with (0,0) coords — those are text echoes without real
-  // position data that would produce ghost pins at the top-left corner of the page.
+  // Over-flag principle: keep every UNIQUE mention from both passes.
+  // Dedup only truly identical entries (same text + same page + near-identical position).
+  // Different locations of the same claim text are kept as separate mentions.
+  // Filter visual-sweep claims with (0,0) coords — text echoes without real position data.
   const validVisualClaims = visualClaims.filter(c => c.x !== 0 || c.y !== 0)
-  return [
-    ...primaryClaims.map(c => ({ ...c, _source: 'primary' })),
-    ...validVisualClaims.map(c => ({ ...c, _source: 'visual-sweep' }))
-  ]
+
+  const seen = new Set()
+  const merged = []
+
+  for (const claim of primaryClaims) {
+    const key = claimDeduplicationKey(claim)
+    seen.add(key)
+    merged.push({ ...claim, _source: 'primary' })
+  }
+
+  for (const claim of validVisualClaims) {
+    const key = claimDeduplicationKey(claim)
+    if (!seen.has(key)) {
+      seen.add(key)
+      merged.push({ ...claim, _source: 'visual-sweep' })
+    }
+  }
+
+  return merged
 }
 
 function rawClaimsToFrontendClaims(rawClaims) {
@@ -307,16 +340,14 @@ const DOC_TYPE_INSTRUCTIONS = {
 ⚠️ THIS DOCUMENT HAS TWO DISTINCT REGIONS PER PAGE - YOU MUST ANALYZE BOTH REGIONS AT THE MICRO LEVEL:
 
 **REGION 1 - SLIDE IMAGE (top ~50% of page):**
-Do NOT treat the slide as a single visual — zoom into EVERY element:
+Focus on TEXT-BASED elements in the slide:
 - **Titles & subtitles** — headline claims, positioning statements
 - **Body text** — sentences or phrases within the slide layout
-- **Tables** — every cell, row header, column header, and footnote within tables. Table data often contains specific numbers, percentages, and p-values that each require substantiation
-- **Charts & graphs** — axis labels, data point labels, trend lines, legend text. A chart claiming "47% reduction" is a claim even if it's only a bar label
-- **Infographics & icons with text** — benefit statements paired with visual elements (e.g., clock icon + "Works in 3 days")
 - **Callout boxes & pull quotes** — highlighted statistics or key messages
 - **Footnotes & small print** — disclaimers, study citations, asterisked qualifications at the bottom of the slide
 - **Annotation markers (†, ‡, §, *)** — daggers, double daggers, and superscript symbols that link to footnotes containing study details, patient populations, p-values, statistical significance, or limitations. EACH annotation marker and its corresponding footnote text is a distinct substantiation point that must be flagged as a claim.
 - **Watermarks & branded text** — sometimes contain claims like "Clinically Proven" or "FDA Approved"
+- **Table/chart TITLES and labels** — extract the headline claim a table or chart makes (e.g., "Table 1: Efficacy Results"), but leave detailed cell-by-cell data extraction to the visual sweep pass
 
 **REGION 2 - SPEAKER NOTES (bottom ~50% of page):**
 Starts with header: "Speaker notes" or "Speaker note". Contains a NESTED bullet hierarchy — you must read ALL levels:
@@ -329,9 +360,9 @@ Starts with header: "Speaker notes" or "Speaker note". Contains a NESTED bullet 
 - **Transitional statements** — phrases like "importantly," "notably," "uniquely" often precede substantive claims
 
 🚨 FAILURE MODES TO AVOID:
-1. Do NOT treat the slide image as a single blob — drill into tables, chart labels, footnotes
-2. Do NOT only read top-level (•) bullets — sub-bullets (○) and sub-sub-bullets contain the most specific claims
-3. If your output has zero claims from speaker notes (y > 55%), you have FAILED the task
+1. Do NOT only read top-level (•) bullets — sub-bullets (○) and sub-sub-bullets contain the most specific claims
+2. If your output has zero claims from speaker notes (y > 55%), you have FAILED the task
+3. Do NOT skip slide footnotes and small print — these often contain critical substantiation points
 
 `,
     position: `
@@ -352,15 +383,11 @@ Starts with header: "Speaker notes" or "Speaker note". Contains a NESTED bullet 
 
 # EXTRACTION CHECKLIST
 Before finalizing your response:
-1. ☐ Did you examine tables in the slide image — every cell, header, and footnote?
-2. ☐ Did you read chart/graph labels, axis values, and data annotations?
-3. ☐ Did you check slide footnotes and small print?
-4. ☐ Did you read ALL bullet levels in speaker notes — main (•), sub (○), and sub-sub (–)?
-5. ☐ Did you flag parenthetical data like (p<0.001) and (95% CI: ...)?
-6. ☐ Did you identify ALL annotation markers (†, ‡, §, *) and flag both the annotated statement AND corresponding footnote as claims?
-7. ☐ Do you have claims with y > 55%? (If not, you missed speaker notes)
-8. ☐ For a 30-page document, expect 80-150+ claims total
-9. ☐ If you have < 50 claims, go back and re-examine tables, chart labels, annotations, and sub-bullets`
+1. ☐ Did you check slide footnotes and small print?
+2. ☐ Did you read ALL bullet levels in speaker notes — main (•), sub (○), and sub-sub (–)?
+3. ☐ Did you flag parenthetical data like (p<0.001) and (95% CI: ...)?
+4. ☐ Did you identify ALL annotation markers (†, ‡, §, *) and flag both the annotated statement AND corresponding footnote as claims?
+5. ☐ Do you have claims with y > 55%? (If not, you missed speaker notes)`
   },
 
   'trifold': {
@@ -473,8 +500,8 @@ Extract ALL claims requiring MLR substantiation from this pharmaceutical documen
 **Patient Impact:** QOL improvements, outcomes, statistics
 
 # Rules
-- Combine related statements into ONE claim if same substantiation needed
-- Split only when DIFFERENT substantiation required
+- Each distinct data point, statistic, or substantiation-requiring statement is a SEPARATE claim
+- If two statements need different references to substantiate them, they are separate claims
 - Include charts/graphs/infographics with statistical claims
 - Flag ALL annotation markers (†, ‡, §, *) — each dagger/double dagger references a footnote with study details, populations, or statistical qualifiers that require substantiation
 - Complete, self-contained statements only
@@ -499,8 +526,8 @@ Extract DISEASE STATE claims requiring MLR substantiation.
 - Healthcare utilization, economic burden
 
 # Rules
-- Combine related statements if same substantiation needed
-- Split only when DIFFERENT substantiation required
+- Each distinct data point or substantiation-requiring statement is a SEPARATE claim
+- If two statements need different references, they are separate claims
 - Include visual elements with statistical claims
 - Flag ALL annotation markers (†, ‡, §, *) — each links to substantiation-requiring footnote text
 
@@ -525,8 +552,8 @@ Extract MEDICATION claims requiring MLR substantiation.
 - **Annotations:** statements marked with †, ‡, §, * that link to footnotes with study details, populations, or qualifiers
 
 # Rules
-- Combine related statements if same substantiation needed
-- Split only when DIFFERENT substantiation required
+- Each distinct data point or substantiation-requiring statement is a SEPARATE claim
+- If two statements need different references, they are separate claims
 - Flag ALL annotation markers (†, ‡, §, *) — each dagger/double dagger is a distinct substantiation point
 
 # Confidence (0-100)
@@ -591,47 +618,77 @@ Extract all substantiation-requiring claims now and return ONLY JSON.`
 
   onProgress?.(25, 'Sending to AI...')
 
+  // Progress allocation: primary passes get 15-70%, visual sweep gets 70-85%, merge/finalize 85-95%
+  const primaryPassWeight = 55 / DETECTION_PASSES  // Split 55% across N passes
+
   try {
-    // Primary pass: full-document extraction.
-    const primaryResponse = await client.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            // Document FIRST (recommended for single-document prompts)
-            {
-              inlineData: {
-                mimeType: 'application/pdf',
-                data: base64Data
-              }
-            },
-            // Then the prompt
-            { text: finalPrompt }
-          ]
+    // Multi-pass primary extraction: run N times and union for stable recall.
+    // Gemini is non-deterministic even at temperature 0 — each pass may catch
+    // different claims. Union via dedup key ensures every unique mention survives.
+    const allPrimaryResponses = []
+    let unionedPrimaryClaims = []
+    const primaryDedup = new Set()
+
+    for (let pass = 0; pass < DETECTION_PASSES; pass++) {
+      const passStart = 15 + (pass * primaryPassWeight)
+      const passLabel = DETECTION_PASSES > 1 ? ` (pass ${pass + 1}/${DETECTION_PASSES})` : ''
+      onProgress?.(Math.round(passStart), `Detecting claims${passLabel}...`)
+
+      const response = await client.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                inlineData: {
+                  mimeType: 'application/pdf',
+                  data: base64Data
+                }
+              },
+              { text: finalPrompt }
+            ]
+          }
+        ],
+        config: {
+          systemInstruction: SYSTEM_INSTRUCTION,
+          temperature: 0,
+          topP: 0.1,
+          topK: 1,
+          maxOutputTokens: 64000,
+          responseMimeType: 'application/json',
+          responseJsonSchema: CLAIMS_JSON_SCHEMA
         }
-      ],
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        temperature: 0,    // Zero for deterministic output
-        topP: 0.1,         // Low top_p for more consistent sampling
-        topK: 1,           // Only consider top token (most deterministic)
-        // mediaResolution omitted — use Google's default (was causing detection regression when set to HIGH)
-        maxOutputTokens: 64000,
-        responseMimeType: 'application/json',
-        responseJsonSchema: CLAIMS_JSON_SCHEMA
+      })
+
+      allPrimaryResponses.push(response)
+
+      const text = response.candidates?.[0]?.content?.parts?.[0]?.text || response.text
+      const json = parseJsonResponse(text, `Gemini primary pass ${pass + 1} response`)
+      const passClaims = normalizeRawClaims(json.claims)
+
+      // Union into accumulated set — dedup truly identical mentions
+      let newInPass = 0
+      for (const claim of passClaims) {
+        const key = claimDeduplicationKey(claim)
+        if (!primaryDedup.has(key)) {
+          primaryDedup.add(key)
+          unionedPrimaryClaims.push(claim)
+          newInPass++
+        }
       }
-    })
+
+      logger.info(
+        `[Gemini] Pass ${pass + 1}/${DETECTION_PASSES}: ${passClaims.length} claims detected, ${newInPass} new unique, ${unionedPrimaryClaims.length} total union`
+      )
+    }
 
     onProgress?.(72, 'Processing primary claims...')
-    const primaryText = primaryResponse.candidates?.[0]?.content?.parts?.[0]?.text || primaryResponse.text
-    const primaryJson = parseJsonResponse(primaryText, 'Gemini primary claim detection response')
-    const primaryClaims = normalizeRawClaims(primaryJson.claims)
 
     let visualSweepResponse = null
     let visualClaims = []
     if (GEMINI_VISUAL_SWEEP_ENABLED) {
-      onProgress?.(84, 'Running visual chart/table sweep...')
+      onProgress?.(75, 'Running visual chart/table sweep...')
       const visualSweepPrompt = buildVisualSweepPrompt(docType)
 
       visualSweepResponse = await client.models.generateContent({
@@ -652,10 +709,10 @@ Extract all substantiation-requiring claims now and return ONLY JSON.`
         ],
         config: {
           systemInstruction: SYSTEM_INSTRUCTION,
-          temperature: 0.15,
-          topP: 0.9,
-          topK: 24,
-          mediaResolution: 'MEDIA_RESOLUTION_HIGH', // High-res needed for reading chart/table data from imagery
+          temperature: 0,
+          topP: 0.1,
+          topK: 1,
+          mediaResolution: 'MEDIA_RESOLUTION_HIGH',
           maxOutputTokens: 64000,
           responseMimeType: 'application/json',
           responseJsonSchema: CLAIMS_JSON_SCHEMA
@@ -667,22 +724,29 @@ Extract all substantiation-requiring claims now and return ONLY JSON.`
       visualClaims = normalizeRawClaims(visualJson.claims)
     }
 
-    onProgress?.(92, 'Merging claim passes...')
-    const mergedRawClaims = mergeRawClaims(primaryClaims, visualClaims)
+    onProgress?.(88, 'Merging claim passes...')
+    const mergedRawClaims = mergeRawClaims(unionedPrimaryClaims, visualClaims)
     const claims = rawClaimsToFrontendClaims(mergedRawClaims)
 
     onProgress?.(95, 'Finalizing...')
 
-    const primaryUsage = extractUsageMetadata(primaryResponse)
+    // Aggregate usage across all passes
+    let inputTokens = 0
+    let outputTokens = 0
+    for (const resp of allPrimaryResponses) {
+      const usage = extractUsageMetadata(resp)
+      inputTokens += usage.inputTokens
+      outputTokens += usage.outputTokens
+    }
     const visualUsage = extractUsageMetadata(visualSweepResponse)
-    const inputTokens = primaryUsage.inputTokens + visualUsage.inputTokens
-    const outputTokens = primaryUsage.outputTokens + visualUsage.outputTokens
+    inputTokens += visualUsage.inputTokens
+    outputTokens += visualUsage.outputTokens
     const cost = calculateCost(GEMINI_MODEL, inputTokens, outputTokens)
 
     // Log for reproducibility tracking
-    const modelVersion = primaryResponse.modelVersion || GEMINI_MODEL
+    const modelVersion = allPrimaryResponses[0]?.modelVersion || GEMINI_MODEL
     logger.info(
-      `[Gemini] Model: ${modelVersion}, Claims: ${claims.length} (primary=${primaryClaims.length}, visual=${visualClaims.length}, visual_enabled=${GEMINI_VISUAL_SWEEP_ENABLED}), Tokens: ${inputTokens}/${outputTokens}, Cost: $${cost.toFixed(4)}, primary_media_res=default, visual_media_res=HIGH`
+      `[Gemini] Model: ${modelVersion}, Claims: ${claims.length} (primary_union=${unionedPrimaryClaims.length}, visual=${visualClaims.length}, passes=${DETECTION_PASSES}, visual_enabled=${GEMINI_VISUAL_SWEEP_ENABLED}), Tokens: ${inputTokens}/${outputTokens}, Cost: $${cost.toFixed(4)}`
     )
 
     const pricing = PRICING[GEMINI_MODEL] || PRICING['default']
