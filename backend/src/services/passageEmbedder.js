@@ -123,8 +123,10 @@ export function resolvePageFromBoundaries(charOffset, pageBoundaries) {
     }
   }
 
-  // Fallback (shouldn't reach here with valid boundaries)
-  return last.page
+  // Offset is in a separator gap between pages — return the preceding page
+  // (hi points to the page just before the gap)
+  if (hi >= 0) return pageBoundaries[hi].page
+  return pageBoundaries[0].page
 }
 
 /**

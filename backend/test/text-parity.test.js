@@ -10,6 +10,10 @@ const REFS_DIR = path.resolve(__dirname, '../../app/References')
 
 describe('extractTextByPage parity', () => {
   it('fullText matches extractText output for a real PDF', async () => {
+    if (!fs.existsSync(REFS_DIR)) {
+      console.log('References directory not found, skipping')
+      return
+    }
     const pdfs = fs.readdirSync(REFS_DIR).filter(f => f.endsWith('.pdf'))
     if (pdfs.length === 0) {
       console.log('No test PDFs available, skipping')
@@ -32,6 +36,7 @@ describe('extractTextByPage parity', () => {
   })
 
   it('page boundaries dont produce pages exceeding pageCount', async () => {
+    if (!fs.existsSync(REFS_DIR)) return
     const pdfs = fs.readdirSync(REFS_DIR).filter(f => f.endsWith('.pdf'))
     if (pdfs.length === 0) return
 

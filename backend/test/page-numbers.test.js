@@ -30,6 +30,21 @@ describe('resolvePageFromBoundaries', () => {
     assert.equal(resolvePageFromBoundaries(0, boundaries), 1)
   })
 
+  it('returns preceding page for offset in separator gap (endChar)', () => {
+    // 5000 is the endChar of page 1, before startChar of page 2 (5002)
+    assert.equal(resolvePageFromBoundaries(5000, boundaries), 1)
+  })
+
+  it('returns preceding page for offset in separator gap (endChar + 1)', () => {
+    // 5001 is between page 1 endChar (5000) and page 2 startChar (5002)
+    assert.equal(resolvePageFromBoundaries(5001, boundaries), 1)
+  })
+
+  it('returns preceding page for gap between page 2 and page 3', () => {
+    assert.equal(resolvePageFromBoundaries(12000, boundaries), 2)
+    assert.equal(resolvePageFromBoundaries(12001, boundaries), 2)
+  })
+
   it('returns null for empty boundaries', () => {
     assert.equal(resolvePageFromBoundaries(100, []), null)
   })
