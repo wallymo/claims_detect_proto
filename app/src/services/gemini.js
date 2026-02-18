@@ -603,11 +603,15 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     ? userPrompt
     : structure + userPrompt + position
 
+  // Cache-bust: unique run ID prevents Gemini from serving cached responses for identical inputs.
+  const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+
   // Extraction instructions first (strongest signal), supplemental context at end (matches pre-regression order).
   const finalPrompt = `${promptBody}${factInventory || ''}
 
 # Final Instruction
-Extract all substantiation-requiring claims now and return ONLY JSON.`
+Extract all substantiation-requiring claims now and return ONLY JSON.
+<!-- run:${runId} -->`
 
   logger.info(
     `Final prompt: ${finalPrompt.length} chars, docType: ${docType}, custom_scaffold=${customPromptHasScaffold}`
@@ -628,6 +632,7 @@ Extract all substantiation-requiring claims now and return ONLY JSON.`
     const allPrimaryResponses = []
     let unionedPrimaryClaims = []
     const primaryDedup = new Set()
+    const perPassCounts = []
 
     for (let pass = 0; pass < DETECTION_PASSES; pass++) {
       const passStart = 15 + (pass * primaryPassWeight)
@@ -678,6 +683,7 @@ Extract all substantiation-requiring claims now and return ONLY JSON.`
         }
       }
 
+      perPassCounts.push({ pass: pass + 1, total: passClaims.length, newUnique: newInPass })
       logger.info(
         `[Gemini] Pass ${pass + 1}/${DETECTION_PASSES}: ${passClaims.length} claims detected, ${newInPass} new unique, ${unionedPrimaryClaims.length} total union`
       )
@@ -745,9 +751,35 @@ Extract all substantiation-requiring claims now and return ONLY JSON.`
 
     // Log for reproducibility tracking
     const modelVersion = allPrimaryResponses[0]?.modelVersion || GEMINI_MODEL
+    const visualFiltered = visualClaims.length - visualClaims.filter(c => c.x !== 0 || c.y !== 0).length
+    const visualNewUnique = claims.length - unionedPrimaryClaims.length
+    const visualDeduped = visualClaims.filter(c => c.x !== 0 || c.y !== 0).length - visualNewUnique
+
     logger.info(
-      `[Gemini] Model: ${modelVersion}, Claims: ${claims.length} (primary_union=${unionedPrimaryClaims.length}, visual=${visualClaims.length}, passes=${DETECTION_PASSES}, visual_enabled=${GEMINI_VISUAL_SWEEP_ENABLED}), Tokens: ${inputTokens}/${outputTokens}, Cost: $${cost.toFixed(4)}`
+      `[Gemini] Model: ${modelVersion}, Claims: ${claims.length} (primary_union=${unionedPrimaryClaims.length}, visual_raw=${visualClaims.length}, visual_filtered_zero=${visualFiltered}, visual_deduped=${visualDeduped}, visual_new=${visualNewUnique}, passes=${DETECTION_PASSES}, visual_enabled=${GEMINI_VISUAL_SWEEP_ENABLED}), Tokens: ${inputTokens}/${outputTokens}, Cost: $${cost.toFixed(4)}`
     )
+
+    // Store run diagnostics in window for console inspection
+    const runDiagnostics = {
+      runId,
+      timestamp: new Date().toISOString(),
+      totalClaims: claims.length,
+      primaryUnion: unionedPrimaryClaims.length,
+      perPassCounts,
+      visual: {
+        raw: visualClaims.length,
+        filteredZeroCoords: visualFiltered,
+        deduped: visualDeduped,
+        newUnique: visualNewUnique,
+      },
+      model: modelVersion,
+      tokens: { input: inputTokens, output: outputTokens },
+      cost,
+    }
+    if (typeof window !== 'undefined') {
+      window.__claimsDiagnostics = window.__claimsDiagnostics || []
+      window.__claimsDiagnostics.push(runDiagnostics)
+    }
 
     const pricing = PRICING[GEMINI_MODEL] || PRICING['default']
     return {

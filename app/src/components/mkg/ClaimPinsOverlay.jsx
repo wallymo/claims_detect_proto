@@ -172,12 +172,6 @@ export default function ClaimPinsOverlay({
       ? [activeBox]
       : []
 
-  // Debug: log filtering results
-  logger.debug(`ClaimPins: page=${currentPage}, dims=${canvasDimensions.width}x${canvasDimensions.height}, claims=${claims.length}, dots=${dots.length}`)
-  if (dots.length === 0 && claims.length > 0) {
-    logger.debug('Claims pages:', claims.map(c => c.page))
-  }
-
   // Draw dots on canvas
   useEffect(() => {
     const canvas = canvasRef.current
