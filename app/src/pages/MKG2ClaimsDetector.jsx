@@ -1116,10 +1116,11 @@ export default function MKG2ClaimsDetector() {
     .filter(c => {
       if (statusFilter !== 'all' && c.status !== statusFilter) return false
       if (searchQuery && !c.text.toLowerCase().includes(searchQuery.toLowerCase())) return false
+      if (sortOrder === 'no-matches' && c.matched) return false
       return true
     })
     .sort((a, b) => {
-      if (sortOrder === 'annotation') return (a.globalIndex ?? 0) - (b.globalIndex ?? 0)
+      if (sortOrder === 'annotation' || sortOrder === 'no-matches') return (a.globalIndex ?? 0) - (b.globalIndex ?? 0)
       if (sortOrder === 'confidence-desc') return b.confidence - a.confidence
       return a.confidence - b.confidence
     })
@@ -1508,6 +1509,7 @@ export default function MKG2ClaimsDetector() {
                           <option value="annotation">Annotation #</option>
                           <option value="confidence-desc">Confidence ↓</option>
                           <option value="confidence-asc">Confidence ↑</option>
+                          <option value="no-matches">No matches</option>
                         </select>
                       </div>
                     </div>
