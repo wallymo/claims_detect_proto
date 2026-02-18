@@ -54,6 +54,38 @@ html, body {
   gap: var(--spacing-3);
 }
 
+.trainingIconBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--gray-4);
+  background: var(--color-background-primary);
+  border-radius: 8px;
+  color: var(--gray-6);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.trainingIconBtn:hover {
+  background: var(--gray-2);
+  border-color: var(--gray-5);
+  color: var(--color-text-primary);
+}
+
+.trainingBadgeDot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  background: var(--blue-6);
+  border-radius: 50%;
+  border: 1.5px solid var(--color-background-primary);
+}
+
 .titleSection {
   display: flex;
   align-items: center;

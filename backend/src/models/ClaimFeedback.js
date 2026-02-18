@@ -1,16 +1,17 @@
 import { getDb } from '../config/database.js'
 
 export const ClaimFeedback = {
-  create({ claim_id, document_id, reference_doc_id, decision, reason = '', confidence_score, reviewer_notes = '' }) {
+  create({ claim_id, document_id, reference_doc_id, decision, reason = '', confidence_score, reviewer_notes = '', rejection_type = null, corrected_reference_id = null }) {
     const db = getDb()
     const stmt = db.prepare(`
       INSERT INTO claim_feedback
-        (claim_id, document_id, reference_doc_id, decision, reason, confidence_score, reviewer_notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+        (claim_id, document_id, reference_doc_id, decision, reason, confidence_score, reviewer_notes, rejection_type, corrected_reference_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     const result = stmt.run(
       claim_id, document_id || null, reference_doc_id || null,
-      decision, reason, confidence_score || null, reviewer_notes
+      decision, reason, confidence_score || null, reviewer_notes,
+      rejection_type || null, corrected_reference_id || null
     )
     return this.findById(result.lastInsertRowid)
   },

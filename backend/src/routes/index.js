@@ -5,6 +5,7 @@ import feedbackRoutes from './feedback.js'
 import folderRoutes from './folders.js'
 import { brandFactRoutes, referenceFactRoutes, factRoutes } from './facts.js'
 import passageRoutes from './passages.js'
+import trainingRoutes from './training.js'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -21,6 +22,7 @@ export function registerRoutes(app) {
   app.use('/api/files', fileRoutes)
   app.use('/api/feedback', feedbackRoutes)
   app.use('/api/folders', folderRoutes)
+  app.use('/api/training-sessions', trainingRoutes)
 
   // Temporary: capture V2 pipeline diagnostics to disk for analysis (dev only)
   if (process.env.NODE_ENV !== 'production') {

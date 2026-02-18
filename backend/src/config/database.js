@@ -85,6 +85,29 @@ export function initDb() {
   const migration007 = fs.readFileSync(migration007Path, 'utf-8')
   db.exec(migration007)
 
+  // 008: training_sessions table for feedback loop
+  const migration008Path = path.resolve(__dirname, '../../migrations/008_training_sessions.sql')
+  const migration008 = fs.readFileSync(migration008Path, 'utf-8')
+  db.exec(migration008)
+
+  // 009: rejection_type + corrected_reference_id on claim_feedback
+  const migration009Path = path.resolve(__dirname, '../../migrations/009_rejection_types.sql')
+  const migration009 = fs.readFileSync(migration009Path, 'utf-8')
+  for (const stmt of migration009.split(';').map(s => s.trim()).filter(Boolean)) {
+    try {
+      db.exec(stmt)
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        throw err
+      }
+    }
+  }
+
+  // 010: fix training_sessions.brand_id FK to ON DELETE CASCADE
+  const migration010Path = path.resolve(__dirname, '../../migrations/010_fix_training_sessions_cascade.sql')
+  const migration010 = fs.readFileSync(migration010Path, 'utf-8')
+  db.exec(migration010)
+
   console.log('Database initialized:', env.DB_PATH)
   return db
 }

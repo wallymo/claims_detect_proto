@@ -185,10 +185,52 @@ export async function searchPassages(brandId, claimText, topK = 5, options = {})
 
 // ========== Feedback ==========
 
-export async function createFeedback({ claim_id, document_id, reference_doc_id, decision, reason, confidence_score }) {
+export async function createFeedback({ claim_id, document_id, reference_doc_id, decision, reason, confidence_score, rejection_type, corrected_reference_id }) {
   return request('/feedback', {
     method: 'POST',
-    body: JSON.stringify({ claim_id, document_id, reference_doc_id, decision, reason, confidence_score })
+    body: JSON.stringify({ claim_id, document_id, reference_doc_id, decision, reason, confidence_score, rejection_type, corrected_reference_id })
   })
+}
+
+// ========== Training Sessions ==========
+
+export async function createTrainingSession({ brand_id, label, document_name, approved_claims, prompt_text }) {
+  return request('/training-sessions', {
+    method: 'POST',
+    body: JSON.stringify({ brand_id, label, document_name, approved_claims, prompt_text })
+  })
+}
+
+export async function updateTrainingSessionClaims(id, approved_claims) {
+  return request(`/training-sessions/${id}/claims`, {
+    method: 'PATCH',
+    body: JSON.stringify({ approved_claims })
+  })
+}
+
+export async function getTrainingSessions(brandId) {
+  const data = await request(`/training-sessions?brand_id=${brandId}`)
+  return data.sessions
+}
+
+export async function deleteTrainingSession(id) {
+  return request(`/training-sessions/${id}`, { method: 'DELETE' })
+}
+
+export async function clearTrainingSessions(brandId) {
+  return request('/training-sessions/clear', {
+    method: 'POST',
+    body: JSON.stringify({ brand_id: brandId })
+  })
+}
+
+export async function exportTrainingSessions(brandId) {
+  const url = `/api/training-sessions/export?brand_id=${brandId}`
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `training-data-brand-${brandId}.jsonl`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
 }
 

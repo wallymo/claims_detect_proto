@@ -146,22 +146,30 @@ Now analyze the document. Find everything that could require substantiation.`
  * @param {Array|null} pageImages - Pre-rendered page images [{page, base64}] for vision analysis
  * @returns {Promise<Object>} - Result with claims array
  */
-export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null, pageImages = null, docType = 'speaker-notes', factInventory = '') {
+function buildTrainingExamplesBlock(trainingExamples) {
+  if (!Array.isArray(trainingExamples) || trainingExamples.length === 0) return ''
+  const capped = trainingExamples.slice(0, 20)
+  const lines = capped.map(c => `- "${c.text}" (${c.type || 'Claim'})`).join('\n')
+  return `\n\nPRIOR APPROVED EXAMPLES FOR THIS BRAND:\nThe following claims were previously reviewed and confirmed as valid for this brand:\n${lines}\n\nUse these as calibration examples. Detect claims of similar type, language pattern, and specificity.\n`
+}
+
+export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null, pageImages = null, docType = 'speaker-notes', factInventory = '', trainingExamples = []) {
   // Get doc-type-specific instructions
   const { structure, position } = getDocTypeInstructions(docType)
+  const trainingBlock = buildTrainingExamplesBlock(trainingExamples)
 
   // Select the appropriate prompt
   let selectedPrompt
   if (customPrompt) {
-    selectedPrompt = structure + customPrompt + position + factInventory + JSON_OUTPUT_INSTRUCTIONS
+    selectedPrompt = structure + customPrompt + position + trainingBlock + factInventory + JSON_OUTPUT_INSTRUCTIONS
     logger.debug(`Using custom prompt (${customPrompt.length} chars)`)
   } else {
     if (promptKey === 'drug') {
-      selectedPrompt = structure + MEDICATION_PROMPT_USER + position + factInventory + JSON_OUTPUT_INSTRUCTIONS
+      selectedPrompt = structure + MEDICATION_PROMPT_USER + position + trainingBlock + factInventory + JSON_OUTPUT_INSTRUCTIONS
     } else if (promptKey === 'disease') {
-      selectedPrompt = structure + DISEASE_STATE_PROMPT_USER + position + factInventory + JSON_OUTPUT_INSTRUCTIONS
+      selectedPrompt = structure + DISEASE_STATE_PROMPT_USER + position + trainingBlock + factInventory + JSON_OUTPUT_INSTRUCTIONS
     } else {
-      selectedPrompt = structure + ALL_CLAIMS_PROMPT_USER + position + factInventory + JSON_OUTPUT_INSTRUCTIONS
+      selectedPrompt = structure + ALL_CLAIMS_PROMPT_USER + position + trainingBlock + factInventory + JSON_OUTPUT_INSTRUCTIONS
     }
     logger.info(`Using ${promptKey} prompt for OpenAI analysis (docType: ${docType})`)
   }

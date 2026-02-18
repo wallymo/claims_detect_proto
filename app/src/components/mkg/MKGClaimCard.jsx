@@ -11,11 +11,14 @@ export default function MKGClaimCard({
   onApprove,
   onReject,
   onSelect,
-  onViewSource
+  onViewSource,
+  brandReferences = []
 }) {
   const [showFeedback, setShowFeedback] = useState(false)
   const [showReferencePreview, setShowReferencePreview] = useState(false)
-  const [feedback, setFeedback] = useState('')
+  const [rejectionType, setRejectionType] = useState('false_positive')
+  const [refSearch, setRefSearch] = useState('')
+  const [selectedRefId, setSelectedRefId] = useState(null)
 
   const getConfidenceVariant = (confidence) => {
     if (confidence >= 0.8) return 'success'
@@ -37,19 +40,30 @@ export default function MKGClaimCard({
   const handleReject = (e) => {
     e.stopPropagation()
     setShowFeedback(true)
+    setRejectionType('false_positive')
+    setRefSearch('')
+    setSelectedRefId(null)
   }
 
   const handleSubmitFeedback = (e) => {
     e.stopPropagation()
-    onReject?.(claim.id, feedback)
+    const needsRef = rejectionType === 'wrong_reference' || rejectionType === 'missing_reference'
+    onReject?.(claim.id, {
+      rejectionType,
+      correctedReferenceId: needsRef ? selectedRefId : null
+    })
     setShowFeedback(false)
-    setFeedback('')
+    setRejectionType('false_positive')
+    setRefSearch('')
+    setSelectedRefId(null)
   }
 
   const handleCancelFeedback = (e) => {
     e.stopPropagation()
     setShowFeedback(false)
-    setFeedback('')
+    setRejectionType('false_positive')
+    setRefSearch('')
+    setSelectedRefId(null)
   }
 
   const handleCardClick = () => {
@@ -67,6 +81,17 @@ export default function MKGClaimCard({
     isActive ? styles.active : '',
     claim.matched ? styles.matched : styles.unmatched
   ].filter(Boolean).join(' ')
+
+  const needsRefPicker = rejectionType === 'wrong_reference' || rejectionType === 'missing_reference'
+  const filteredRefs = brandReferences.filter(r =>
+    !refSearch || r.name?.toLowerCase().includes(refSearch.toLowerCase())
+  )
+
+  const rejectionTypeLabels = {
+    false_positive: { label: 'False positive', desc: "This isn't actually a claim" },
+    wrong_reference: { label: 'Wrong reference', desc: 'Claim is valid, but wrong reference was matched' },
+    missing_reference: { label: 'Missing reference', desc: 'This claim needs a reference that was not matched' }
+  }
 
   return (
     <div className={cardClassName} onClick={handleCardClick}>
@@ -93,7 +118,7 @@ export default function MKGClaimCard({
           {claim.page && (
             <span className={styles.pageBadge}>
               <Icon name="fileText" size={12} />
-              Pg {claim.page}
+              {claim.id ? `#${parseInt(claim.id.replace(/\D/g, ''), 10)} · ` : ''}Pg {claim.page}
             </span>
           )}
           {claim.status !== 'pending' && (
@@ -190,19 +215,79 @@ export default function MKGClaimCard({
         </div>
       )}
 
-      {/* Feedback form */}
+      {/* Rejection form */}
       {showFeedback && (
         <div className={styles.feedbackForm} onClick={e => e.stopPropagation()}>
-          <label className={styles.feedbackLabel}>
-            Why isn't this a claim? (optional)
-          </label>
-          <textarea
-            className={styles.feedbackInput}
-            value={feedback}
-            onChange={(e) => setFeedback(e.target.value)}
-            placeholder="Enter reason for rejection..."
-            rows={2}
-          />
+          <div className={styles.feedbackLabel}>Why are you rejecting this?</div>
+
+          <div className={styles.rejectionOptions}>
+            {Object.entries(rejectionTypeLabels).map(([key, { label, desc }]) => (
+              <label key={key} className={styles.rejectionOption}>
+                <input
+                  type="radio"
+                  name={`rejection-${claim.id}`}
+                  value={key}
+                  checked={rejectionType === key}
+                  onChange={() => { setRejectionType(key); setSelectedRefId(null) }}
+                />
+                <div className={styles.rejectionOptionText}>
+                  <span className={styles.rejectionOptionLabel}>{label}</span>
+                  <span className={styles.rejectionOptionDesc}>{desc}</span>
+                </div>
+              </label>
+            ))}
+          </div>
+
+          {/* Reference picker for wrong/missing reference */}
+          {needsRefPicker && (
+            <div className={styles.refPickerSection}>
+              <div className={styles.refPickerLabel}>
+                {rejectionType === 'wrong_reference' ? 'Select the correct reference:' : 'Select the missing reference:'}
+              </div>
+              <div className={styles.refPickerSearchWrapper}>
+                <Icon name="search" size={13} className={styles.refPickerSearchIcon} />
+                <input
+                  className={styles.refPickerSearch}
+                  type="text"
+                  placeholder="Search references..."
+                  value={refSearch}
+                  onChange={e => setRefSearch(e.target.value)}
+                  onClick={e => e.stopPropagation()}
+                />
+                {refSearch && (
+                  <button
+                    className={styles.refPickerClear}
+                    onClick={e => { e.stopPropagation(); setRefSearch('') }}
+                    type="button"
+                    aria-label="Clear search"
+                  >
+                    <Icon name="x" size={12} />
+                  </button>
+                )}
+              </div>
+              <div className={styles.refPickerList}>
+                {filteredRefs.length === 0 && (
+                  <div className={styles.refPickerEmpty}>
+                    <Icon name="fileSearch" size={16} />
+                    <span>No references found</span>
+                  </div>
+                )}
+                {filteredRefs.map(ref => (
+                  <button
+                    key={ref.id}
+                    className={`${styles.refPickerItem} ${selectedRefId === ref.id ? styles.refPickerItemSelected : ''}`}
+                    onClick={e => { e.stopPropagation(); setSelectedRefId(ref.id) }}
+                    type="button"
+                  >
+                    <Icon name="fileText" size={12} />
+                    <span>{ref.name}</span>
+                    {selectedRefId === ref.id && <Icon name="check" size={12} />}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className={styles.feedbackActions}>
             <Button
               variant="secondary"
@@ -215,6 +300,7 @@ export default function MKGClaimCard({
               variant="primary"
               size="small"
               onClick={handleSubmitFeedback}
+              disabled={needsRefPicker && !selectedRefId}
             >
               Submit
             </Button>
@@ -223,10 +309,13 @@ export default function MKGClaimCard({
       )}
 
       {/* Rejection reason */}
-      {claim.status === 'rejected' && claim.feedback && (
+      {claim.status === 'rejected' && claim.rejectionType && (
         <div className={styles.rejectionReason}>
           <Icon name="info" size={14} />
-          <span>{claim.feedback}</span>
+          <span>
+            {rejectionTypeLabels[claim.rejectionType]?.label || 'Rejected'}
+            {claim.correctedReferenceName ? ` → ${claim.correctedReferenceName}` : ''}
+          </span>
         </div>
       )}
     </div>

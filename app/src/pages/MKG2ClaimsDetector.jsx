@@ -17,6 +17,7 @@ import PDFViewer from '@/components/mkg/PDFViewer'
 import MKGClaimCard from '@/components/mkg/MKGClaimCard'
 import DocumentTypeSelector from '@/components/claims-detector/DocumentTypeSelector'
 import LibraryTab from '@/components/claims-detector/LibraryTab'
+import TrainingDataOverlay from '@/components/mkg/TrainingDataOverlay/TrainingDataOverlay'
 
 // Services
 import { analyzeDocument as analyzeWithGemini, checkGeminiConnection, ALL_CLAIMS_PROMPT_USER, MEDICATION_PROMPT_USER, getDocTypeInstructions } from '@/services/gemini'
@@ -27,6 +28,8 @@ import * as api from '@/services/api'
 
 // Utils
 import { pdfToImages } from '@/utils/pdfToImages'
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.min.mjs`
 import { enrichClaimsWithPositions, addGlobalIndices } from '@/utils/textMatcher'
 import { logger } from '@/utils/logger'
 
@@ -162,8 +165,22 @@ export default function MKG2ClaimsDetector() {
   // Reference viewer overlay
   const [referenceViewerData, setReferenceViewerData] = useState(null)
 
+  // Training data state
+  const [trainingSessions, setTrainingSessions] = useState([])
+  const [currentTrainingSessionId, setCurrentTrainingSessionId] = useState(null)
+  const [approvedClaimsForSession, setApprovedClaimsForSession] = useState([])
+  const [trainingExamples, setTrainingExamples] = useState([])
+  const [showTrainingOverlay, setShowTrainingOverlay] = useState(false)
+
   const claimsListRef = useRef(null)
   const claimsPanelRef = useRef(null)
+
+  // Keep trainingExamples in sync with trainingSessions so prompt examples
+  // reflect any approve/reject mutations without needing a brand reload
+  useEffect(() => {
+    const allApproved = trainingSessions.flatMap(s => s.approved_claims || []).slice(0, 20)
+    setTrainingExamples(allApproved)
+  }, [trainingSessions])
 
   // Load brands, references, and folders on mount
   useEffect(() => {
@@ -179,6 +196,16 @@ export default function MKG2ClaimsDetector() {
       setReferenceDocuments([])
     }
   }, [selectedBrandId, libraryBrandId])
+
+  // Load training sessions and examples when brand changes
+  useEffect(() => {
+    if (selectedBrandId) {
+      loadTrainingSessions(selectedBrandId)
+    } else {
+      setTrainingSessions([])
+      setTrainingExamples([])
+    }
+  }, [selectedBrandId])
 
   // Load total cost from localStorage
   useEffect(() => {
@@ -409,6 +436,15 @@ export default function MKG2ClaimsDetector() {
     }
   }
 
+  async function loadTrainingSessions(brandId) {
+    try {
+      const sessions = await api.getTrainingSessions(brandId)
+      setTrainingSessions(sessions)
+    } catch (err) {
+      logger.warn('Could not load training sessions:', err.message)
+    }
+  }
+
   function formatFileSize(bytes) {
     if (!bytes && bytes !== 0) return '0 B'
     if (bytes === 0) return '0 B'
@@ -581,7 +617,7 @@ export default function MKG2ClaimsDetector() {
       const result = await analyzeDocument(uploadedFile, (progress, status) => {
         setAnalysisProgress(progress)
         setAnalysisStatus(status)
-      }, promptKey, editablePrompt, pageImages, selectedDocType || 'speaker-notes', factInventory)
+      }, promptKey, editablePrompt, pageImages, selectedDocType || 'speaker-notes', factInventory, trainingExamples)
 
       if (!result.success) throw new Error(result.error || 'Analysis failed')
 
@@ -610,6 +646,23 @@ export default function MKG2ClaimsDetector() {
       setAnalysisStatus('Claims detected')
       setAnalysisComplete(true)
       setIsAnalyzing(false)
+
+      // Auto-create training session for this analysis run
+      setApprovedClaimsForSession([])
+      setCurrentTrainingSessionId(null)
+      if (selectedBrandId && uploadedFile) {
+        api.createTrainingSession({
+          brand_id: selectedBrandId,
+          label: uploadedFile.name,
+          document_name: uploadedFile.name,
+          approved_claims: [],
+          prompt_text: editablePrompt
+        }).then(session => {
+          setCurrentTrainingSessionId(session.id)
+          setTrainingSessions(prev => [session, ...prev])
+        }).catch(err => logger.warn('Could not create training session:', err.message))
+      }
+
       logger.info({
         event: 'mkg2_analysis_summary',
         analysis_total_ms: analysisTotalMs,
@@ -911,32 +964,102 @@ export default function MKG2ClaimsDetector() {
 
   const handleClaimApprove = (claimId) => {
     setClaims(prev => prev.map(c => c.id === claimId ? { ...c, status: 'approved' } : c))
-    // Fire-and-forget to backend
     const claim = claims.find(c => c.id === claimId)
-    if (claim) {
-      api.createFeedback({
-        claim_id: claimId,
-        document_id: uploadedFile?.name,
-        reference_doc_id: claim.reference?.id || null,
-        decision: 'approved',
-        confidence_score: claim.confidence
-      }).catch(err => logger.error('Feedback save error:', err))
+    if (!claim) return
+
+    // Add to training session approved claims
+    const trainingClaim = {
+      text: claim.text,
+      type: 'Claim',
+      confidence: claim.confidence,
+      reference: claim.reference ? { id: claim.reference.id, name: claim.reference.name } : null
     }
+    const nextApproved = [...approvedClaimsForSession.filter(c => c.text !== claim.text), trainingClaim]
+    setApprovedClaimsForSession(nextApproved)
+    if (currentTrainingSessionId) {
+      api.updateTrainingSessionClaims(currentTrainingSessionId, nextApproved)
+        .then(updated => {
+          setTrainingSessions(prev => prev.map(s => s.id === updated.id ? updated : s))
+        })
+        .catch(err => logger.warn('Training session update failed:', err.message))
+    }
+
+    // Fire-and-forget feedback to backend
+    api.createFeedback({
+      claim_id: claimId,
+      document_id: uploadedFile?.name,
+      reference_doc_id: claim.reference?.id || null,
+      decision: 'approved',
+      confidence_score: claim.confidence
+    }).catch(err => logger.error('Feedback save error:', err))
   }
 
-  const handleClaimReject = (claimId, feedback) => {
-    setClaims(prev => prev.map(c => c.id === claimId ? { ...c, status: 'rejected', feedback } : c))
+  const handleClaimReject = (claimId, { rejectionType, correctedReferenceId } = {}) => {
+    const correctedRef = correctedReferenceId
+      ? referenceDocuments.find(r => r.id === correctedReferenceId)
+      : null
+
+    setClaims(prev => prev.map(c =>
+      c.id === claimId
+        ? {
+            ...c,
+            status: 'rejected',
+            rejectionType: rejectionType || 'false_positive',
+            correctedReferenceName: correctedRef?.name || null
+          }
+        : c
+    ))
+
     const claim = claims.find(c => c.id === claimId)
-    if (claim) {
-      api.createFeedback({
-        claim_id: claimId,
-        document_id: uploadedFile?.name,
-        reference_doc_id: claim.reference?.id || null,
-        decision: 'rejected',
-        reason: feedback,
-        confidence_score: claim.confidence
-      }).catch(err => logger.error('Feedback save error:', err))
+    if (!claim) return
+
+    // Update training session — remove false_positives, keep the rest with corrections
+    if (rejectionType !== 'false_positive') {
+      const trainingClaim = {
+        text: claim.text,
+        type: 'Claim',
+        confidence: claim.confidence,
+        reference: correctedRef
+          ? { id: correctedRef.id, name: correctedRef.name }
+          : claim.reference
+            ? { id: claim.reference.id, name: claim.reference.name }
+            : null,
+        correction: rejectionType
+      }
+      const nextApproved = [...approvedClaimsForSession.filter(c => c.text !== claim.text), trainingClaim]
+      setApprovedClaimsForSession(nextApproved)
+      if (currentTrainingSessionId) {
+        api.updateTrainingSessionClaims(currentTrainingSessionId, nextApproved)
+          .then(updated => {
+            setTrainingSessions(prev => prev.map(s => s.id === updated.id ? updated : s))
+          })
+          .catch(err => logger.warn('Training session update failed:', err.message))
+      }
+    } else {
+      // false_positive: remove from approved if it was previously added
+      const nextApproved = approvedClaimsForSession.filter(c => c.text !== claim.text)
+      if (nextApproved.length !== approvedClaimsForSession.length) {
+        setApprovedClaimsForSession(nextApproved)
+        if (currentTrainingSessionId) {
+          api.updateTrainingSessionClaims(currentTrainingSessionId, nextApproved)
+            .then(updated => {
+              setTrainingSessions(prev => prev.map(s => s.id === updated.id ? updated : s))
+            })
+            .catch(err => logger.warn('Training session update failed:', err.message))
+        }
+      }
     }
+
+    // Fire-and-forget feedback to backend
+    api.createFeedback({
+      claim_id: claimId,
+      document_id: uploadedFile?.name,
+      reference_doc_id: claim.reference?.id || null,
+      decision: 'rejected',
+      rejection_type: rejectionType || 'false_positive',
+      corrected_reference_id: correctedReferenceId || null,
+      confidence_score: claim.confidence
+    }).catch(err => logger.error('Feedback save error:', err))
   }
 
   const handleClaimSelect = (claimId) => {
@@ -957,6 +1080,36 @@ export default function MKG2ClaimsDetector() {
         excerpt: claim.reference.excerpt
       })
     }
+  }
+
+  // ===== Training Data Actions =====
+
+  const handleDeleteTrainingSession = async (sessionId) => {
+    try {
+      await api.deleteTrainingSession(sessionId)
+      setTrainingSessions(prev => prev.filter(s => s.id !== sessionId))
+      if (currentTrainingSessionId === sessionId) setCurrentTrainingSessionId(null)
+    } catch (err) {
+      logger.error('Delete training session error:', err)
+    }
+  }
+
+  const handleClearTrainingSessions = async () => {
+    if (!selectedBrandId) return
+    try {
+      await api.clearTrainingSessions(selectedBrandId)
+      setTrainingSessions([])
+      setTrainingExamples([])
+      setCurrentTrainingSessionId(null)
+      setApprovedClaimsForSession([])
+    } catch (err) {
+      logger.error('Clear training sessions error:', err)
+    }
+  }
+
+  const handleExportTrainingSessions = () => {
+    if (!selectedBrandId) return
+    api.exportTrainingSessions(selectedBrandId)
   }
 
   // ===== Library Actions =====
@@ -1142,6 +1295,17 @@ export default function MKG2ClaimsDetector() {
           </p>
         </div>
         <div className="headerRight">
+          <button
+            className="trainingIconBtn"
+            onClick={() => setShowTrainingOverlay(prev => !prev)}
+            title="Training Data"
+            style={{ position: 'relative' }}
+          >
+            <Icon name="flask" size={18} />
+            {trainingSessions.length > 0 && (
+              <span className="trainingBadgeDot" />
+            )}
+          </button>
           <ThemeToggle />
         </div>
       </div>
@@ -1552,6 +1716,7 @@ export default function MKG2ClaimsDetector() {
                           onReject={handleClaimReject}
                           onSelect={() => handleClaimSelect(claim.id)}
                           onViewSource={() => handleViewSource(claim)}
+                          brandReferences={referenceDocuments}
                         />
                       </div>
                     ))}
@@ -1606,6 +1771,17 @@ export default function MKG2ClaimsDetector() {
           </div>
         </div>
       )}
+
+      {/* Training Data Overlay */}
+      <TrainingDataOverlay
+        isOpen={showTrainingOverlay}
+        onClose={() => setShowTrainingOverlay(false)}
+        sessions={trainingSessions}
+        onDeleteSession={handleDeleteTrainingSession}
+        onClearAll={handleClearTrainingSessions}
+        onExport={handleExportTrainingSessions}
+        hasActiveBrand={!!selectedBrandId}
+      />
 
       {/* New Brand Modal */}
       {showNewBrandModal && (
@@ -1759,34 +1935,104 @@ export default function MKG2ClaimsDetector() {
 }
 
 /**
- * Reference Viewer Content - renders reference PDF in the overlay
+ * Reference Viewer Content - renders reference PDF with PDF.js canvas and a pin marker at the excerpt location
  */
 function ReferenceViewerContent({ referenceId, page, excerpt }) {
-  const [pdfUrl, setPdfUrl] = useState(null)
+  const [pdfDoc, setPdfDoc] = useState(null)
+  const [currentPage, setCurrentPage] = useState(page || 1)
+  const [totalPages, setTotalPages] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [pinY, setPinY] = useState(null)
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
+  const canvasRef = useRef(null)
+  const containerRef = useRef(null)
 
+  // Load PDF blob into PDF.js
   useEffect(() => {
-    let revoked = false
-    async function loadPdf() {
+    let cancelled = false
+    async function load() {
       try {
         setLoading(true)
         const blob = await api.fetchReferenceFile(referenceId)
-        if (revoked) return
-        const url = URL.createObjectURL(blob)
-        setPdfUrl(url)
+        if (cancelled) return
+        const arrayBuffer = await blob.arrayBuffer()
+        const doc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+        if (cancelled) return
+        setPdfDoc(doc)
+        setTotalPages(doc.numPages)
       } catch (err) {
-        if (!revoked) setError(err.message)
+        if (!cancelled) setError(err.message)
       } finally {
-        if (!revoked) setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
-    loadPdf()
-    return () => {
-      revoked = true
-      if (pdfUrl) URL.revokeObjectURL(pdfUrl)
-    }
+    load()
+    return () => { cancelled = true }
   }, [referenceId])
+
+  // Render page to canvas and locate excerpt
+  useEffect(() => {
+    if (!pdfDoc || !canvasRef.current) return
+    let cancelled = false
+
+    async function renderPage() {
+      try {
+        const pdfPage = await pdfDoc.getPage(currentPage)
+        const containerWidth = containerRef.current?.clientWidth || 800
+        const baseViewport = pdfPage.getViewport({ scale: 1 })
+        const fitScale = Math.min(2.0, (containerWidth - 48) / baseViewport.width)
+        const viewport = pdfPage.getViewport({ scale: fitScale })
+
+        if (cancelled) return
+        const canvas = canvasRef.current
+        canvas.width = viewport.width
+        canvas.height = viewport.height
+        setCanvasSize({ width: viewport.width, height: viewport.height })
+
+        await pdfPage.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
+
+        // Find excerpt Y position in this page
+        if (excerpt && !cancelled) {
+          const textContent = await pdfPage.getTextContent()
+          if (cancelled) return
+
+          const items = textContent.items.filter(i => i.str?.trim())
+          const pageText = items.map(i => i.str).join(' ').toLowerCase()
+          // Use first 60 chars of excerpt as search needle (specific enough to locate the paragraph)
+          const needle = excerpt.toLowerCase().trim().slice(0, 60)
+          const matchIdx = pageText.indexOf(needle)
+
+          if (matchIdx !== -1) {
+            let charCount = 0
+            for (const item of items) {
+              if (charCount + item.str.length >= matchIdx) {
+                // Convert PDF y (bottom-up) to canvas y (top-down)
+                const yCanvas = (baseViewport.height - item.transform[5]) * fitScale
+                if (!cancelled) setPinY(Math.max(0, yCanvas - item.height * fitScale))
+                break
+              }
+              charCount += item.str.length + 1
+            }
+          } else {
+            if (!cancelled) setPinY(null)
+          }
+        }
+      } catch (err) {
+        logger.error('Reference render error:', err)
+      }
+    }
+
+    renderPage()
+    return () => { cancelled = true }
+  }, [pdfDoc, currentPage, excerpt])
+
+  // Scroll pin into view when located
+  useEffect(() => {
+    if (pinY !== null && containerRef.current) {
+      containerRef.current.scrollTop = Math.max(0, pinY - containerRef.current.clientHeight / 3)
+    }
+  }, [pinY, canvasSize])
 
   if (loading) {
     return (
@@ -1805,27 +2051,78 @@ function ReferenceViewerContent({ referenceId, page, excerpt }) {
     )
   }
 
-  // Use browser's native PDF viewer via iframe
-  const pageParam = page ? `#page=${page}` : ''
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {/* Excerpt banner */}
       {excerpt && (
         <div style={{
-          padding: '12px 16px',
-          background: 'var(--green-1)',
-          borderBottom: '1px solid var(--green-3)',
+          padding: '10px 16px',
+          background: 'var(--gray-9)',
+          borderBottom: '1px solid var(--gray-8)',
           fontSize: '13px',
-          color: 'var(--green-9)'
+          color: 'var(--gray-1)',
+          display: 'flex',
+          gap: 8,
+          alignItems: 'baseline',
+          lineHeight: 1.5,
         }}>
-          <strong>Supporting text:</strong> "{excerpt}"
-          {page && <span style={{ marginLeft: '8px', color: 'var(--green-7)' }}>(Page {page})</span>}
+          <Icon name="mapPin" size={13} />
+          <span style={{ opacity: 0.7, flexShrink: 0 }}>Supporting text:</span>
+          <span style={{ fontStyle: 'italic' }}>&ldquo;{excerpt}&rdquo;</span>
         </div>
       )}
-      <iframe
-        src={`${pdfUrl}${pageParam}`}
-        style={{ flex: 1, border: 'none', width: '100%' }}
-        title="Reference PDF"
-      />
+
+      {/* PDF canvas + pin overlay */}
+      <div
+        ref={containerRef}
+        style={{ flex: 1, overflow: 'auto', background: 'var(--gray-3)', padding: '16px 40px 16px 16px' }}
+      >
+        <div style={{ position: 'relative', width: canvasSize.width, margin: '0 auto' }}>
+          <canvas ref={canvasRef} style={{ display: 'block', boxShadow: '0 2px 12px rgba(0,0,0,0.18)' }} />
+
+          {/* Amber pin marker in the left margin */}
+          {pinY !== null && (
+            <div
+              title={excerpt}
+              style={{
+                position: 'absolute',
+                top: pinY,
+                left: -30,
+                width: 18,
+                height: 18,
+                background: 'var(--amber-5)',
+                border: '2px solid var(--amber-7)',
+                borderRadius: '50% 50% 50% 0',
+                transform: 'rotate(-45deg)',
+                boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
+                cursor: 'default',
+              }}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Page navigation */}
+      {totalPages > 1 && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 12,
+          padding: '8px 16px',
+          borderTop: '1px solid var(--gray-3)',
+          fontSize: 13,
+          color: 'var(--gray-8)',
+        }}>
+          <Button variant="ghost" size="small" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage <= 1}>
+            <Icon name="chevronLeft" size={14} />
+          </Button>
+          <span>Page {currentPage} of {totalPages}</span>
+          <Button variant="ghost" size="small" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}>
+            <Icon name="chevronRight" size={14} />
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

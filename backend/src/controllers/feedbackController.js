@@ -4,13 +4,14 @@ import { AppError } from '../middleware/errorHandler.js'
 export const feedbackController = {
   create(req, res, next) {
     try {
-      const { claim_id, document_id, reference_doc_id, decision, reason, confidence_score, reviewer_notes } = req.body
+      const { claim_id, document_id, reference_doc_id, decision, reason, confidence_score, reviewer_notes, rejection_type, corrected_reference_id } = req.body
       if (!claim_id) throw new AppError('claim_id is required', 400)
       if (!decision) throw new AppError('decision is required', 400)
 
       const feedback = ClaimFeedback.create({
         claim_id, document_id, reference_doc_id,
-        decision, reason, confidence_score, reviewer_notes
+        decision, reason, confidence_score, reviewer_notes,
+        rejection_type, corrected_reference_id
       })
       res.status(201).json(feedback)
     } catch (err) {

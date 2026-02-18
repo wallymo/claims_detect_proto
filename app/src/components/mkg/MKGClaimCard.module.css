@@ -29,6 +29,7 @@
   border-left: 3px solid var(--amber-6);
 }
 
+
 .claimCard.approved {
   background: var(--green-1);
   border-color: var(--green-4);
@@ -239,7 +240,7 @@
 .feedbackForm {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   padding-top: 12px;
   border-top: 1px solid var(--gray-3);
 }
@@ -250,26 +251,199 @@
   color: var(--gray-7);
 }
 
-.feedbackInput {
-  padding: 8px 10px;
-  border: 1px solid var(--gray-4);
-  border-radius: 6px;
-  font-size: 13px;
-  resize: none;
-  font-family: inherit;
-  background: var(--color-background-primary);
-  color: var(--color-text-primary);
-}
-
-.feedbackInput:focus {
-  outline: none;
-  border-color: var(--blue-6);
-}
-
 .feedbackActions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* Rejection radio options */
+.rejectionOptions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rejectionOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--gray-3);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.rejectionOption:hover {
+  border-color: var(--gray-5);
+  background: var(--gray-1);
+}
+
+.rejectionOption input[type="radio"] {
+  margin-top: 2px;
+  flex-shrink: 0;
+  accent-color: var(--blue-6);
+}
+
+.rejectionOptionText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rejectionOptionLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.rejectionOptionDesc {
+  font-size: 11px;
+  color: var(--gray-6);
+}
+
+/* Reference picker */
+.refPickerSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--gray-1);
+  border: 1px solid var(--gray-3);
+  border-radius: 8px;
+}
+
+.refPickerLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gray-6);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.refPickerSearchWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.refPickerSearchIcon {
+  position: absolute;
+  left: 9px;
+  color: var(--gray-5);
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+.refPickerSearch {
+  width: 100%;
+  padding: 7px 30px 7px 30px;
+  border: 1px solid var(--gray-4);
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: inherit;
+  background: var(--color-background-primary);
+  color: var(--color-text-primary);
+  transition: border-color 0.15s ease;
+}
+
+.refPickerSearch:focus {
+  outline: none;
+  border-color: var(--blue-5);
+  box-shadow: 0 0 0 2px var(--blue-2);
+}
+
+.refPickerClear {
+  position: absolute;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: var(--gray-3);
+  border-radius: 50%;
+  color: var(--gray-6);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.refPickerClear:hover {
+  background: var(--gray-4);
+  color: var(--gray-8);
+}
+
+.refPickerList {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 180px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--gray-4) transparent;
+}
+
+.refPickerList::-webkit-scrollbar {
+  width: 4px;
+}
+
+.refPickerList::-webkit-scrollbar-thumb {
+  background: var(--gray-4);
+  border-radius: 2px;
+}
+
+.refPickerEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--gray-5);
+  padding: 16px 8px;
+  text-align: center;
+}
+
+.refPickerItem {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: var(--color-background-primary);
+  font-size: 12px;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.12s ease;
+  width: 100%;
+}
+
+.refPickerItem:hover {
+  border-color: var(--blue-3);
+  background: var(--blue-1);
+  color: var(--blue-9);
+}
+
+.refPickerItemSelected {
+  border-color: var(--blue-5);
+  background: var(--blue-1);
+  color: var(--blue-8);
+  font-weight: 500;
+}
+
+.refPickerItemSelected:hover {
+  border-color: var(--blue-6);
+}
+
+.refPickerItem span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Rejection reason */

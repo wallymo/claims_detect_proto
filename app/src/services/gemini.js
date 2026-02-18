@@ -605,7 +605,14 @@ Analyze now. Find all medication claims.`
  * @param {string} docType - Document type: 'speaker-notes', 'trifold', 'slides-only'
  * @returns {Promise<Object>} - Result with claims array
  */
-export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null, _pageImages = null, docType = 'speaker-notes', factInventory = '') {
+function buildTrainingExamplesBlock(trainingExamples) {
+  if (!Array.isArray(trainingExamples) || trainingExamples.length === 0) return ''
+  const capped = trainingExamples.slice(0, 20)
+  const lines = capped.map(c => `- "${c.text}" (${c.type || 'Claim'})`).join('\n')
+  return `\n\nPRIOR APPROVED EXAMPLES FOR THIS BRAND:\nThe following claims were previously reviewed and confirmed as valid for this brand:\n${lines}\n\nUse these as calibration examples. Detect claims of similar type, language pattern, and specificity.\n`
+}
+
+export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null, _pageImages = null, docType = 'speaker-notes', factInventory = '', trainingExamples = []) {
   const client = getGeminiClient()
   // Kept for API-compat with other providers; Gemini uses native PDF input.
   void _pageImages
@@ -640,7 +647,8 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
   const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 
   // Extraction instructions first (strongest signal), supplemental context at end (matches pre-regression order).
-  const finalPrompt = `${promptBody}${factInventory || ''}
+  const trainingBlock = buildTrainingExamplesBlock(trainingExamples)
+  const finalPrompt = `${promptBody}${trainingBlock}${factInventory || ''}
 
 # Final Instruction
 Extract all substantiation-requiring claims now and return ONLY JSON.
