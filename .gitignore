@@ -26,6 +26,10 @@ coverage/
 playwright-report/
 test-results/
 
+# Local diagnostics artifacts
+diagnostics-output.json
+*-diagnostics-output.json
+
 # Tooling
 .serena/
 
