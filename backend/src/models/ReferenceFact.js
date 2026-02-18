@@ -13,21 +13,6 @@ export const ReferenceFact = {
     }
   },
 
-  findByBrandId(brandId) {
-    const db = getDb()
-    const rows = db.prepare(`
-      SELECT rf.*, rd.display_alias, rd.filename
-      FROM reference_facts rf
-      JOIN reference_documents rd ON rd.id = rf.reference_id
-      WHERE rd.brand_id = ?
-        AND rf.extraction_status = 'indexed'
-    `).all(brandId)
-    return rows.map(row => ({
-      ...row,
-      facts: row.facts_json ? JSON.parse(row.facts_json) : []
-    }))
-  },
-
   findByBrandIdWithEmbeddings(brandId) {
     const db = getDb()
     const rows = db.prepare(`

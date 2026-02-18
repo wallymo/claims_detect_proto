@@ -57,16 +57,6 @@ export const Reference = {
     `).all(brandId)
   },
 
-  findAll() {
-    const db = getDb()
-    return db.prepare(`
-      SELECT id, brand_id, filename, display_alias, doc_type, page_count, file_size_bytes,
-             upload_date, notes, (content_text IS NOT NULL) as has_content
-      FROM reference_documents
-      ORDER BY upload_date DESC
-    `).all()
-  },
-
   findById(id) {
     const db = getDb()
     const row = db.prepare(`
@@ -126,13 +116,6 @@ export const Reference = {
       `UPDATE reference_documents SET deleted_at = NULL, folder_id = NULL WHERE id IN (${placeholders})`
     ).run(...ids)
     return { restored: ids.length }
-  },
-
-  permanentDelete(id) {
-    const db = getDb()
-    const ref = db.prepare('SELECT file_path FROM reference_documents WHERE id = ?').get(id)
-    db.prepare('DELETE FROM reference_documents WHERE id = ?').run(id)
-    return { filePath: ref?.file_path || null }
   },
 
   bulkMove(ids, folderId) {

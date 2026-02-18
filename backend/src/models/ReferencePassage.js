@@ -8,19 +8,6 @@ export const ReferencePassage = {
     ).all(referenceId)
   },
 
-  findByBrandId(brandId) {
-    const db = getDb()
-    return db.prepare(`
-      SELECT rp.*, rd.display_alias, rd.filename
-      FROM reference_passages rp
-      JOIN reference_documents rd ON rd.id = rp.reference_id
-      WHERE rd.brand_id = ?
-        AND rd.deleted_at IS NULL
-        AND rp.embedding IS NOT NULL
-      ORDER BY rd.id, rp.passage_index
-    `).all(brandId)
-  },
-
   createPassages(referenceId, passages) {
     const db = getDb()
 
@@ -50,12 +37,6 @@ export const ReferencePassage = {
 
     insertMany(passages)
     return this.findByReferenceId(referenceId)
-  },
-
-  deleteByReferenceId(referenceId) {
-    const db = getDb()
-    const result = db.prepare('DELETE FROM reference_passages WHERE reference_id = ?').run(referenceId)
-    return result.changes
   },
 
   getEmbeddingStatus(brandId) {

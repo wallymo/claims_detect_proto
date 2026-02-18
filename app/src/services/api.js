@@ -42,34 +42,11 @@ export async function createBrand({ name, client }) {
   })
 }
 
-export async function fetchBrand(id) {
-  return request(`/brands/${id}`)
-}
-
-export async function deleteBrand(id) {
-  return request(`/brands/${id}`, { method: 'DELETE' })
-}
-
 // ========== References ==========
 
 export async function fetchReferences(brandId) {
   const data = await request(`/brands/${brandId}/references`)
   return data.references
-}
-
-export async function fetchAllReferences() {
-  // Fetch all brands then all their references
-  const brands = await fetchBrands()
-  const allRefs = []
-  for (const brand of brands) {
-    const refs = await fetchReferences(brand.id)
-    allRefs.push(...refs)
-  }
-  return allRefs
-}
-
-export async function fetchReference(brandId, refId) {
-  return request(`/brands/${brandId}/references/${refId}`)
 }
 
 export async function uploadReference(brandId, file, { display_alias, doc_type, notes } = {}) {
@@ -183,13 +160,6 @@ export async function fetchFactsSummary(brandId) {
   return data.references
 }
 
-export async function updateFactFeedback(factId, { reference_id, decision }) {
-  return request(`/facts/${factId}/feedback`, {
-    method: 'PATCH',
-    body: JSON.stringify({ reference_id, decision })
-  })
-}
-
 // ========== Fact Search ==========
 
 export async function searchFacts(brandId, claimText) {
@@ -213,10 +183,6 @@ export async function searchPassages(brandId, claimText, topK = 5, options = {})
   })
 }
 
-export async function fetchPassageStatus(brandId) {
-  return request(`/brands/${brandId}/passages/status`)
-}
-
 // ========== Feedback ==========
 
 export async function createFeedback({ claim_id, document_id, reference_doc_id, decision, reason, confidence_score }) {
@@ -226,17 +192,3 @@ export async function createFeedback({ claim_id, document_id, reference_doc_id, 
   })
 }
 
-export async function fetchFeedback({ claim_id, document_id }) {
-  const params = new URLSearchParams()
-  if (claim_id) params.set('claim_id', claim_id)
-  if (document_id) params.set('document_id', document_id)
-  const data = await request(`/feedback?${params}`)
-  return data.feedback
-}
-
-export async function updateFeedback(id, { decision, reason, reviewer_notes }) {
-  return request(`/feedback/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ decision, reason, reviewer_notes })
-  })
-}

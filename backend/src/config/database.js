@@ -80,6 +80,11 @@ export function initDb() {
     }
   }
 
+  // 007: missing indexes on folder_id and document_id
+  const migration007Path = path.resolve(__dirname, '../../migrations/007_add_missing_indexes.sql')
+  const migration007 = fs.readFileSync(migration007Path, 'utf-8')
+  db.exec(migration007)
+
   console.log('Database initialized:', env.DB_PATH)
   return db
 }
