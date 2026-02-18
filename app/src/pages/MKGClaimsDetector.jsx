@@ -333,7 +333,7 @@ export default function MKGClaimsDetector({ demoMode = false }) {
       <div className="header">
         <div className="headerLeft">
           <div className="titleSection">
-            <h1 className="title">{demoMode ? 'Claims Detector' : 'MKG Claims Detector'}</h1>
+            <h1 className="title">Claims Detector</h1>
             {!demoMode && <Badge variant="info">POC2</Badge>}
           </div>
           <p className="subtitle">
