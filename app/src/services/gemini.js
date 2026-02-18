@@ -80,7 +80,7 @@ function parsePositiveInt(value, fallback) {
 
 const DETECTION_PASSES = parsePositiveInt(
   import.meta.env.VITE_DETECTION_PASSES,
-  2
+  1
 )
 // System instruction (moved out of user prompt for efficiency)
 // Generic — doc-type-specific guidance is in the user prompt
@@ -509,6 +509,19 @@ Extract ALL claims requiring MLR substantiation from this pharmaceutical documen
 # Confidence (0-100)
 90-100: Explicit stats, specific numbers | 70-89: Benefit promises, comparisons | 50-69: Borderline phrasing | 30-49: Weak promotional signal
 
+# Examples
+✅ CLAIM: "Patients on DRUG X achieved a 47% reduction in primary endpoint events vs. placebo (p<0.001)†"
+→ confidence: 97, rationale: "Quantified comparative efficacy claim with statistical significance; † annotation links to study population requiring substantiation"
+
+✅ CLAIM: "Superior to standard of care in reducing flare frequency"
+→ confidence: 90, rationale: "'Superior' is a high-bar regulatory term; comparative efficacy claim requiring head-to-head trial data"
+
+✅ CLAIM: "Well-tolerated with a favorable safety profile‡"
+→ confidence: 85, rationale: "Safety characterization requiring substantiation; ‡ annotation links to AE data and study population qualifiers"
+
+❌ NOT A CLAIM: "DRUG X is a JAK1/JAK2 inhibitor available as a 10 mg tablet."
+→ Skip. Mechanism description + dosage form with no therapeutic outcome assertion.
+
 Analyze now. Find everything requiring substantiation.`
 
 // User-facing prompt for Disease State claims (shown in UI, editable)
@@ -534,6 +547,16 @@ Extract DISEASE STATE claims requiring MLR substantiation.
 # Confidence (0-100)
 90-100: Explicit stats, prevalence data | 70-89: Burden assertions, unmet needs | 50-69: Borderline | 30-49: Weak contextual
 
+# Examples
+✅ CLAIM: "Approximately 1 in 5 adults with psoriatic arthritis progress to severe joint damage within 5 years†"
+→ confidence: 94, rationale: "Epidemiological progression statistic with specific rate requiring published population study; † links to study details"
+
+✅ CLAIM: "Up to 40% of patients remain undiagnosed for more than 2 years after symptom onset"
+→ confidence: 88, rationale: "Diagnostic delay burden statistic requiring epidemiological citation"
+
+❌ NOT A CLAIM: "Psoriatic arthritis is a chronic immune-mediated inflammatory disease affecting joints and skin."
+→ Skip. Established medical definition with no statistics or burden assertion requiring citation.
+
 Analyze now. Find all disease/condition claims.`
 
 // User-facing prompt for Medication claims (shown in UI, editable)
@@ -558,6 +581,16 @@ Extract MEDICATION claims requiring MLR substantiation.
 
 # Confidence (0-100)
 90-100: "Clinically proven to reduce X" | 70-89: "Starts working in 3 days" | 50-69: "Helps patients feel better" | 30-49: "New era in treatment"
+
+# Examples
+✅ CLAIM: "DRUG X demonstrated sustained remission in 68% of patients at Week 52‡"
+→ confidence: 96, rationale: "Long-term efficacy endpoint with specific percentage; ‡ indicates additional study qualifiers requiring substantiation"
+
+✅ CLAIM: "Significantly fewer discontinuations due to adverse events vs. comparator (2.1% vs. 5.8%, p=0.03)"
+→ confidence: 95, rationale: "Comparative safety claim with specific AE rates and p-value requiring clinical trial citation"
+
+❌ NOT A CLAIM: "Take DRUG X once daily with or without food."
+→ Skip. Standard dosing instruction from PI; no efficacy, safety, or comparative assertion.
 
 Analyze now. Find all medication claims.`
 
