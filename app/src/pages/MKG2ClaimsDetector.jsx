@@ -1134,7 +1134,7 @@ export default function MKG2ClaimsDetector() {
       <div className="header">
         <div className="headerLeft">
           <div className="titleSection">
-            <h1 className="title">MKG Claims Detector</h1>
+            <h1 className="title">Claims Detector</h1>
             <Badge variant="info">POC2</Badge>
           </div>
           <p className="subtitle">
