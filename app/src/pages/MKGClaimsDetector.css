@@ -397,3 +397,88 @@
   color: var(--color-background-primary);
   font-weight: 600;
 }
+
+/* Cache hit banner */
+.cacheBanner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--color-surface-subtle, #f0f4ff);
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  font-size: 12px;
+  color: var(--color-text-secondary, #64748b);
+}
+
+.cacheBannerRerun {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-primary, #3b82f6);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.cacheBannerRerun:hover {
+  background: var(--color-primary-subtle, #eff6ff);
+}
+
+/* Matching status bar — in-progress and completed states */
+.matchingStatusBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--color-surface-subtle, #f8fafc);
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  font-size: 12px;
+  color: var(--color-text-secondary, #64748b);
+}
+
+.matchingStatusActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.matchingResetBtn {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-secondary, #64748b);
+  background: none;
+  border: 1px solid var(--color-border, #e2e8f0);
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.matchingResetBtn:hover {
+  background: var(--color-surface, #f1f5f9);
+  color: var(--color-text, #1e293b);
+}
+
+.reanalyzeConfirm {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+
+.reanalyzeConfirm span {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.reanalyzeConfirmActions {
+  display: flex;
+  gap: 8px;
+}

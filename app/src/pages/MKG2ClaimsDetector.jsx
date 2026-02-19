@@ -767,15 +767,6 @@ export default function MKG2ClaimsDetector() {
     }
   }
 
-  const handleForceRerun = () => {
-    if (currentCacheKeyRef.current) {
-      deleteAnalysisCache(currentCacheKeyRef.current)
-      currentCacheKeyRef.current = null
-    }
-    setCacheHit(null)
-    handleAnalyze()
-  }
-
   const handleConfirmReanalyze = () => {
     // Compute the key fresh in case currentCacheKeyRef hasn't been set yet
     const _promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
@@ -1578,34 +1569,36 @@ export default function MKG2ClaimsDetector() {
               }
             />
 
-            <Button
-              variant="primary"
-              size="large"
-              onClick={handleAnalyze}
-              disabled={!canAnalyze}
-            >
-              {isAnalyzing || isMatching ? (
-                <>
-                  <Spinner size="small" />
-                  {isMatching ? 'Matching...' : 'Analyzing...'}
-                </>
-              ) : (
-                <>
-                  <Icon name="zap" size={18} />
-                  Analyze Document
-                </>
-              )}
-            </Button>
-
-            {analysisComplete && (
+            {pendingReanalyzeConfirm ? (
+              <div className="reanalyzeConfirm">
+                <span>Re-analyze from scratch?</span>
+                <div className="reanalyzeConfirmActions">
+                  <Button variant="primary" size="small" onClick={handleConfirmReanalyze}>
+                    Confirm
+                  </Button>
+                  <Button variant="ghost" size="small" onClick={() => setPendingReanalyzeConfirm(false)}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
               <Button
-                variant="ghost"
-                size="small"
-                onClick={handleForceRerun}
-                disabled={isAnalyzing || isMatching}
+                variant="primary"
+                size="large"
+                onClick={hasCachedResult ? () => setPendingReanalyzeConfirm(true) : handleAnalyze}
+                disabled={!canAnalyze}
               >
-                <Icon name="refreshCw" size={14} />
-                Re-analyze
+                {isAnalyzing || isMatching ? (
+                  <>
+                    <Spinner size="small" />
+                    {isMatching ? 'Matching...' : 'Analyzing...'}
+                  </>
+                ) : (
+                  <>
+                    <Icon name={hasCachedResult ? 'refreshCw' : 'zap'} size={18} />
+                    {hasCachedResult ? 'Re-analyze Document' : 'Analyze Document'}
+                  </>
+                )}
               </Button>
             )}
 
