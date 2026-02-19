@@ -58,6 +58,42 @@ const PROMPT_DISPLAY_TEXT = {
   'drug': MEDICATION_PROMPT_USER
 }
 
+// ===== Analysis Result Cache =====
+
+const ANALYSIS_CACHE_NS = 'claims_analysis_v1'
+
+function makeAnalysisCacheKey(file, model, promptKey, editablePrompt, docType, brandId, refIds) {
+  let h = 0
+  for (let i = 0; i < editablePrompt.length; i++) {
+    h = (Math.imul(31, h) + editablePrompt.charCodeAt(i)) | 0
+  }
+  // Include a refs fingerprint so detection-only results don't collide with matched results.
+  // Sort ref IDs for stable ordering regardless of load order.
+  const refsFingerprint = refIds && refIds.length > 0 ? [...refIds].sort().join(',') : 'norefs'
+  return `${ANALYSIS_CACHE_NS}|${file.name}|${file.size}|${file.lastModified}|${model}|${promptKey}|${docType}|${brandId || ''}|${h}|${refsFingerprint}`
+}
+
+function readAnalysisCache(key) {
+  try { return JSON.parse(sessionStorage.getItem(key) || 'null') } catch { return null }
+}
+
+function writeAnalysisCache(key, claims) {
+  try { sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), claims })) } catch { /* quota */ }
+}
+
+function deleteAnalysisCache(key) {
+  try { sessionStorage.removeItem(key) } catch { /* ignore */ }
+}
+
+function formatTimeAgo(ts) {
+  const d = Date.now() - ts
+  if (d < 60000) return 'just now'
+  if (d < 3600000) return `${Math.floor(d / 60000)}m ago`
+  return `${Math.floor(d / 3600000)}h ago`
+}
+
+// ===== Fact Inventory =====
+
 const FACT_INVENTORY_MAX_REFERENCES = 14
 const FACT_INVENTORY_MAX_FACTS_PER_REFERENCE = 5
 const FACT_INVENTORY_MAX_TOTAL_FACTS = 140
@@ -132,6 +168,12 @@ export default function MKG2ClaimsDetector() {
   const [_matchingComplete, setMatchingComplete] = useState(false)
   const [matchingProgress, setMatchingProgress] = useState('')
   const [matchingStats, setMatchingStats] = useState(null)
+
+  // Cache state
+  const [cacheHit, setCacheHit] = useState(null)  // { ts: number } | null
+  const [hasCachedResult, setHasCachedResult] = useState(false)
+  const [pendingReanalyzeConfirm, setPendingReanalyzeConfirm] = useState(false)
+  const currentCacheKeyRef = useRef(null)
 
   // Claims state
   const [claims, setClaims] = useState([])
@@ -511,6 +553,28 @@ export default function MKG2ClaimsDetector() {
   const handleAnalyze = async () => {
     if (!uploadedFile) return
 
+    const _promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
+    const _refIds = referenceDocuments.map(r => r.id)
+    const _cacheKey = makeAnalysisCacheKey(
+      uploadedFile, selectedModel, _promptKey, editablePrompt,
+      selectedDocType || 'speaker-notes', selectedBrandId, _refIds
+    )
+    currentCacheKeyRef.current = _cacheKey
+    const _cached = readAnalysisCache(_cacheKey)
+    if (_cached) {
+      setClaims(_cached.claims)
+      setCacheHit({ ts: _cached.ts })
+      setAnalysisComplete(true)
+      setMatchingComplete(true)
+      setAnalysisProgress(100)
+      setAnalysisStatus('Claims detected')
+      setAnalysisError(null)
+      setMatchingStats(null)
+      setIsAnalyzing(false)
+      return
+    }
+    setCacheHit(null)
+
     setIsAnalyzing(true)
     setAnalysisComplete(false)
     setMatchingComplete(false)
@@ -671,15 +735,43 @@ export default function MKG2ClaimsDetector() {
         doc_type: selectedDocType
       })
 
-      // Step 2: Auto-trigger reference matching
+      // Step 2: Auto-trigger reference matching (or cache detection-only result)
       if (selectedBrandId && referenceDocuments.length > 0) {
         await runReferenceMatching(indexedClaims, analysisTotalMs)
+      } else {
+        writeAnalysisCache(currentCacheKeyRef.current, indexedClaims)
       }
     } catch (error) {
       logger.error('Analysis error:', error)
       setAnalysisError(error.message)
       setIsAnalyzing(false)
     }
+  }
+
+  const handleForceRerun = () => {
+    if (currentCacheKeyRef.current) {
+      deleteAnalysisCache(currentCacheKeyRef.current)
+      currentCacheKeyRef.current = null
+    }
+    setCacheHit(null)
+    handleAnalyze()
+  }
+
+  const handleResetMatching = () => {
+    if (currentCacheKeyRef.current) deleteAnalysisCache(currentCacheKeyRef.current)
+    setMatchingComplete(false)
+    setMatchingStats(null)
+    const stripped = claims.map(c => ({
+      ...c,
+      matched: false,
+      matchConfidence: undefined,
+      matchTier: undefined,
+      reference: undefined,
+      matchReasoning: undefined,
+      diagnostics: undefined
+    }))
+    setClaims(stripped)
+    runReferenceMatching(stripped, null)
   }
 
   // ===== Reference Matching (Step 2) =====
@@ -812,6 +904,9 @@ export default function MKG2ClaimsDetector() {
 
         return changed ? merged : prev
       })
+      if (currentCacheKeyRef.current) {
+        writeAnalysisCache(currentCacheKeyRef.current, enrichedClaims)
+      }
       const stats = getMatchingStats(enrichedClaims)
       const enrichedStats = {
         ...stats,
@@ -1466,6 +1561,18 @@ export default function MKG2ClaimsDetector() {
               )}
             </Button>
 
+            {analysisComplete && (
+              <Button
+                variant="ghost"
+                size="small"
+                onClick={handleForceRerun}
+                disabled={isAnalyzing || isMatching}
+              >
+                <Icon name="refreshCw" size={14} />
+                Re-analyze
+              </Button>
+            )}
+
             {analysisError && (
               <div className="analysisError">
                 <Icon name="alertCircle" size={16} />
@@ -1613,22 +1720,32 @@ export default function MKG2ClaimsDetector() {
             <div className="claimsPanelBody">
               {rightPanelTab === 0 ? (
                 <>
-                  {/* Matching progress */}
-                  {isMatching && (
-                    <div style={{
-                      padding: '12px 16px',
-                      background: 'var(--blue-1)',
-                      borderBottom: '1px solid var(--blue-3)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      fontSize: '13px',
-                      color: 'var(--blue-8)'
-                    }}>
+                  {/* Matching status bar */}
+                  {isMatching ? (
+                    <div className="matchingStatusBar">
                       <Spinner size="small" />
                       <span>{matchingProgress}</span>
                     </div>
-                  )}
+                  ) : analysisComplete ? (
+                    <div className="matchingStatusBar">
+                      {matchingStats ? (
+                        <>
+                          <Icon name="gitCompare" size={14} />
+                          <span>Matched {matchingStats.matched} of {matchingStats.total} claims</span>
+                        </>
+                      ) : (
+                        <>
+                          <Icon name="zap" size={14} />
+                          <span>{cacheHit ? `Cached · ${formatTimeAgo(cacheHit.ts)}` : `${claims.length} claims detected`}</span>
+                        </>
+                      )}
+                      <div className="matchingStatusActions">
+                        {matchingStats && (
+                          <button className="matchingResetBtn" onClick={handleResetMatching}>Re-match</button>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
 
                   {analysisComplete && (
                     <div className="claimsFilterBar">
