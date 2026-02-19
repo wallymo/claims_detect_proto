@@ -776,6 +776,23 @@ export default function MKG2ClaimsDetector() {
     handleAnalyze()
   }
 
+  const handleConfirmReanalyze = () => {
+    // Compute the key fresh in case currentCacheKeyRef hasn't been set yet
+    const _promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
+    const _refIds = referenceDocuments.map(r => r.id)
+    const key = makeAnalysisCacheKey(
+      uploadedFile, selectedModel, _promptKey, editablePrompt,
+      selectedDocType || 'speaker-notes', selectedBrandId, _refIds
+    )
+    deleteAnalysisCache(key)
+    if (currentCacheKeyRef.current) deleteAnalysisCache(currentCacheKeyRef.current)
+    currentCacheKeyRef.current = null
+    setCacheHit(null)
+    setHasCachedResult(false)
+    setPendingReanalyzeConfirm(false)
+    handleAnalyze()
+  }
+
   const handleResetMatching = () => {
     if (currentCacheKeyRef.current) deleteAnalysisCache(currentCacheKeyRef.current)
     setMatchingComplete(false)
