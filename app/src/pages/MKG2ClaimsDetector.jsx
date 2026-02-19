@@ -174,6 +174,7 @@ export default function MKG2ClaimsDetector() {
   const [hasCachedResult, setHasCachedResult] = useState(false)
   const [pendingReanalyzeConfirm, setPendingReanalyzeConfirm] = useState(false)
   const currentCacheKeyRef = useRef(null)
+  const cancelAnalysisRef = useRef(false)
 
   // Claims state
   const [claims, setClaims] = useState([])
@@ -571,6 +572,7 @@ export default function MKG2ClaimsDetector() {
 
   const handleAnalyze = async () => {
     if (!uploadedFile) return
+    cancelAnalysisRef.current = false
 
     const _promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
     const _refIds = referenceDocuments.map(r => r.id)
@@ -782,6 +784,20 @@ export default function MKG2ClaimsDetector() {
     setHasCachedResult(false)
     setPendingReanalyzeConfirm(false)
     handleAnalyze()
+  }
+
+  const handleCancelAnalysis = () => {
+    cancelAnalysisRef.current = true
+    setIsAnalyzing(false)
+    setIsMatching(false)
+    setAnalysisComplete(false)
+    setMatchingComplete(false)
+    setAnalysisProgress(0)
+    setAnalysisStatus('Analyzing document...')
+    setClaims([])
+    setMatchingStats(null)
+    setCacheHit(null)
+    setMatchingProgress('')
   }
 
   const handleResetMatching = () => {
