@@ -617,6 +617,7 @@ export default function MKG2ClaimsDetector() {
         if (!connectionCheck.connected) {
           throw new Error(`Gemini API not connected: ${connectionCheck.error}`)
         }
+        if (cancelAnalysisRef.current) return
       }
 
       let pageImages = null
@@ -624,6 +625,7 @@ export default function MKG2ClaimsDetector() {
         setAnalysisStatus('Rendering pages for vision analysis...')
         setAnalysisProgress(15)
         pageImages = await pdfToImages(uploadedFile)
+        if (cancelAnalysisRef.current) return
       }
 
       // Fetch fact inventory for brand-grounded detection (POC2)
@@ -648,6 +650,7 @@ export default function MKG2ClaimsDetector() {
 
               // Fetch facts for indexed references, then cap per reference and total prompt size.
               const factsData = await api.fetchFacts(factBrandId, ref.reference_id)
+              if (cancelAnalysisRef.current) return
               const facts = Array.isArray(factsData.facts) ? factsData.facts : []
               let perReferenceFacts = 0
 
@@ -704,6 +707,7 @@ export default function MKG2ClaimsDetector() {
         setAnalysisStatus(status)
       }, promptKey, editablePrompt, pageImages, selectedDocType || 'speaker-notes', factInventory, trainingExamples)
 
+      if (cancelAnalysisRef.current) return
       if (!result.success) throw new Error(result.error || 'Analysis failed')
 
       // Process claims
@@ -759,6 +763,7 @@ export default function MKG2ClaimsDetector() {
       // Step 2: Auto-trigger reference matching (or cache detection-only result)
       if (selectedBrandId && referenceDocuments.length > 0) {
         await runReferenceMatching(indexedClaims, analysisTotalMs)
+        if (cancelAnalysisRef.current) return
       } else {
         writeAnalysisCache(currentCacheKeyRef.current, indexedClaims)
       }
