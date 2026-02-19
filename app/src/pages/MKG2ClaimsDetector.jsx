@@ -596,7 +596,6 @@ export default function MKG2ClaimsDetector() {
   useEffect(() => {
     if (!uploadedFile) {
       setHasCachedResult(false)
-      setPendingReanalyzeConfirm(false)
       return
     }
     const _promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
@@ -607,8 +606,6 @@ export default function MKG2ClaimsDetector() {
     )
     const cached = readAnalysisCache(key)
     setHasCachedResult(!!cached)
-    // If file changed while confirm was showing, dismiss it
-    setPendingReanalyzeConfirm(false)
   }, [uploadedFile, selectedModel, selectedPrompt, editablePrompt, selectedDocType, selectedBrandId, referenceDocuments])
 
   const handleAnalyze = async () => {
@@ -855,7 +852,6 @@ export default function MKG2ClaimsDetector() {
     currentCacheKeyRef.current = null
     setCacheHit(null)
     setHasCachedResult(false)
-    setPendingReanalyzeConfirm(false)
     handleAnalyze()
   }
 
