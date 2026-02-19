@@ -9,7 +9,8 @@ export default function ScannerOverlay({
   mockDuration = 2500, // Duration for mock mode auto-completion
   statusText = 'Analyzing document...',
   elapsedSeconds = 0,
-  onComplete
+  onComplete,
+  onCancel,
 }) {
   const [scanLineY, setScanLineY] = useState(0)
   const [showComplete, setShowComplete] = useState(false)
@@ -87,10 +88,17 @@ export default function ScannerOverlay({
         {showComplete ? (
           <span className={styles.checkmark}>✓</span>
         ) : (
-          <p className={styles.statusText}>
-            {statusText}
-            {elapsedSeconds > 0 && <span className={styles.elapsed}> ({elapsedSeconds}s)</span>}
-          </p>
+          <>
+            <p className={styles.statusText}>
+              {statusText}
+              {elapsedSeconds > 0 && <span className={styles.elapsed}> ({elapsedSeconds}s)</span>}
+            </p>
+            {onCancel && (
+              <button className={styles.cancelBtn} onClick={onCancel}>
+                Cancel
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>
