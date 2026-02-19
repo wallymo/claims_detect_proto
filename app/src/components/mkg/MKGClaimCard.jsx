@@ -118,7 +118,7 @@ export default function MKGClaimCard({
           {claim.page && (
             <span className={styles.pageBadge}>
               <Icon name="fileText" size={12} />
-              {claim.id ? `#${parseInt(claim.id.replace(/\D/g, ''), 10)} · ` : ''}Pg {claim.page}
+              {(claim.globalIndex ?? parseInt(claim.id?.replace(/\D/g, ''), 10)) ? `#${claim.globalIndex ?? parseInt(claim.id?.replace(/\D/g, ''), 10)} · ` : ''}Pg {claim.page}
             </span>
           )}
           {claim.status !== 'pending' && (

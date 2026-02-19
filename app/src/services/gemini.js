@@ -78,9 +78,9 @@ function parsePositiveInt(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
-const DETECTION_PASSES = parsePositiveInt(
-  import.meta.env.VITE_DETECTION_PASSES,
-  1
+const DETECTION_PASSES = Math.min(
+  parsePositiveInt(import.meta.env.VITE_DETECTION_PASSES, 1),
+  5  // Hard cap — more than 5 parallel calls is unreasonable
 )
 // System instruction (moved out of user prompt for efficiency)
 // Generic — doc-type-specific guidance is in the user prompt
@@ -235,18 +235,30 @@ function normalizeRawClaims(rawClaims) {
     .filter(Boolean)
 }
 
+// Strip citation/reference markers from claim text for display and dedup comparison.
+// Conservative: only removes superscript Unicode digits and symbol markers (†‡§*).
+// Does NOT remove plain trailing numbers — those may be part of the claim (e.g. "N = 240").
+function stripCitationMarkers(text) {
+  return String(text || '')
+    .replace(/[\u00B9\u00B2\u00B3\u2070-\u2079]+/g, '') // superscript digits ¹²³⁰-⁹
+    .replace(/[†‡§]+/g, '')                               // dagger / annotation markers (not * — valid in stats)
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function claimDeduplicationKey(claim) {
-  const text = String(claim.claim || '').replace(/\s+/g, ' ').trim().toLowerCase()
+  // Key on page + normalized text only — position is intentionally excluded.
+  // Same sentence on the same page is always a duplicate regardless of coordinate jitter.
+  // Cross-page duplicates (slide vs appendix) are intentionally preserved.
+  const text = stripCitationMarkers(String(claim.claim || '')).toLowerCase().replace(/\s+/g, ' ').trim()
   const page = claim.page || 0
-  const xBin = Math.round((claim.x || 0) / 5) * 5
-  const yBin = Math.round((claim.y || 0) / 5) * 5
-  return `${page}|${xBin}|${yBin}|${text}`
+  return `${page}|${text}`
 }
 
 function mergeRawClaims(primaryClaims, visualClaims) {
-  // Over-flag principle: keep every UNIQUE mention from both passes.
-  // Dedup only truly identical entries (same text + same page + near-identical position).
-  // Different locations of the same claim text are kept as separate mentions.
+  // Merge primary union + visual sweep. Dedup key is page+text (no coordinates) —
+  // same sentence on the same page is always one claim regardless of where it sits.
+  // Cross-page duplicates (e.g. slide vs appendix) are intentionally preserved.
   // Filter visual-sweep claims with (0,0) coords — text echoes without real position data.
   const validVisualClaims = visualClaims.filter(c => c.x !== 0 || c.y !== 0)
 
@@ -661,59 +673,59 @@ Extract all substantiation-requiring claims now and return ONLY JSON.
   onProgress?.(10, 'Preparing document...')
   const base64Data = await fileToBase64(pdfFile)
 
-  onProgress?.(25, 'Sending to AI...')
-
-  // Progress allocation: primary passes get 15-70%, visual sweep gets 70-85%, merge/finalize 85-95%
-  const primaryPassWeight = 55 / DETECTION_PASSES  // Split 55% across N passes
+  onProgress?.(25, `Running ${DETECTION_PASSES} detection passes in parallel...`)
 
   try {
-    // Multi-pass primary extraction: run N times and union for stable recall.
-    // Gemini is non-deterministic even at temperature 0 — each pass may catch
-    // different claims. Union via dedup key ensures every unique mention survives.
-    const allPrimaryResponses = []
-    let unionedPrimaryClaims = []
-    const primaryDedup = new Set()
-    const perPassCounts = []
-
-    for (let pass = 0; pass < DETECTION_PASSES; pass++) {
-      const passStart = 15 + (pass * primaryPassWeight)
-      const passLabel = DETECTION_PASSES > 1 ? ` (pass ${pass + 1}/${DETECTION_PASSES})` : ''
-      onProgress?.(Math.round(passStart), `Detecting claims${passLabel}...`)
-
-      const response = await client.models.generateContent({
+    // Fire all primary passes simultaneously — pick the one with the highest claim count.
+    // Gemini is non-deterministic even at temperature 0; running passes in parallel and
+    // selecting the richest result improves recall without adding sequential latency.
+    const passPromises = Array.from({ length: DETECTION_PASSES }, (_, i) =>
+      client.models.generateContent({
         model: GEMINI_MODEL,
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                inlineData: {
-                  mimeType: 'application/pdf',
-                  data: base64Data
-                }
-              },
-              { text: finalPrompt }
-            ]
-          }
-        ],
+        contents: [{ role: 'user', parts: [
+          { inlineData: { mimeType: 'application/pdf', data: base64Data } },
+          // Each pass gets a unique cache-bust suffix so Gemini treats them as independent requests
+          { text: finalPrompt.replace(`<!-- run:${runId} -->`, `<!-- run:${runId}-p${i + 1} -->`) }
+        ]}],
         config: {
           systemInstruction: SYSTEM_INSTRUCTION,
-          temperature: 0,
-          topP: 0.1,
-          topK: 1,
+          temperature: 0, topP: 0.1, topK: 1,
           maxOutputTokens: 64000,
           responseMimeType: 'application/json',
           responseJsonSchema: CLAIMS_JSON_SCHEMA
         }
-      })
+      }).then(response => ({ pass: i + 1, response }))
+    )
 
-      allPrimaryResponses.push(response)
+    // allSettled: a single transient API failure doesn't abort the whole analysis
+    const passSettled = await Promise.allSettled(passPromises)
+    const passOutcomes = passSettled
+      .filter(r => r.status === 'fulfilled')
+      .map(r => r.value)
+    if (passOutcomes.length === 0) {
+      throw new Error('All detection passes failed — Gemini API may be unavailable')
+    }
+    const allPrimaryResponses = passOutcomes.map(o => o.response)
 
-      const text = response.candidates?.[0]?.content?.parts?.[0]?.text || response.text
-      const json = parseJsonResponse(text, `Gemini primary pass ${pass + 1} response`)
-      const passClaims = normalizeRawClaims(json.claims)
+    // Union claims across all successful passes — each pass may catch unique claims
+    // due to Gemini non-determinism. Dedup by page+text (no coordinates) so the same
+    // sentence on the same page is never counted twice regardless of position jitter.
+    const primaryDedup = new Set()
+    const unionedPrimaryClaims = []
+    const perPassCounts = []
+    let parseFailures = 0
 
-      // Union into accumulated set — dedup truly identical mentions
+    for (const { pass, response } of passOutcomes) {
+      let passClaims = []
+      try {
+        const text = response.candidates?.[0]?.content?.parts?.[0]?.text || response.text
+        const json = parseJsonResponse(text, `Gemini primary pass ${pass} response`)
+        passClaims = normalizeRawClaims(json.claims)
+      } catch (err) {
+        parseFailures++
+        logger.warn(`[Gemini] Pass ${pass} JSON parse failed, skipping: ${err.message}`)
+      }
+
       let newInPass = 0
       for (const claim of passClaims) {
         const key = claimDeduplicationKey(claim)
@@ -723,14 +735,22 @@ Extract all substantiation-requiring claims now and return ONLY JSON.
           newInPass++
         }
       }
-
-      perPassCounts.push({ pass: pass + 1, total: passClaims.length, newUnique: newInPass })
+      perPassCounts.push({ pass, total: passClaims.length, newUnique: newInPass })
       logger.info(
-        `[Gemini] Pass ${pass + 1}/${DETECTION_PASSES}: ${passClaims.length} claims detected, ${newInPass} new unique, ${unionedPrimaryClaims.length} total union`
+        `[Gemini] Pass ${pass}/${DETECTION_PASSES}: ${passClaims.length} claims detected, ${newInPass} new unique, ${unionedPrimaryClaims.length} total union`
       )
     }
 
-    onProgress?.(72, 'Processing primary claims...')
+    if (parseFailures === passOutcomes.length) {
+      throw new Error('All detection passes returned malformed JSON — Gemini response format may have changed')
+    }
+
+    logger.info(
+      `[Gemini] ${passOutcomes.length}/${DETECTION_PASSES} passes succeeded (${parseFailures} parse errors). ` +
+      `Union: ${unionedPrimaryClaims.length} claims after dedup.`
+    )
+
+    onProgress?.(72, 'Merging detection passes...')
 
     let visualSweepResponse = null
     let visualClaims = []
