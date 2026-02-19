@@ -1741,6 +1741,7 @@ export default function MKG2ClaimsDetector() {
               claimsPanelRef={claimsPanelRef}
               showPins={showClaimPins}
               onTogglePins={() => setShowClaimPins(prev => !prev)}
+              onCancelAnalysis={handleCancelAnalysis}
             />
           </div>
 

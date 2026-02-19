@@ -29,7 +29,8 @@ export default function PDFViewer({
   showPins = true,
   onTogglePins,
   showBoxes = false,
-  onToggleBoxes
+  onToggleBoxes,
+  onCancelAnalysis,
 }) {
   const [pdf, setPdf] = useState(null)
   const [currentPage, setCurrentPage] = useState(1)
@@ -343,6 +344,7 @@ export default function PDFViewer({
           statusText={analysisStatus}
           elapsedSeconds={elapsedSeconds}
           onComplete={onScanComplete}
+          onCancel={onCancelAnalysis}
         />
       </div>
 
