@@ -12,7 +12,13 @@
  */
 
 import OpenAI from 'openai'
-import { MEDICATION_PROMPT_USER, ALL_CLAIMS_PROMPT_USER, DISEASE_STATE_PROMPT_USER, getDocTypeInstructions } from './gemini'
+import {
+  MEDICATION_PROMPT_USER,
+  ALL_CLAIMS_PROMPT_USER,
+  DISEASE_STATE_PROMPT_USER,
+  OUTPUT_DEDUP_RULES,
+  getDocTypeInstructions
+} from './gemini'
 import { logger } from '@/utils/logger'
 
 // Singleton client instance
@@ -161,15 +167,15 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
   // Select the appropriate prompt
   let selectedPrompt
   if (customPrompt) {
-    selectedPrompt = structure + customPrompt + position + trainingBlock + factInventory + JSON_OUTPUT_INSTRUCTIONS
+    selectedPrompt = structure + customPrompt + position + trainingBlock + factInventory + OUTPUT_DEDUP_RULES + JSON_OUTPUT_INSTRUCTIONS
     logger.debug(`Using custom prompt (${customPrompt.length} chars)`)
   } else {
     if (promptKey === 'drug') {
-      selectedPrompt = structure + MEDICATION_PROMPT_USER + position + trainingBlock + factInventory + JSON_OUTPUT_INSTRUCTIONS
+      selectedPrompt = structure + MEDICATION_PROMPT_USER + position + trainingBlock + factInventory + OUTPUT_DEDUP_RULES + JSON_OUTPUT_INSTRUCTIONS
     } else if (promptKey === 'disease') {
-      selectedPrompt = structure + DISEASE_STATE_PROMPT_USER + position + trainingBlock + factInventory + JSON_OUTPUT_INSTRUCTIONS
+      selectedPrompt = structure + DISEASE_STATE_PROMPT_USER + position + trainingBlock + factInventory + OUTPUT_DEDUP_RULES + JSON_OUTPUT_INSTRUCTIONS
     } else {
-      selectedPrompt = structure + ALL_CLAIMS_PROMPT_USER + position + trainingBlock + factInventory + JSON_OUTPUT_INSTRUCTIONS
+      selectedPrompt = structure + ALL_CLAIMS_PROMPT_USER + position + trainingBlock + factInventory + OUTPUT_DEDUP_RULES + JSON_OUTPUT_INSTRUCTIONS
     }
     logger.info(`Using ${promptKey} prompt for OpenAI analysis (docType: ${docType})`)
   }

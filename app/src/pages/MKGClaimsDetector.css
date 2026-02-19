@@ -432,10 +432,10 @@
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  background: var(--color-surface-subtle, #f8fafc);
-  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  background: var(--gray-2, #f5f5f5);
+  border-bottom: 1px solid var(--gray-3, #e0e0e0);
   font-size: 12px;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-primary, #1f2937);
 }
 
 .matchingStatusActions {
@@ -448,37 +448,31 @@
 .matchingResetBtn {
   font-size: 11px;
   font-weight: 500;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-primary, #1f2937);
   background: none;
-  border: 1px solid var(--color-border, #e2e8f0);
+  border: 1px solid var(--gray-4, #bdbdbd);
   cursor: pointer;
   padding: 2px 8px;
   border-radius: 4px;
 }
 
 .matchingResetBtn:hover {
-  background: var(--color-surface, #f1f5f9);
-  color: var(--color-text, #1e293b);
+  background: var(--gray-3, #e0e0e0);
+  color: var(--color-text-primary, #1f2937);
 }
 
-.reanalyzeConfirm {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  text-align: center;
+.reanalyzeLink {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-top: -4px;
+  font-size: 12px;
+  color: var(--color-text-tertiary, #9ca3af);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
-.reanalyzeConfirm span {
-  font-size: 13px;
-  color: var(--color-text-secondary);
-}
-
-.reanalyzeConfirmActions {
-  display: flex;
-  gap: 8px;
+.reanalyzeLink:hover {
+  color: var(--color-text-secondary, #6b7280);
 }

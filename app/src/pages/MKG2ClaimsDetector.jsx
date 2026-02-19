@@ -31,6 +31,7 @@ import { pdfToImages } from '@/utils/pdfToImages'
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.min.mjs`
 import { enrichClaimsWithPositions, addGlobalIndices } from '@/utils/textMatcher'
+import { dedupeClaimsByPageAndText } from '@/utils/claimDedup'
 import { logger } from '@/utils/logger'
 
 // Model routing
@@ -60,7 +61,7 @@ const PROMPT_DISPLAY_TEXT = {
 
 // ===== Analysis Result Cache =====
 
-const ANALYSIS_CACHE_NS = 'claims_analysis_v1'
+const ANALYSIS_CACHE_NS = 'claims_analysis_v2'
 
 function makeAnalysisCacheKey(file, model, promptKey, editablePrompt, docType, brandId, refIds) {
   let h = 0
@@ -172,7 +173,6 @@ export default function MKG2ClaimsDetector() {
   // Cache state
   const [cacheHit, setCacheHit] = useState(null)  // { ts: number } | null
   const [hasCachedResult, setHasCachedResult] = useState(false)
-  const [pendingReanalyzeConfirm, setPendingReanalyzeConfirm] = useState(false)
   const currentCacheKeyRef = useRef(null)
   const cancelAnalysisRef = useRef(false)
 
@@ -183,6 +183,13 @@ export default function MKG2ClaimsDetector() {
   const [searchQuery, setSearchQuery] = useState('')
   const [sortOrder, setSortOrder] = useState('annotation')
   const [showClaimPins, setShowClaimPins] = useState(true)
+  const [isConfigPanelCollapsed, setIsConfigPanelCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('mkg2_config_panel_collapsed') === '1'
+    } catch {
+      return false
+    }
+  })
 
   // Cost tracking
   const [lastUsage, setLastUsage] = useState(null)
@@ -256,6 +263,15 @@ export default function MKG2ClaimsDetector() {
     if (saved) setTotalCost(parseFloat(saved))
   }, [])
 
+  // Persist collapsed state for config panel between sessions.
+  useEffect(() => {
+    try {
+      localStorage.setItem('mkg2_config_panel_collapsed', isConfigPanelCollapsed ? '1' : '0')
+    } catch {
+      // no-op
+    }
+  }, [isConfigPanelCollapsed])
+
   // Sync editable prompt — includes doc-type-specific structure + position rules
   useEffect(() => {
     const promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
@@ -286,6 +302,31 @@ export default function MKG2ClaimsDetector() {
       return addGlobalIndices(prev)
     })
   }, [])
+
+  // Last-line safety net: if any code path reintroduces duplicate claims,
+  // collapse them before rendering pins/cards.
+  useEffect(() => {
+    if (!claims.length) return
+
+    const deduped = dedupeClaimsByPageAndText(claims)
+    if (deduped.duplicateCount === 0) return
+
+    const indexedClaims = addGlobalIndices(deduped.claims)
+    logger.info({
+      event: 'mkg2_claim_dedupe_guard',
+      duplicates_removed: deduped.duplicateCount,
+      unique_claims: deduped.uniqueCount,
+      original_claims: claims.length
+    })
+
+    if (activeClaimId && !indexedClaims.some(c => c.id === activeClaimId)) {
+      setActiveClaimId(indexedClaims[0]?.id || null)
+    }
+    setClaims(indexedClaims)
+    if (currentCacheKeyRef.current) {
+      writeAnalysisCache(currentCacheKeyRef.current, indexedClaims)
+    }
+  }, [claims, activeClaimId])
 
   // ===== Data Loading =====
 
@@ -583,7 +624,20 @@ export default function MKG2ClaimsDetector() {
     currentCacheKeyRef.current = _cacheKey
     const _cached = readAnalysisCache(_cacheKey)
     if (_cached) {
-      setClaims(_cached.claims)
+      const cachedClaims = Array.isArray(_cached.claims) ? _cached.claims : []
+      const dedupedCached = dedupeClaimsByPageAndText(cachedClaims)
+      const indexedCachedClaims = addGlobalIndices(dedupedCached.claims)
+      if (dedupedCached.duplicateCount > 0) {
+        logger.info({
+          event: 'mkg2_cached_claim_dedupe',
+          duplicates_removed: dedupedCached.duplicateCount,
+          unique_claims: dedupedCached.uniqueCount,
+          original_claims: cachedClaims.length
+        })
+        writeAnalysisCache(_cacheKey, indexedCachedClaims)
+      }
+
+      setClaims(indexedCachedClaims)
       setCacheHit({ ts: _cached.ts })
       setAnalysisComplete(true)
       setMatchingComplete(true)
@@ -711,10 +765,22 @@ export default function MKG2ClaimsDetector() {
       if (!result.success) throw new Error(result.error || 'Analysis failed')
 
       // Process claims
-      const claimsNeedingPositions = result.claims.filter(c => !c.position)
+      const rawDetectedClaims = Array.isArray(result.claims) ? result.claims : []
+      const dedupedDetected = dedupeClaimsByPageAndText(rawDetectedClaims)
+      if (dedupedDetected.duplicateCount > 0) {
+        logger.info({
+          event: 'mkg2_detected_claim_dedupe',
+          duplicates_removed: dedupedDetected.duplicateCount,
+          unique_claims: dedupedDetected.uniqueCount,
+          original_claims: rawDetectedClaims.length,
+          model: selectedModel
+        })
+      }
+
+      const claimsNeedingPositions = dedupedDetected.claims.filter(c => !c.position)
       const claimsWithPositions = claimsNeedingPositions.length > 0 && extractedPages.length > 0
-        ? enrichClaimsWithPositions(result.claims, extractedPages)
-        : result.claims
+        ? enrichClaimsWithPositions(dedupedDetected.claims, extractedPages)
+        : dedupedDetected.claims
 
       const indexedClaims = addGlobalIndices(claimsWithPositions)
       setClaims(indexedClaims)
@@ -755,6 +821,8 @@ export default function MKG2ClaimsDetector() {
       logger.info({
         event: 'mkg2_analysis_summary',
         analysis_total_ms: analysisTotalMs,
+        original_claims: rawDetectedClaims.length,
+        duplicates_removed: dedupedDetected.duplicateCount,
         total_claims: indexedClaims.length,
         model: selectedModel,
         doc_type: selectedDocType
@@ -826,10 +894,12 @@ export default function MKG2ClaimsDetector() {
 
   const runReferenceMatching = async (detectedClaims, analysisTotalMs = null) => {
     setIsMatching(true)
-    setMatchingProgress('Reviewing references...')
+    const totalClaims = detectedClaims.length
+    setMatchingProgress(`Reviewing references... 0/${totalClaims} claims`)
     const matchingStartedAt = Date.now()
     const pendingClaimUpdates = new Map()
     let flushHandle = null
+    let maxShownClaimCount = 0
 
     const applyPendingClaimUpdates = () => {
       if (!pendingClaimUpdates.size) return
@@ -885,8 +955,20 @@ export default function MKG2ClaimsDetector() {
       const { claims: enrichedClaims, telemetry } = await matchAllClaimsToReferences(
         detectedClaims,
         referencesForMatch,
-        () => {
-          setMatchingProgress('Reviewing references...')
+        ({ current, total, stage }) => {
+          const totalClaimsForProgress = Math.max(0, Number(total) || 0)
+          if (totalClaimsForProgress === 0) {
+            setMatchingProgress('Reviewing references...')
+            return
+          }
+
+          const completed = Math.max(0, Math.min(Number(current) || 0, totalClaimsForProgress))
+          // While a claim is in-flight, show the next slot; once finished, show completed count.
+          const inFlightCount = completed < totalClaimsForProgress ? completed + 1 : totalClaimsForProgress
+          const shownCount = stage === 'done' ? completed : inFlightCount
+          const monotonicCount = Math.max(maxShownClaimCount, shownCount)
+          maxShownClaimCount = monotonicCount
+          setMatchingProgress(`Reviewing references... ${monotonicCount}/${totalClaimsForProgress} claims`)
         },
         matchBrandId,
         {
@@ -1435,159 +1517,147 @@ export default function MKG2ClaimsDetector() {
       </div>
 
       <div className="workbenchWrapper">
-        <div className="workbench">
+        <div className={`workbench ${isConfigPanelCollapsed ? 'configCollapsed' : ''}`}>
           {/* ===== LEFT: Config Panel ===== */}
-          <div className="configPanel">
-            <AccordionItem
-              title="Document"
-              defaultOpen={true}
-              size="small"
-              content={
-                <div className="uploadSection">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".pdf"
-                    onChange={handleFileSelect}
-                    style={{ display: 'none' }}
-                  />
-                  {uploadState === 'empty' && (
-                    <div className="dropZone" onClick={handleUploadClick}>
-                      <div className="dropZoneIcon">
-                        <Icon name="upload" size={24} />
+          <div className={`configPanelShell ${isConfigPanelCollapsed ? 'collapsed' : ''}`}>
+            <div className="configPanel">
+              <AccordionItem
+                title="Document"
+                defaultOpen={true}
+                size="small"
+                content={
+                  <div className="uploadSection">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".pdf"
+                      onChange={handleFileSelect}
+                      style={{ display: 'none' }}
+                    />
+                    {uploadState === 'empty' && (
+                      <div className="dropZone" onClick={handleUploadClick}>
+                        <div className="dropZoneIcon">
+                          <Icon name="upload" size={24} />
+                        </div>
+                        <p className="dropZoneText">
+                          Drop file here or <strong>browse</strong>
+                        </p>
+                        <p className="dropZoneHint">PDF only</p>
                       </div>
-                      <p className="dropZoneText">
-                        Drop file here or <strong>browse</strong>
-                      </p>
-                      <p className="dropZoneHint">PDF only</p>
-                    </div>
-                  )}
-                  {uploadState === 'uploading' && (
-                    <div className="uploadProgress">
-                      <Spinner size="small" />
-                      <span>Uploading...</span>
-                    </div>
-                  )}
-                  {uploadState === 'complete' && uploadedFile && (
-                    <div className="uploadedFile">
-                      <Icon name="fileText" size={20} />
-                      <span className="fileName">{uploadedFile.name}</span>
-                      <button className="removeFile" onClick={handleRemoveDocument}>
-                        <Icon name="x" size={16} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              }
-            />
-
-            <AccordionItem
-              title="Settings"
-              defaultOpen={true}
-              size="small"
-              content={
-                <div className="settingsContent">
-                  {/* Brand Selector */}
-                  <div className="settingItem">
-                    <label className="settingLabel">Brand</label>
-                    <DropdownMenu
-                      trigger="button"
-                      triggerLabel={selectedBrand?.name || 'Select brand'}
-                      items={[
-                        ...brands.map(brand => ({
-                          label: brand.name,
-                          onClick: () => setSelectedBrandId(brand.id)
-                        })),
-                        { divider: true },
-                        {
-                          label: 'Add New Brand...',
-                          icon: 'plus',
-                          onClick: () => setShowNewBrandModal(true)
-                        }
-                      ]}
-                      size="medium"
-                    />
-                  </div>
-
-                  {/* Document Type */}
-                  <DocumentTypeSelector
-                    selectedType={selectedDocType}
-                    onTypeSelect={setSelectedDocType}
-                  />
-
-                  {/* AI Model */}
-                  <div className="settingItem">
-                    <label className="settingLabel">AI Model</label>
-                    <DropdownMenu
-                      trigger="button"
-                      triggerLabel={MODEL_OPTIONS.find(m => m.id === selectedModel)?.label || 'Select model...'}
-                      items={MODEL_OPTIONS.map(item => ({
-                        ...item,
-                        onClick: () => setSelectedModel(item.id)
-                      }))}
-                      size="medium"
-                    />
-                  </div>
-                </div>
-              }
-            />
-
-            <AccordionItem
-              title="Master Prompt"
-              defaultOpen={false}
-              size="small"
-              content={
-                <div className="masterPromptContent">
-                  <div className="promptHeader">
-                    {!isEditingPrompt ? (
-                      <button className="promptIconBtn" onClick={() => setIsEditingPrompt(true)} title="Edit prompt">
-                        <Icon name="edit" size={14} />
-                      </button>
-                    ) : (
-                      <div className="promptEditActions">
-                        <button className="promptIconBtn promptSaveBtn" onClick={() => setIsEditingPrompt(false)} title="Save">
-                          <Icon name="check" size={14} />
-                        </button>
-                        <button className="promptIconBtn promptCancelBtn" onClick={handleCancelEdit} title="Cancel">
-                          <Icon name="x" size={14} />
+                    )}
+                    {uploadState === 'uploading' && (
+                      <div className="uploadProgress">
+                        <Spinner size="small" />
+                        <span>Uploading...</span>
+                      </div>
+                    )}
+                    {uploadState === 'complete' && uploadedFile && (
+                      <div className="uploadedFile">
+                        <Icon name="fileText" size={20} />
+                        <span className="fileName">{uploadedFile.name}</span>
+                        <button className="removeFile" onClick={handleRemoveDocument}>
+                          <Icon name="x" size={16} />
                         </button>
                       </div>
                     )}
                   </div>
-                  <div className="promptBody">
-                    {isEditingPrompt ? (
-                      <textarea
-                        className="promptTextarea"
-                        value={editablePrompt}
-                        onChange={(e) => setEditablePrompt(e.target.value)}
-                        rows={16}
-                        autoFocus
+                }
+              />
+
+              <AccordionItem
+                title="Settings"
+                defaultOpen={true}
+                size="small"
+                content={
+                  <div className="settingsContent">
+                    {/* Brand Selector */}
+                    <div className="settingItem">
+                      <label className="settingLabel">Brand</label>
+                      <DropdownMenu
+                        trigger="button"
+                        triggerLabel={selectedBrand?.name || 'Select brand'}
+                        items={[
+                          ...brands.map(brand => ({
+                            label: brand.name,
+                            onClick: () => setSelectedBrandId(brand.id)
+                          })),
+                          { divider: true },
+                          {
+                            label: 'Add New Brand...',
+                            icon: 'plus',
+                            onClick: () => setShowNewBrandModal(true)
+                          }
+                        ]}
+                        size="medium"
                       />
-                    ) : (
-                      <pre className="promptPreview">{editablePrompt}</pre>
-                    )}
-                  </div>
-                </div>
-              }
-            />
+                    </div>
 
-            {pendingReanalyzeConfirm ? (
-              <div className="reanalyzeConfirm">
-                <span>Re-analyze from scratch?</span>
-                <div className="reanalyzeConfirmActions">
-                  <Button variant="primary" size="small" onClick={handleConfirmReanalyze}>
-                    Confirm
-                  </Button>
-                  <Button variant="ghost" size="small" onClick={() => setPendingReanalyzeConfirm(false)}>
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            ) : (
+                    {/* Document Type */}
+                    <DocumentTypeSelector
+                      selectedType={selectedDocType}
+                      onTypeSelect={setSelectedDocType}
+                    />
+
+                    {/* AI Model */}
+                    <div className="settingItem">
+                      <label className="settingLabel">AI Model</label>
+                      <DropdownMenu
+                        trigger="button"
+                        triggerLabel={MODEL_OPTIONS.find(m => m.id === selectedModel)?.label || 'Select model...'}
+                        items={MODEL_OPTIONS.map(item => ({
+                          ...item,
+                          onClick: () => setSelectedModel(item.id)
+                        }))}
+                        size="medium"
+                      />
+                    </div>
+                  </div>
+                }
+              />
+
+              <AccordionItem
+                title="Master Prompt"
+                defaultOpen={false}
+                size="small"
+                content={
+                  <div className="masterPromptContent">
+                    <div className="promptHeader">
+                      {!isEditingPrompt ? (
+                        <button className="promptIconBtn" onClick={() => setIsEditingPrompt(true)} title="Edit prompt">
+                          <Icon name="edit" size={14} />
+                        </button>
+                      ) : (
+                        <div className="promptEditActions">
+                          <button className="promptIconBtn promptSaveBtn" onClick={() => setIsEditingPrompt(false)} title="Save">
+                            <Icon name="check" size={14} />
+                          </button>
+                          <button className="promptIconBtn promptCancelBtn" onClick={handleCancelEdit} title="Cancel">
+                            <Icon name="x" size={14} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="promptBody">
+                      {isEditingPrompt ? (
+                        <textarea
+                          className="promptTextarea"
+                          value={editablePrompt}
+                          onChange={(e) => setEditablePrompt(e.target.value)}
+                          rows={16}
+                          autoFocus
+                        />
+                      ) : (
+                        <pre className="promptPreview">{editablePrompt}</pre>
+                      )}
+                    </div>
+                  </div>
+                }
+              />
+
               <Button
                 variant="primary"
                 size="large"
-                onClick={hasCachedResult ? () => setPendingReanalyzeConfirm(true) : handleAnalyze}
+                onClick={handleAnalyze}
                 disabled={!canAnalyze}
               >
                 {isAnalyzing || isMatching ? (
@@ -1597,112 +1667,126 @@ export default function MKG2ClaimsDetector() {
                   </>
                 ) : (
                   <>
-                    <Icon name={hasCachedResult ? 'refreshCw' : 'zap'} size={18} />
-                    {hasCachedResult ? 'Re-analyze Document' : 'Analyze Document'}
+                    <Icon name="zap" size={18} />
+                    Analyze Document
                   </>
                 )}
               </Button>
-            )}
+              {hasCachedResult && !isAnalyzing && !isMatching && (
+                <button className="reanalyzeLink" onClick={handleConfirmReanalyze}>
+                  Re-analyze from scratch
+                </button>
+              )}
 
-            {analysisError && (
-              <div className="analysisError">
-                <Icon name="alertCircle" size={16} />
-                <span>{analysisError}</span>
-              </div>
-            )}
+              {analysisError && (
+                <div className="analysisError">
+                  <Icon name="alertCircle" size={16} />
+                  <span>{analysisError}</span>
+                </div>
+              )}
 
-            {!selectedBrandId && (
-              <div className="analysisError analysisWarning">
-                <Icon name="alertCircle" size={16} />
-                <span>Select a brand to enable reference matching</span>
-              </div>
-            )}
+              {!selectedBrandId && (
+                <div className="analysisError analysisWarning">
+                  <Icon name="alertCircle" size={16} />
+                  <span>Select a brand to enable reference matching</span>
+                </div>
+              )}
 
-            {analysisComplete && (
-              <>
-                <AccordionItem
-                  title="Results Summary"
-                  defaultOpen={true}
-                  size="small"
-                  content={
-                    <div className="resultsSummary">
-                      <div className="resultRow">
-                        <span className="resultLabel">Claims Detected</span>
-                        <span className="resultValue">{claims.length}</span>
+              {analysisComplete && (
+                <>
+                  <AccordionItem
+                    title="Results Summary"
+                    defaultOpen={true}
+                    size="small"
+                    content={
+                      <div className="resultsSummary">
+                        <div className="resultRow">
+                          <span className="resultLabel">Claims Detected</span>
+                          <span className="resultValue">{claims.length}</span>
+                        </div>
+                        {matchingStats && (
+                          <>
+                            <div className="divider" />
+                            <div className="resultRow matched">
+                              <span className="resultLabel">Matched to References</span>
+                              <span className="resultValue">{matchingStats.matched} ({matchingStats.matchRate}%)</span>
+                            </div>
+                            <div className="resultRow unmatched">
+                              <span className="resultLabel">Unmatched</span>
+                              <span className="resultValue">{matchingStats.unmatched}</span>
+                            </div>
+                            <div className="resultRow">
+                              <span className="resultLabel">Avg Match Confidence</span>
+                              <span className="resultValue">{matchingStats.avgConfidence}%</span>
+                            </div>
+                          </>
+                        )}
                       </div>
-                      {matchingStats && (
-                        <>
-                          <div className="divider" />
-                          <div className="resultRow matched">
-                            <span className="resultLabel">Matched to References</span>
-                            <span className="resultValue">{matchingStats.matched} ({matchingStats.matchRate}%)</span>
-                          </div>
-                          <div className="resultRow unmatched">
-                            <span className="resultLabel">Unmatched</span>
-                            <span className="resultValue">{matchingStats.unmatched}</span>
-                          </div>
-                          <div className="resultRow">
-                            <span className="resultLabel">Avg Match Confidence</span>
-                            <span className="resultValue">{matchingStats.avgConfidence}%</span>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  }
-                />
-                <AccordionItem
-                  title="Model Performance"
-                  defaultOpen={false}
-                  size="small"
-                  content={
-                    <div className="modelPerformance">
-                      <div className="resultRow">
-                        <span className="resultLabel">Model</span>
-                        <span className="resultValue">{lastUsage?.modelDisplayName || 'Gemini 3 Pro'}</span>
+                    }
+                  />
+                  <AccordionItem
+                    title="Model Performance"
+                    defaultOpen={false}
+                    size="small"
+                    content={
+                      <div className="modelPerformance">
+                        <div className="resultRow">
+                          <span className="resultLabel">Model</span>
+                          <span className="resultValue">{lastUsage?.modelDisplayName || 'Gemini 3 Pro'}</span>
+                        </div>
+                        <div className="resultRow">
+                          <span className="resultLabel">Claims Detected</span>
+                          <span className="resultValue">{claims.length}</span>
+                        </div>
+                        <div className="resultRow">
+                          <span className="resultLabel">Matched to References</span>
+                          <span className="resultValue">{matchedRateLabel}</span>
+                        </div>
+                        <div className="divider" />
+                        <div className="resultRow">
+                          <span className="resultLabel">End-to-End Time</span>
+                          <span className="resultValue">{(endToEndMs / 1000).toFixed(1)}s</span>
+                        </div>
+                        <div className="resultRow">
+                          <span className="resultLabel">Claim Detection Time</span>
+                          <span className="resultValue">{(analysisMs / 1000).toFixed(1)}s</span>
+                        </div>
+                        <div className="resultRow">
+                          <span className="resultLabel">Reference Matching Time</span>
+                          <span className="resultValue">{matchingStats ? `${(matchingMs / 1000).toFixed(1)}s` : 'N/A'}</span>
+                        </div>
+                        <div className="divider" />
+                        <div className="resultRow">
+                          <span className="resultLabel">Claim Detection Cost</span>
+                          <span className="resultValue">${claimDetectionRunCost.toFixed(4)}</span>
+                        </div>
+                        <div className="resultRow">
+                          <span className="resultLabel">Reference Matching Cost</span>
+                          <span className="resultValue">{matchingStats ? `$${referenceMatchingRunCost.toFixed(4)}` : 'N/A'}</span>
+                        </div>
+                        <div className="resultRow">
+                          <span className="resultLabel">Total Run AI Cost</span>
+                          <span className="resultValue">${totalRunAICost.toFixed(4)}</span>
+                        </div>
+                        <div className="resultRow">
+                          <span className="resultLabel">Session Cost (Detection)</span>
+                          <span className="resultValue">${sessionCost.toFixed(4)}</span>
+                        </div>
                       </div>
-                      <div className="resultRow">
-                        <span className="resultLabel">Claims Detected</span>
-                        <span className="resultValue">{claims.length}</span>
-                      </div>
-                      <div className="resultRow">
-                        <span className="resultLabel">Matched to References</span>
-                        <span className="resultValue">{matchedRateLabel}</span>
-                      </div>
-                      <div className="divider" />
-                      <div className="resultRow">
-                        <span className="resultLabel">End-to-End Time</span>
-                        <span className="resultValue">{(endToEndMs / 1000).toFixed(1)}s</span>
-                      </div>
-                      <div className="resultRow">
-                        <span className="resultLabel">Claim Detection Time</span>
-                        <span className="resultValue">{(analysisMs / 1000).toFixed(1)}s</span>
-                      </div>
-                      <div className="resultRow">
-                        <span className="resultLabel">Reference Matching Time</span>
-                        <span className="resultValue">{matchingStats ? `${(matchingMs / 1000).toFixed(1)}s` : 'N/A'}</span>
-                      </div>
-                      <div className="divider" />
-                      <div className="resultRow">
-                        <span className="resultLabel">Claim Detection Cost</span>
-                        <span className="resultValue">${claimDetectionRunCost.toFixed(4)}</span>
-                      </div>
-                      <div className="resultRow">
-                        <span className="resultLabel">Reference Matching Cost</span>
-                        <span className="resultValue">{matchingStats ? `$${referenceMatchingRunCost.toFixed(4)}` : 'N/A'}</span>
-                      </div>
-                      <div className="resultRow">
-                        <span className="resultLabel">Total Run AI Cost</span>
-                        <span className="resultValue">${totalRunAICost.toFixed(4)}</span>
-                      </div>
-                      <div className="resultRow">
-                        <span className="resultLabel">Session Cost (Detection)</span>
-                        <span className="resultValue">${sessionCost.toFixed(4)}</span>
-                      </div>
-                    </div>
-                  }
-                />
-              </>
-            )}
+                    }
+                  />
+                </>
+              )}
+            </div>
+            <button
+              className="configPanelToggle"
+              type="button"
+              onClick={() => setIsConfigPanelCollapsed(prev => !prev)}
+              aria-label={isConfigPanelCollapsed ? 'Expand settings panel' : 'Collapse settings panel'}
+              title={isConfigPanelCollapsed ? 'Expand settings panel' : 'Collapse settings panel'}
+            >
+              <Icon name={isConfigPanelCollapsed ? 'chevronRight' : 'chevronLeft'} size={12} />
+            </button>
           </div>
 
           {/* ===== CENTER: PDF Viewer ===== */}

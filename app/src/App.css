@@ -125,8 +125,27 @@ html, body {
   transition: flex 0.3s ease;
 }
 
+.workbench.configCollapsed {
+  gap: var(--spacing-2);
+}
+
 .workbench[data-library-open="true"] {
   flex: 0 1 65%;
+}
+
+/* Config panel shell includes the panel + collapse handle */
+.configPanelShell {
+  display: flex;
+  align-items: flex-start;
+  width: 300px;
+  min-width: 300px;
+  min-height: 0;
+  transition: width 0.22s ease, min-width 0.22s ease;
+}
+
+.configPanelShell.collapsed {
+  width: 22px;
+  min-width: 22px;
 }
 
 /* Config Panel (Left) */
@@ -139,6 +158,53 @@ html, body {
   padding-right: var(--spacing-2);
   overflow-y: auto;
   min-height: 0; /* Allow flex child to shrink and scroll */
+  transition: width 0.22s ease, min-width 0.22s ease, padding-right 0.22s ease, opacity 0.16s ease;
+}
+
+.configPanelShell.collapsed .configPanel {
+  width: 0;
+  min-width: 0;
+  padding-right: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.configPanelToggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  min-width: 18px;
+  height: 32px;
+  margin-top: var(--spacing-2);
+  border: 1px solid var(--gray-4);
+  border-left: none;
+  border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0;
+  background: transparent;
+  color: var(--color-text-disabled);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: all 0.15s ease, opacity 0.15s ease;
+}
+
+.configPanelToggle:hover {
+  color: var(--color-text-secondary);
+  border-color: var(--gray-5);
+  background: var(--gray-2);
+  opacity: 0.95;
+}
+
+.configPanelToggle:focus-visible {
+  outline: 1px solid var(--gray-5);
+  outline-offset: 1px;
+  opacity: 0.95;
+}
+
+.configPanelShell.collapsed .configPanelToggle {
+  border-left: 1px solid var(--gray-4);
+  border-radius: var(--border-radius-md);
+  opacity: 0.7;
 }
 
 .settingsContent {

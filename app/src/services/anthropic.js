@@ -9,7 +9,13 @@
  * with appropriate headers. If CORS issues occur, a backend proxy may be needed.
  */
 
-import { MEDICATION_PROMPT_USER, ALL_CLAIMS_PROMPT_USER, DISEASE_STATE_PROMPT_USER, getDocTypeInstructions } from './gemini'
+import {
+  MEDICATION_PROMPT_USER,
+  ALL_CLAIMS_PROMPT_USER,
+  DISEASE_STATE_PROMPT_USER,
+  OUTPUT_DEDUP_RULES,
+  getDocTypeInstructions
+} from './gemini'
 import { logger } from '@/utils/logger'
 
 // Model configuration
@@ -129,16 +135,16 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
   let selectedPrompt
   if (customPrompt) {
     selectedPrompt = customPrompt.toLowerCase().includes('json')
-      ? structure + customPrompt + trainingBlock + factInventory
-      : structure + customPrompt + position + trainingBlock + factInventory + JSON_OUTPUT_INSTRUCTIONS
+      ? structure + customPrompt + trainingBlock + factInventory + OUTPUT_DEDUP_RULES
+      : structure + customPrompt + position + trainingBlock + factInventory + OUTPUT_DEDUP_RULES + JSON_OUTPUT_INSTRUCTIONS
     logger.debug(`Using custom prompt (${customPrompt.length} chars)`)
   } else {
     if (promptKey === 'drug') {
-      selectedPrompt = structure + MEDICATION_PROMPT_USER + position + trainingBlock + factInventory + JSON_OUTPUT_INSTRUCTIONS
+      selectedPrompt = structure + MEDICATION_PROMPT_USER + position + trainingBlock + factInventory + OUTPUT_DEDUP_RULES + JSON_OUTPUT_INSTRUCTIONS
     } else if (promptKey === 'disease') {
-      selectedPrompt = structure + DISEASE_STATE_PROMPT_USER + position + trainingBlock + factInventory + JSON_OUTPUT_INSTRUCTIONS
+      selectedPrompt = structure + DISEASE_STATE_PROMPT_USER + position + trainingBlock + factInventory + OUTPUT_DEDUP_RULES + JSON_OUTPUT_INSTRUCTIONS
     } else {
-      selectedPrompt = structure + ALL_CLAIMS_PROMPT_USER + position + trainingBlock + factInventory + JSON_OUTPUT_INSTRUCTIONS
+      selectedPrompt = structure + ALL_CLAIMS_PROMPT_USER + position + trainingBlock + factInventory + OUTPUT_DEDUP_RULES + JSON_OUTPUT_INSTRUCTIONS
     }
     logger.info(`Using ${promptKey} prompt for Claude analysis (docType: ${docType})`)
   }

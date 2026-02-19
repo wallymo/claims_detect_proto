@@ -319,6 +319,7 @@ ${topRegionHint}
 - Split separate data points into separate claims — each table cell, each bar, each curve metric.
 - Do not invent values not visible in the graphic.
 - If uncertain, include with lower confidence rather than omitting.
+- Do NOT output duplicate claims on the same page.
 
 # Output
 Return ONLY JSON matching the required schema.`
@@ -501,6 +502,12 @@ export function promptHasDocTypeScaffold(promptText) {
   return hasDocStructureHeading && hasPositionHeading
 }
 
+export const OUTPUT_DEDUP_RULES = `
+# Output Hygiene
+- Do NOT return duplicate claims.
+- If the same claim text appears multiple times on the SAME page, return only one instance.
+- If the same claim appears on DIFFERENT pages, keep one instance per page.`
+
 // User-facing prompt for All Claims (shown in UI, editable)
 export const ALL_CLAIMS_PROMPT_USER = `# Task
 Extract ALL claims requiring MLR substantiation from this pharmaceutical document.
@@ -517,6 +524,7 @@ Extract ALL claims requiring MLR substantiation from this pharmaceutical documen
 - Include charts/graphs/infographics with statistical claims
 - Flag ALL annotation markers (†, ‡, §, *) — each dagger/double dagger references a footnote with study details, populations, or statistical qualifiers that require substantiation
 - Complete, self-contained statements only
+- Do NOT output duplicate claims on the same page
 
 # Confidence (0-100)
 90-100: Explicit stats, specific numbers | 70-89: Benefit promises, comparisons | 50-69: Borderline phrasing | 30-49: Weak promotional signal
@@ -555,6 +563,7 @@ Extract DISEASE STATE claims requiring MLR substantiation.
 - If two statements need different references, they are separate claims
 - Include visual elements with statistical claims
 - Flag ALL annotation markers (†, ‡, §, *) — each links to substantiation-requiring footnote text
+- Do NOT output duplicate claims on the same page
 
 # Confidence (0-100)
 90-100: Explicit stats, prevalence data | 70-89: Burden assertions, unmet needs | 50-69: Borderline | 30-49: Weak contextual
@@ -590,6 +599,7 @@ Extract MEDICATION claims requiring MLR substantiation.
 - Each distinct data point or substantiation-requiring statement is a SEPARATE claim
 - If two statements need different references, they are separate claims
 - Flag ALL annotation markers (†, ‡, §, *) — each dagger/double dagger is a distinct substantiation point
+- Do NOT output duplicate claims on the same page
 
 # Confidence (0-100)
 90-100: "Clinically proven to reduce X" | 70-89: "Starts working in 3 days" | 50-69: "Helps patients feel better" | 30-49: "New era in treatment"
@@ -664,6 +674,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
 
 # Final Instruction
 Extract all substantiation-requiring claims now and return ONLY JSON.
+${OUTPUT_DEDUP_RULES}
 <!-- run:${runId} -->`
 
   logger.info(
