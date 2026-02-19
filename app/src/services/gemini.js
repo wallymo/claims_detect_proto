@@ -670,10 +670,10 @@ Extract all substantiation-requiring claims now and return ONLY JSON.
     `Final prompt: ${finalPrompt.length} chars, docType: ${docType}, custom_scaffold=${customPromptHasScaffold}`
   )
 
-  onProgress?.(10, 'Preparing document...')
+  onProgress?.(10, 'Analyzing document...')
   const base64Data = await fileToBase64(pdfFile)
 
-  onProgress?.(25, `Running ${DETECTION_PASSES} detection passes in parallel...`)
+  onProgress?.(25, 'Analyzing document...')
 
   try {
     // Fire all primary passes simultaneously — pick the one with the highest claim count.
@@ -750,12 +750,12 @@ Extract all substantiation-requiring claims now and return ONLY JSON.
       `Union: ${unionedPrimaryClaims.length} claims after dedup.`
     )
 
-    onProgress?.(72, 'Merging detection passes...')
+    onProgress?.(72, 'Analyzing document...')
 
     let visualSweepResponse = null
     let visualClaims = []
     if (GEMINI_VISUAL_SWEEP_ENABLED) {
-      onProgress?.(75, 'Running visual chart/table sweep...')
+      onProgress?.(75, 'Analyzing document...')
       const visualSweepPrompt = buildVisualSweepPrompt(docType)
 
       visualSweepResponse = await client.models.generateContent({
@@ -791,11 +791,11 @@ Extract all substantiation-requiring claims now and return ONLY JSON.
       visualClaims = normalizeRawClaims(visualJson.claims)
     }
 
-    onProgress?.(88, 'Merging claim passes...')
+    onProgress?.(88, 'Analyzing document...')
     const mergedRawClaims = mergeRawClaims(unionedPrimaryClaims, visualClaims)
     const claims = rawClaimsToFrontendClaims(mergedRawClaims)
 
-    onProgress?.(95, 'Finalizing...')
+    onProgress?.(95, 'Analyzing document...')
 
     // Aggregate usage across all passes
     let inputTokens = 0

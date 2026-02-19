@@ -601,7 +601,7 @@ export default function MKG2ClaimsDetector() {
     setMatchingComplete(false)
     setAnalysisError(null)
     setAnalysisProgress(0)
-    setAnalysisStatus('Starting...')
+    setAnalysisStatus('Analyzing document...')
     setMatchingStats(null)
     const analysisStartedAt = Date.now()
 
@@ -612,7 +612,7 @@ export default function MKG2ClaimsDetector() {
 
       if (isGemini) {
         setAnalysisProgress(5)
-        setAnalysisStatus('Checking connection...')
+        setAnalysisStatus('Analyzing document...')
         const connectionCheck = await checkGeminiConnection()
         if (!connectionCheck.connected) {
           throw new Error(`Gemini API not connected: ${connectionCheck.error}`)
@@ -622,7 +622,7 @@ export default function MKG2ClaimsDetector() {
 
       let pageImages = null
       if (!isGemini) {
-        setAnalysisStatus('Rendering pages for vision analysis...')
+        setAnalysisStatus('Analyzing document...')
         setAnalysisProgress(15)
         pageImages = await pdfToImages(uploadedFile)
         if (cancelAnalysisRef.current) return
@@ -826,7 +826,7 @@ export default function MKG2ClaimsDetector() {
 
   const runReferenceMatching = async (detectedClaims, analysisTotalMs = null) => {
     setIsMatching(true)
-    setMatchingProgress('Preparing semantic retrieval...')
+    setMatchingProgress('Reviewing references...')
     const matchingStartedAt = Date.now()
     const pendingClaimUpdates = new Map()
     let flushHandle = null
@@ -861,7 +861,7 @@ export default function MKG2ClaimsDetector() {
 
     try {
       if (!detectedClaims.length) {
-        setMatchingProgress('No claims detected for matching')
+        setMatchingProgress('No claims to review')
         setIsMatching(false)
         return
       }
@@ -872,7 +872,7 @@ export default function MKG2ClaimsDetector() {
       }))
 
       if (referencesForMatch.length === 0) {
-        setMatchingProgress('No references available for matching')
+        setMatchingProgress('No references available')
         setIsMatching(false)
         return
       }
@@ -885,27 +885,8 @@ export default function MKG2ClaimsDetector() {
       const { claims: enrichedClaims, telemetry } = await matchAllClaimsToReferences(
         detectedClaims,
         referencesForMatch,
-        ({ current, total, claimIndex, stage }) => {
-          const claimNumber = stage === 'done'
-            ? current
-            : claimIndex || Math.min(current + 1, total)
-
-          if (stage === 'retrieve') {
-            setMatchingProgress(`Retrieving candidates for claim ${claimNumber} of ${total}...`)
-            return
-          }
-
-          if (stage === 'confirm') {
-            setMatchingProgress(`Confirming support for claim ${claimNumber} of ${total}...`)
-            return
-          }
-
-          if (stage === 'fallback') {
-            setMatchingProgress(`Running fallback matching for claim ${claimNumber} of ${total}...`)
-            return
-          }
-
-          setMatchingProgress(`Matched claim ${claimNumber} of ${total}...`)
+        () => {
+          setMatchingProgress('Reviewing references...')
         },
         matchBrandId,
         {
