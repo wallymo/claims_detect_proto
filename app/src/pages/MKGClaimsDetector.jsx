@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import '../App.css'
 import './MKGClaimsDetector.css'
 
@@ -18,27 +18,16 @@ import ClaimCard from '@/components/claims-detector/ClaimCard'
 
 // Services
 import { analyzeDocument as analyzeWithGemini, checkGeminiConnection, ALL_CLAIMS_PROMPT_USER, MEDICATION_PROMPT_USER } from '@/services/gemini'
-import { analyzeDocument as analyzeWithOpenAI } from '@/services/openai'
-import { analyzeDocument as analyzeWithAnthropic } from '@/services/anthropic'
 
 // Utils
-import { pdfToImages } from '@/utils/pdfToImages'
 import { enrichClaimsWithPositions, addGlobalIndices } from '@/utils/textMatcher'
 import { logger } from '@/utils/logger'
 
-// Model routing map
-const MODEL_ANALYZERS = {
-  'gemini-3-pro': analyzeWithGemini,
-  'claude-opus-4.6': analyzeWithAnthropic,
-  'gpt-5.2-codex': analyzeWithOpenAI
-}
+const ANALYSIS_MODEL_LABEL = 'Google Gemini 3 Pro (Preview)'
 
-// AI Model options - SSOT
-const MODEL_OPTIONS = [
-  { id: 'gemini-3-pro', label: 'Google Gemini 3 Pro' },
-  { id: 'claude-opus-4.6', label: 'Claude Opus 4.6' },
-  { id: 'gpt-5.2-codex', label: 'OpenAI GPT-5.2 Codex' }
-]
+function formatMinutes(ms) {
+  return `${(ms / 60000).toFixed(2)} min`
+}
 
 // Prompt options for Claim Focus dropdown
 const PROMPT_OPTIONS = [
@@ -61,7 +50,6 @@ export default function MKGClaimsDetector({ demoMode = false }) {
   const fileInputRef = useRef(null)
 
   // Analysis state
-  const [selectedModel, setSelectedModel] = useState('gemini-3-pro')
   const [selectedPrompt, setSelectedPrompt] = useState('all-claims')
   const [editablePrompt, setEditablePrompt] = useState('')
   const [isEditingPrompt, setIsEditingPrompt] = useState(false)
@@ -196,35 +184,18 @@ export default function MKGClaimsDetector({ demoMode = false }) {
     const startTime = Date.now()
 
     try {
-      const analyzeDocument = MODEL_ANALYZERS[selectedModel] || analyzeWithGemini
       const promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
-      let result
-
-      const isGemini = selectedModel === 'gemini-3-pro'
-
-      // Gemini uses native PDF, Claude/GPT need image conversion for reliable text extraction
-      if (isGemini) {
-        setAnalysisProgress(5)
-        setAnalysisStatus('Checking connection...')
-        const connectionCheck = await checkGeminiConnection()
-        if (!connectionCheck.connected) {
-          throw new Error(`Gemini API not connected: ${connectionCheck.error}`)
-        }
+      setAnalysisProgress(5)
+      setAnalysisStatus('Checking connection...')
+      const connectionCheck = await checkGeminiConnection()
+      if (!connectionCheck.connected) {
+        throw new Error(`Gemini API not connected: ${connectionCheck.error}`)
       }
 
-      // For Claude and GPT, convert PDF to images first
-      let pageImages = null
-      if (!isGemini) {
-        setAnalysisStatus('Rendering pages for vision analysis...')
-        setAnalysisProgress(15)
-        pageImages = await pdfToImages(uploadedFile)
-        logger.info(`Converted PDF to ${pageImages.length} images for ${selectedModel}`)
-      }
-
-      result = await analyzeDocument(uploadedFile, (progress, status) => {
+      const result = await analyzeWithGemini(uploadedFile, (progress, status) => {
         setAnalysisProgress(progress)
         setAnalysisStatus(status)
-      }, promptKey, editablePrompt, pageImages)
+      }, promptKey, editablePrompt, null)
 
       if (!result.success) {
         throw new Error(result.error || 'Analysis failed')
@@ -468,16 +439,8 @@ export default function MKGClaimsDetector({ demoMode = false }) {
               content={
                 <div className="settingsContent">
                   <div className="settingItem">
-                    <label className="settingLabel">AI Model (Testing Only)</label>
-                    <DropdownMenu
-                      trigger="button"
-                      triggerLabel={MODEL_OPTIONS.find(m => m.id === selectedModel)?.label || 'Select model...'}
-                      items={MODEL_OPTIONS.map(item => ({
-                        ...item,
-                        onClick: () => setSelectedModel(item.id)
-                      }))}
-                      size="medium"
-                    />
+                    <label className="settingLabel">AI Model</label>
+                    <div>{ANALYSIS_MODEL_LABEL}</div>
                   </div>
                 </div>
               }
@@ -545,11 +508,11 @@ export default function MKGClaimsDetector({ demoMode = false }) {
                     <div className="modelPerformance">
                       <div className="resultRow">
                         <span className="resultLabel">Model</span>
-                        <span className="resultValue">{lastUsage?.modelDisplayName || 'Gemini 3 Pro'}</span>
+                        <span className="resultValue">{lastUsage?.modelDisplayName || 'Gemini 3 Pro (Preview)'}</span>
                       </div>
                       <div className="resultRow">
                         <span className="resultLabel">Latency</span>
-                        <span className="resultValue">{(processingTime / 1000).toFixed(1)}s</span>
+                        <span className="resultValue">{formatMinutes(processingTime)}</span>
                       </div>
                       <div className="divider" />
                       <div className="resultRow">

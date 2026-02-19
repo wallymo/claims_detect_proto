@@ -35,7 +35,7 @@ export const GEMINI_MODEL = GEMINI_MODEL_FROM_ENV || 'gemini-3-pro-preview'
 
 // Friendly display names for models
 export const MODEL_DISPLAY_NAMES = {
-  'gemini-3-pro-preview': 'Gemini 3 Pro',
+  'gemini-3-pro-preview': 'Gemini 3 Pro (Preview)',
   'gemini-2.5-pro': 'Gemini 2.5 Pro',
   'gemini-2.5-flash': 'Gemini 2.5 Flash',
   'gemini-2.0-flash': 'Gemini 2.0 Flash',
@@ -631,7 +631,7 @@ function buildTrainingExamplesBlock(trainingExamples) {
   if (!Array.isArray(trainingExamples) || trainingExamples.length === 0) return ''
   const capped = trainingExamples.slice(0, 20)
   const lines = capped.map(c => `- "${c.text}" (${c.type || 'Claim'})`).join('\n')
-  return `\n\nPRIOR APPROVED EXAMPLES FOR THIS BRAND:\nThe following claims were previously reviewed and confirmed as valid for this brand:\n${lines}\n\nUse these as calibration examples. Detect claims of similar type, language pattern, and specificity.\n`
+  return `\n\nPRIOR APPROVED EXAMPLES (BRAND + ECOSYSTEM):\nThe following claims were previously reviewed and confirmed as valid examples:\n${lines}\n\nUse these as calibration examples. Detect claims of similar type, language pattern, and specificity.\n`
 }
 
 export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null, _pageImages = null, docType = 'speaker-notes', factInventory = '', trainingExamples = []) {

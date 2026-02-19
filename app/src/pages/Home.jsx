@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import '../App.css'
 import FileUpload from '@/components/molecules/FileUpload/FileUpload'
-import DropdownMenu from '@/components/molecules/DropdownMenu/DropdownMenu'
 import Button from '@/components/atoms/Button/Button'
 import Icon from '@/components/atoms/Icon/Icon'
 import Spinner from '@/components/atoms/Spinner/Spinner'
@@ -15,17 +14,16 @@ import DocumentTypeSelector from '@/components/claims-detector/DocumentTypeSelec
 import DocumentViewer from '@/components/claims-detector/DocumentViewer'
 import LibraryTab from '@/components/claims-detector/LibraryTab'
 import PromptEditor from '@/components/claims-detector/PromptEditor'
-import ModelComparison from '@/components/claims-detector/ModelComparison'
 import Toggle from '@/components/atoms/Toggle/Toggle'
 import { ThemeToggle } from '@/components/theme'
 import { getDefaultDocument } from '@/mocks/documents'
 import { getClaimsForDocument, CLAIM_TYPES } from '@/mocks/claims'
 
-const MODEL_OPTIONS = [
-  { id: 'gemini-3', label: 'Google Gemini 3' },
-  { id: 'claude-opus', label: 'Claude Opus 4.6' },
-  { id: 'codex-5.3', label: 'OpenAI GPT-5.2 Codex' }
-]
+const GEMINI_MODEL_LABEL = 'Google Gemini 3 Pro (Preview)'
+
+function formatMinutes(ms) {
+  return `${(ms / 60000).toFixed(2)} min`
+}
 
 export default function Home() {
   const [demoMode, setDemoMode] = useState(false)
@@ -33,7 +31,6 @@ export default function Home() {
   const [uploadProgress, setUploadProgress] = useState(0)
   const [document, setDocument] = useState(null)
   const [selectedDocType, setSelectedDocType] = useState(null)
-  const [selectedModel, setSelectedModel] = useState('gemini-3')
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [claims, setClaims] = useState([])
   const [analysisComplete, setAnalysisComplete] = useState(false)
@@ -44,7 +41,6 @@ export default function Home() {
   const [sourceFilter, setSourceFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [sortOrder, setSortOrder] = useState('high-low')
-  const [showModelComparison, setShowModelComparison] = useState(false)
   const [aiDiscoveryEnabled, setAiDiscoveryEnabled] = useState(true)
   const [showAIOnly, setShowAIOnly] = useState(false)
   const [referenceDocuments, setReferenceDocuments] = useState([])
@@ -110,7 +106,7 @@ export default function Home() {
     setTimeout(runStep, 100)
   }
 
-  const handleFileUpload = (file) => {
+  const handleFileUpload = () => {
     simulateUpload(() => {
       setDocument(getDefaultDocument())
       setAnalysisComplete(false)
@@ -281,14 +277,6 @@ export default function Home() {
             {demoMode && (
               <>
                 <Badge variant="warning">Demo Mode</Badge>
-                <Button
-                  variant="ghost"
-                  size="small"
-                  onClick={() => setShowModelComparison(true)}
-                >
-                  <Icon name="settings" size={16} />
-                  Compare Models
-                </Button>
               </>
             )}
           </div>
@@ -335,16 +323,8 @@ export default function Home() {
 
                 {!demoMode && (
                   <div className="settingItem">
-                    <label className="settingLabel">AI Model (Testing Only)</label>
-                    <DropdownMenu
-                      trigger="button"
-                      triggerLabel={MODEL_OPTIONS.find(m => m.id === selectedModel)?.label || 'Select model...'}
-                      items={MODEL_OPTIONS.map(item => ({
-                        ...item,
-                        onClick: () => setSelectedModel(item.id)
-                      }))}
-                      size="medium"
-                    />
+                    <label className="settingLabel">AI Model</label>
+                    <div>{GEMINI_MODEL_LABEL}</div>
                   </div>
                 )}
 
@@ -410,10 +390,10 @@ export default function Home() {
                   <div className="metaRow">
                     <span className="metaItem">
                       <Icon name="zap" size={14} />
-                      {(processingTime / 1000).toFixed(1)}s
+                      {formatMinutes(processingTime)}
                     </span>
                     <span className="metaDot">•</span>
-                    <span className="metaItem">{MODEL_OPTIONS.find(m => m.id === selectedModel)?.label}</span>
+                    <span className="metaItem">{GEMINI_MODEL_LABEL}</span>
                   </div>
                 </div>
               }
@@ -573,32 +553,6 @@ export default function Home() {
           </div>
         </div>
       </div>
-
-      {/* Model Comparison Modal */}
-      {showModelComparison && (
-        <div className="modalOverlay" onClick={() => setShowModelComparison(false)}>
-          <div className="modalContent" onClick={e => e.stopPropagation()}>
-            <div className="modalHeader">
-              <h2>Model Comparison</h2>
-              <Button
-                variant="ghost"
-                size="small"
-                onClick={() => setShowModelComparison(false)}
-              >
-                <Icon name="x" size={20} />
-              </Button>
-            </div>
-            <ModelComparison
-              onRunAllModels={() => {}}
-              onSelectModel={(model) => {
-                setSelectedModel(model)
-                setShowModelComparison(false)
-              }}
-            />
-          </div>
-        </div>
-      )}
-
     </div>
   )
 }

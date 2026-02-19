@@ -13,6 +13,10 @@ const MODELS = [
   { id: 'gpt-5.2-codex', name: 'GPT-5.2 Codex', icon: 'brain' }
 ]
 
+function formatMinutes(ms) {
+  return `${(ms / 60000).toFixed(2)} min`
+}
+
 export default function ModelComparison({
   results = {},
   isRunning = false,
@@ -157,7 +161,7 @@ function ModelResultsPanel({ model, results, isRunning, onSelect }) {
         />
         <StatCard
           label="Time"
-          value={`${((results.metrics?.processingTimeMs || 0) / 1000).toFixed(1)}s`}
+          value={formatMinutes(results.metrics?.processingTimeMs || 0)}
           size="small"
         />
         <StatCard

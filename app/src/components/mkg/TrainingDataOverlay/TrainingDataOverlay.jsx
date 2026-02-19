@@ -9,7 +9,9 @@ export default function TrainingDataOverlay({
   onDeleteSession,
   onClearAll,
   onExport,
-  hasActiveBrand
+  hasActiveBrand,
+  ecosystemBrandCount = 0,
+  ecosystemExampleCount = 0
 }) {
   if (!isOpen) return null
 
@@ -24,7 +26,7 @@ export default function TrainingDataOverlay({
             <Icon name="flask" size={18} />
             <span className={styles.title}>Training Data</span>
             {sessions.length > 0 && (
-              <span className={styles.badge}>{sessions.length} session{sessions.length !== 1 ? 's' : ''}</span>
+              <span className={styles.badge}>{sessions.length} document{sessions.length !== 1 ? 's' : ''}</span>
             )}
           </div>
           <button className={styles.closeBtn} onClick={onClose}>
@@ -45,16 +47,27 @@ export default function TrainingDataOverlay({
               <Icon name="flask" size={32} />
               <p>No training data yet.</p>
               <p className={styles.emptyHint}>
-                Run a document and review claims — approvals are automatically saved as training examples.
+                Review claims in a document and approve/reject to build persistent, document-level training for this brand.
               </p>
+              {ecosystemExampleCount > 0 && (
+                <p className={styles.emptyHint}>
+                  {ecosystemExampleCount} ecosystem example{ecosystemExampleCount !== 1 ? 's are' : ' is'} still available for brand-agnostic guidance.
+                </p>
+              )}
             </div>
           )}
 
           {hasActiveBrand && sessions.length > 0 && (
             <>
               <div className={styles.summary}>
-                <span>{totalApproved} approved claim{totalApproved !== 1 ? 's' : ''} across {sessions.length} session{sessions.length !== 1 ? 's' : ''}</span>
+                <span>{totalApproved} approved claim{totalApproved !== 1 ? 's' : ''} across {sessions.length} document{sessions.length !== 1 ? 's' : ''}</span>
               </div>
+              {ecosystemExampleCount > 0 && (
+                <div className={styles.ecosystemSummary}>
+                  <Icon name="globe" size={12} />
+                  <span>{ecosystemExampleCount} ecosystem example{ecosystemExampleCount !== 1 ? 's' : ''} from {ecosystemBrandCount} other brand{ecosystemBrandCount !== 1 ? 's' : ''}</span>
+                </div>
+              )}
 
               <div className={styles.sessionList}>
                 {sessions.map(session => (
@@ -73,7 +86,7 @@ export default function TrainingDataOverlay({
                     <button
                       className={styles.deleteBtn}
                       onClick={() => onDeleteSession(session.id)}
-                      title="Delete session"
+                      title="Delete document training"
                     >
                       <Icon name="trash" size={14} />
                     </button>
@@ -88,7 +101,7 @@ export default function TrainingDataOverlay({
           <div className={styles.footer}>
             <Button variant="ghost" size="small" onClick={onClearAll}>
               <Icon name="refreshCw" size={14} />
-              Clear All Active
+              Clear Brand Data
             </Button>
             <Button variant="secondary" size="small" onClick={onExport}>
               <Icon name="fileText" size={14} />

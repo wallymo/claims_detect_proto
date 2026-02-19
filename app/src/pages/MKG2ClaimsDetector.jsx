@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import '../App.css'
 import './MKGClaimsDetector.css'
 
@@ -21,31 +21,18 @@ import TrainingDataOverlay from '@/components/mkg/TrainingDataOverlay/TrainingDa
 
 // Services
 import { analyzeDocument as analyzeWithGemini, checkGeminiConnection, ALL_CLAIMS_PROMPT_USER, MEDICATION_PROMPT_USER, getDocTypeInstructions } from '@/services/gemini'
-import { analyzeDocument as analyzeWithOpenAI } from '@/services/openai'
-import { analyzeDocument as analyzeWithAnthropic } from '@/services/anthropic'
 import { matchAllClaimsToReferences, getMatchingStats } from '@/services/referenceMatching'
 import * as api from '@/services/api'
 
 // Utils
-import { pdfToImages } from '@/utils/pdfToImages'
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.min.mjs`
 import { enrichClaimsWithPositions, addGlobalIndices } from '@/utils/textMatcher'
 import { dedupeClaimsByPageAndText } from '@/utils/claimDedup'
 import { logger } from '@/utils/logger'
 
-// Model routing
-const MODEL_ANALYZERS = {
-  'gemini-3-pro': analyzeWithGemini,
-  'claude-opus-4.6': analyzeWithAnthropic,
-  'gpt-5.2-codex': analyzeWithOpenAI
-}
-
-const MODEL_OPTIONS = [
-  { id: 'gemini-3-pro', label: 'Google Gemini 3 Pro' },
-  { id: 'claude-opus-4.6', label: 'Claude Opus 4.6' },
-  { id: 'gpt-5.2-codex', label: 'OpenAI GPT-5.2 Codex' }
-]
+const ANALYSIS_MODEL = 'gemini-3-pro'
+const ANALYSIS_MODEL_LABEL = 'Google Gemini 3 Pro (Preview)'
 
 const PROMPT_OPTIONS = [
   { id: 'all-claims', label: 'All Claims', promptKey: 'all' },
@@ -78,8 +65,20 @@ function readAnalysisCache(key) {
   try { return JSON.parse(sessionStorage.getItem(key) || 'null') } catch { return null }
 }
 
-function writeAnalysisCache(key, claims) {
-  try { sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), claims })) } catch { /* quota */ }
+function writeAnalysisCache(key, claims, extras = {}) {
+  try {
+    const existing = readAnalysisCache(key) || {}
+    const payload = {
+      ts: Date.now(),
+      claims,
+      analysisMs: Number.isFinite(extras.analysisMs) ? extras.analysisMs : existing.analysisMs,
+      usage: extras.usage !== undefined ? extras.usage : existing.usage,
+      matchingStats: extras.matchingStats !== undefined ? extras.matchingStats : existing.matchingStats
+    }
+    sessionStorage.setItem(key, JSON.stringify(payload))
+  } catch {
+    /* quota */
+  }
 }
 
 function deleteAnalysisCache(key) {
@@ -91,6 +90,78 @@ function formatTimeAgo(ts) {
   if (d < 60000) return 'just now'
   if (d < 3600000) return `${Math.floor(d / 60000)}m ago`
   return `${Math.floor(d / 3600000)}h ago`
+}
+
+function formatMinutes(ms) {
+  return `${(ms / 60000).toFixed(2)} min`
+}
+
+function hasMatchingMetadata(claims) {
+  return claims.some((claim) => (
+    claim
+    && (
+      Object.prototype.hasOwnProperty.call(claim, 'matched')
+      || Object.prototype.hasOwnProperty.call(claim, 'matchConfidence')
+      || Object.prototype.hasOwnProperty.call(claim, 'matchTier')
+      || !!claim.reference
+    )
+  ))
+}
+
+function normalizeTrainingDocumentKey(documentName) {
+  return String(documentName || '').trim().toLowerCase()
+}
+
+function normalizeTrainingClaimText(text) {
+  return String(text || '').replace(/\s+/g, ' ').trim().toLowerCase()
+}
+
+function dedupeTrainingClaims(claims) {
+  const seen = new Set()
+  const deduped = []
+  for (const claim of Array.isArray(claims) ? claims : []) {
+    const key = normalizeTrainingClaimText(claim?.text)
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    deduped.push(claim)
+  }
+  return deduped
+}
+
+function toTrainingDocumentRecord(session) {
+  const documentName = session?.document_name || session?.label || `Document ${session?.id || 'unknown'}`
+  const documentKey = normalizeTrainingDocumentKey(documentName) || `__doc_${session?.id || Date.now()}`
+  return {
+    ...session,
+    label: session?.label || documentName,
+    document_name: documentName,
+    document_key: documentKey,
+    source_session_ids: [session?.id].filter(Boolean),
+    approved_claims: dedupeTrainingClaims(session?.approved_claims || [])
+  }
+}
+
+function mergeTrainingSessionsByDocument(sessions) {
+  const grouped = new Map()
+  for (const session of Array.isArray(sessions) ? sessions : []) {
+    const record = toTrainingDocumentRecord(session)
+    const existing = grouped.get(record.document_key)
+    if (!existing) {
+      grouped.set(record.document_key, record)
+      continue
+    }
+
+    grouped.set(record.document_key, {
+      ...existing,
+      source_session_ids: [...new Set([...(existing.source_session_ids || []), ...(record.source_session_ids || [])])],
+      approved_claims: dedupeTrainingClaims([...(existing.approved_claims || []), ...(record.approved_claims || [])]),
+      prompt_text: existing.prompt_text || record.prompt_text || null
+    })
+  }
+
+  return [...grouped.values()].sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  )
 }
 
 // ===== Fact Inventory =====
@@ -134,7 +205,7 @@ export default function MKG2ClaimsDetector() {
   const fileInputRef = useRef(null)
 
   // Settings state
-  const [selectedModel, setSelectedModel] = useState('gemini-3-pro')
+  const selectedModel = ANALYSIS_MODEL
   const [selectedPrompt, _setSelectedPrompt] = useState('all-claims')
   const [editablePrompt, setEditablePrompt] = useState('')
   const [isEditingPrompt, setIsEditingPrompt] = useState(false)
@@ -183,13 +254,7 @@ export default function MKG2ClaimsDetector() {
   const [searchQuery, setSearchQuery] = useState('')
   const [sortOrder, setSortOrder] = useState('annotation')
   const [showClaimPins, setShowClaimPins] = useState(true)
-  const [isConfigPanelCollapsed, setIsConfigPanelCollapsed] = useState(() => {
-    try {
-      return localStorage.getItem('mkg2_config_panel_collapsed') === '1'
-    } catch {
-      return false
-    }
-  })
+  const [isConfigPanelCollapsed, setIsConfigPanelCollapsed] = useState(false)
 
   // Cost tracking
   const [lastUsage, setLastUsage] = useState(null)
@@ -216,21 +281,38 @@ export default function MKG2ClaimsDetector() {
   const [referenceViewerData, setReferenceViewerData] = useState(null)
 
   // Training data state
-  const [trainingSessions, setTrainingSessions] = useState([])
-  const [currentTrainingSessionId, setCurrentTrainingSessionId] = useState(null)
-  const [approvedClaimsForSession, setApprovedClaimsForSession] = useState([])
-  const [trainingExamples, setTrainingExamples] = useState([])
+  const [trainingDocuments, setTrainingDocuments] = useState([])
+  const [ecosystemTrainingExamples, setEcosystemTrainingExamples] = useState([])
   const [showTrainingOverlay, setShowTrainingOverlay] = useState(false)
 
   const claimsListRef = useRef(null)
   const claimsPanelRef = useRef(null)
 
-  // Keep trainingExamples in sync with trainingSessions so prompt examples
-  // reflect any approve/reject mutations without needing a brand reload
-  useEffect(() => {
-    const allApproved = trainingSessions.flatMap(s => s.approved_claims || []).slice(0, 20)
-    setTrainingExamples(allApproved)
-  }, [trainingSessions])
+  const trainingExamples = useMemo(() => {
+    const currentDocumentKey = normalizeTrainingDocumentKey(uploadedFile?.name)
+    const currentDocumentClaims = currentDocumentKey
+      ? (trainingDocuments.find(doc => doc.document_key === currentDocumentKey)?.approved_claims || [])
+      : []
+
+    const brandClaims = trainingDocuments
+      .filter(doc => doc.document_key !== currentDocumentKey)
+      .flatMap(doc => doc.approved_claims || [])
+
+    return dedupeTrainingClaims([
+      ...currentDocumentClaims,
+      ...brandClaims,
+      ...ecosystemTrainingExamples
+    ]).slice(0, 20)
+  }, [uploadedFile, trainingDocuments, ecosystemTrainingExamples])
+
+  const ecosystemTrainingBrandCount = useMemo(
+    () => new Set(
+      ecosystemTrainingExamples
+        .map(example => example.source_brand_id)
+        .filter(Boolean)
+    ).size,
+    [ecosystemTrainingExamples]
+  )
 
   // Load brands, references, and folders on mount
   useEffect(() => {
@@ -247,30 +329,70 @@ export default function MKG2ClaimsDetector() {
     }
   }, [selectedBrandId, libraryBrandId])
 
-  // Load training sessions and examples when brand changes
+  // Load training examples for active brand + ecosystem (other brands)
   useEffect(() => {
-    if (selectedBrandId) {
-      loadTrainingSessions(selectedBrandId)
-    } else {
-      setTrainingSessions([])
-      setTrainingExamples([])
+    if (!selectedBrandId) {
+      setTrainingDocuments([])
+      setEcosystemTrainingExamples([])
+      return
     }
-  }, [selectedBrandId])
+
+    let cancelled = false
+    const loadTrainingData = async () => {
+      try {
+        const sessions = await api.getTrainingSessions(selectedBrandId)
+        if (!cancelled) {
+          setTrainingDocuments(mergeTrainingSessionsByDocument(sessions))
+        }
+      } catch (err) {
+        if (!cancelled) {
+          logger.warn('Could not load training documents:', err.message)
+        }
+      }
+
+      try {
+        const otherBrands = brands.filter(brand => brand.id !== selectedBrandId)
+        if (otherBrands.length === 0) {
+          if (!cancelled) setEcosystemTrainingExamples([])
+          return
+        }
+
+        const settled = await Promise.allSettled(
+          otherBrands.map(async (brand) => {
+            const sessions = await api.getTrainingSessions(brand.id)
+            const docs = mergeTrainingSessionsByDocument(sessions)
+            return docs
+              .flatMap(doc => doc.approved_claims || [])
+              .map(example => ({ ...example, source_brand_id: brand.id }))
+          })
+        )
+
+        if (cancelled) return
+
+        const merged = settled
+          .filter(result => result.status === 'fulfilled')
+          .flatMap(result => result.value)
+
+        setEcosystemTrainingExamples(dedupeTrainingClaims(merged))
+      } catch (err) {
+        if (!cancelled) {
+          logger.warn('Could not load ecosystem training examples:', err.message)
+          setEcosystemTrainingExamples([])
+        }
+      }
+    }
+
+    loadTrainingData()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedBrandId, brands])
 
   // Load total cost from localStorage
   useEffect(() => {
     const saved = localStorage.getItem('gemini_total_cost')
     if (saved) setTotalCost(parseFloat(saved))
   }, [])
-
-  // Persist collapsed state for config panel between sessions.
-  useEffect(() => {
-    try {
-      localStorage.setItem('mkg2_config_panel_collapsed', isConfigPanelCollapsed ? '1' : '0')
-    } catch {
-      // no-op
-    }
-  }, [isConfigPanelCollapsed])
 
   // Sync editable prompt — includes doc-type-specific structure + position rules
   useEffect(() => {
@@ -520,15 +642,6 @@ export default function MKG2ClaimsDetector() {
     }
   }
 
-  async function loadTrainingSessions(brandId) {
-    try {
-      const sessions = await api.getTrainingSessions(brandId)
-      setTrainingSessions(sessions)
-    } catch (err) {
-      logger.warn('Could not load training sessions:', err.message)
-    }
-  }
-
   function formatFileSize(bytes) {
     if (!bytes && bytes !== 0) return '0 B'
     if (bytes === 0) return '0 B'
@@ -634,6 +747,10 @@ export default function MKG2ClaimsDetector() {
         writeAnalysisCache(_cacheKey, indexedCachedClaims)
       }
 
+      const restoredMatchingStats = _cached?.matchingStats && typeof _cached.matchingStats === 'object'
+        ? _cached.matchingStats
+        : (hasMatchingMetadata(indexedCachedClaims) ? getMatchingStats(indexedCachedClaims) : null)
+
       setClaims(indexedCachedClaims)
       setCacheHit({ ts: _cached.ts })
       setAnalysisComplete(true)
@@ -641,7 +758,10 @@ export default function MKG2ClaimsDetector() {
       setAnalysisProgress(100)
       setAnalysisStatus('Claims detected')
       setAnalysisError(null)
-      setMatchingStats(null)
+      setProcessingTime(Number.isFinite(_cached?.analysisMs) ? _cached.analysisMs : 0)
+      setLastUsage(_cached?.usage || null)
+      setMatchingStats(restoredMatchingStats)
+      setIsMatching(false)
       setIsAnalyzing(false)
       return
     }
@@ -657,27 +777,14 @@ export default function MKG2ClaimsDetector() {
     const analysisStartedAt = Date.now()
 
     try {
-      const analyzeDocument = MODEL_ANALYZERS[selectedModel] || analyzeWithGemini
       const promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
-      const isGemini = selectedModel === 'gemini-3-pro'
-
-      if (isGemini) {
-        setAnalysisProgress(5)
-        setAnalysisStatus('Analyzing document...')
-        const connectionCheck = await checkGeminiConnection()
-        if (!connectionCheck.connected) {
-          throw new Error(`Gemini API not connected: ${connectionCheck.error}`)
-        }
-        if (cancelAnalysisRef.current) return
+      setAnalysisProgress(5)
+      setAnalysisStatus('Analyzing document...')
+      const connectionCheck = await checkGeminiConnection()
+      if (!connectionCheck.connected) {
+        throw new Error(`Gemini API not connected: ${connectionCheck.error}`)
       }
-
-      let pageImages = null
-      if (!isGemini) {
-        setAnalysisStatus('Analyzing document...')
-        setAnalysisProgress(15)
-        pageImages = await pdfToImages(uploadedFile)
-        if (cancelAnalysisRef.current) return
-      }
+      if (cancelAnalysisRef.current) return
 
       // Fetch fact inventory for brand-grounded detection (POC2)
       let factInventory = ''
@@ -753,10 +860,10 @@ export default function MKG2ClaimsDetector() {
         }
       }
 
-      const result = await analyzeDocument(uploadedFile, (progress, status) => {
+      const result = await analyzeWithGemini(uploadedFile, (progress, status) => {
         setAnalysisProgress(progress)
         setAnalysisStatus(status)
-      }, promptKey, editablePrompt, pageImages, selectedDocType || 'speaker-notes', factInventory, trainingExamples)
+      }, promptKey, editablePrompt, null, selectedDocType || 'speaker-notes', factInventory, trainingExamples)
 
       if (cancelAnalysisRef.current) return
       if (!result.success) throw new Error(result.error || 'Analysis failed')
@@ -799,22 +906,6 @@ export default function MKG2ClaimsDetector() {
       setAnalysisComplete(true)
       setIsAnalyzing(false)
 
-      // Auto-create training session for this analysis run
-      setApprovedClaimsForSession([])
-      setCurrentTrainingSessionId(null)
-      if (selectedBrandId && uploadedFile) {
-        api.createTrainingSession({
-          brand_id: selectedBrandId,
-          label: uploadedFile.name,
-          document_name: uploadedFile.name,
-          approved_claims: [],
-          prompt_text: editablePrompt
-        }).then(session => {
-          setCurrentTrainingSessionId(session.id)
-          setTrainingSessions(prev => [session, ...prev])
-        }).catch(err => logger.warn('Could not create training session:', err.message))
-      }
-
       logger.info({
         event: 'mkg2_analysis_summary',
         analysis_total_ms: analysisTotalMs,
@@ -827,10 +918,14 @@ export default function MKG2ClaimsDetector() {
 
       // Step 2: Auto-trigger reference matching (or cache detection-only result)
       if (selectedBrandId && referenceDocuments.length > 0) {
-        await runReferenceMatching(indexedClaims, analysisTotalMs)
+        await runReferenceMatching(indexedClaims, analysisTotalMs, result.usage || null)
         if (cancelAnalysisRef.current) return
       } else {
-        writeAnalysisCache(currentCacheKeyRef.current, indexedClaims)
+        writeAnalysisCache(currentCacheKeyRef.current, indexedClaims, {
+          analysisMs: analysisTotalMs,
+          usage: result.usage || null,
+          matchingStats: null
+        })
       }
     } catch (error) {
       logger.error('Analysis error:', error)
@@ -888,7 +983,7 @@ export default function MKG2ClaimsDetector() {
 
   // ===== Reference Matching (Step 2) =====
 
-  const runReferenceMatching = async (detectedClaims, analysisTotalMs = null) => {
+  const runReferenceMatching = async (detectedClaims, analysisTotalMs = null, analysisUsage = null) => {
     setIsMatching(true)
     const totalClaims = detectedClaims.length
     setMatchingProgress(`Reviewing references... 0/${totalClaims} claims`)
@@ -1011,9 +1106,6 @@ export default function MKG2ClaimsDetector() {
 
         return changed ? merged : prev
       })
-      if (currentCacheKeyRef.current) {
-        writeAnalysisCache(currentCacheKeyRef.current, enrichedClaims)
-      }
       const stats = getMatchingStats(enrichedClaims)
       const enrichedStats = {
         ...stats,
@@ -1052,6 +1144,13 @@ export default function MKG2ClaimsDetector() {
         verified_quotes: telemetry?.verified_quotes,
         unverified_quotes: telemetry?.unverified_quotes,
         semantic_search_count: telemetry?.semantic_search_count
+      }
+      if (currentCacheKeyRef.current) {
+        writeAnalysisCache(currentCacheKeyRef.current, enrichedClaims, {
+          analysisMs: analysisTotalMs,
+          usage: analysisUsage,
+          matchingStats: enrichedStats
+        })
       }
       setMatchingStats(enrichedStats)
       setMatchingComplete(true)
@@ -1164,27 +1263,68 @@ export default function MKG2ClaimsDetector() {
 
   // ===== Claim Actions =====
 
+  const persistTrainingDocumentClaims = async (nextApprovedClaims) => {
+    if (!selectedBrandId || !uploadedFile?.name) return
+
+    const documentName = uploadedFile.name
+    const documentKey = normalizeTrainingDocumentKey(documentName)
+    const normalizedClaims = dedupeTrainingClaims(nextApprovedClaims)
+    const existingDoc = trainingDocuments.find(doc => doc.document_key === documentKey)
+
+    if (existingDoc) {
+      const sourceIds = existingDoc.source_session_ids?.length
+        ? existingDoc.source_session_ids
+        : [existingDoc.id]
+
+      const updates = await Promise.allSettled(
+        sourceIds.map(id => api.updateTrainingSessionClaims(id, normalizedClaims))
+      )
+      const hasSuccess = updates.some(result => result.status === 'fulfilled')
+      if (!hasSuccess) throw new Error('Training document update failed')
+
+      setTrainingDocuments(prev => prev.map(doc => (
+        doc.document_key === documentKey
+          ? { ...doc, approved_claims: normalizedClaims, prompt_text: editablePrompt || doc.prompt_text }
+          : doc
+      )))
+      return
+    }
+
+    const created = await api.createTrainingSession({
+      brand_id: selectedBrandId,
+      label: documentName,
+      document_name: documentName,
+      approved_claims: normalizedClaims,
+      prompt_text: editablePrompt
+    })
+
+    const createdRecord = toTrainingDocumentRecord(created)
+    setTrainingDocuments(prev => [
+      createdRecord,
+      ...prev.filter(doc => doc.document_key !== createdRecord.document_key)
+    ])
+  }
+
   const handleClaimApprove = (claimId) => {
     setClaims(prev => prev.map(c => c.id === claimId ? { ...c, status: 'approved' } : c))
     const claim = claims.find(c => c.id === claimId)
     if (!claim) return
 
-    // Add to training session approved claims
+    // Persist approved claim for the current document (brand-scoped).
     const trainingClaim = {
       text: claim.text,
       type: 'Claim',
       confidence: claim.confidence,
       reference: claim.reference ? { id: claim.reference.id, name: claim.reference.name } : null
     }
-    const nextApproved = [...approvedClaimsForSession.filter(c => c.text !== claim.text), trainingClaim]
-    setApprovedClaimsForSession(nextApproved)
-    if (currentTrainingSessionId) {
-      api.updateTrainingSessionClaims(currentTrainingSessionId, nextApproved)
-        .then(updated => {
-          setTrainingSessions(prev => prev.map(s => s.id === updated.id ? updated : s))
-        })
-        .catch(err => logger.warn('Training session update failed:', err.message))
-    }
+    const docKey = normalizeTrainingDocumentKey(uploadedFile?.name)
+    const currentApproved = trainingDocuments.find(doc => doc.document_key === docKey)?.approved_claims || []
+    const nextApproved = [
+      ...currentApproved.filter(c => normalizeTrainingClaimText(c.text) !== normalizeTrainingClaimText(claim.text)),
+      trainingClaim
+    ]
+    persistTrainingDocumentClaims(nextApproved)
+      .catch(err => logger.warn('Training document update failed:', err.message))
 
     // Fire-and-forget feedback to backend
     api.createFeedback({
@@ -1215,7 +1355,10 @@ export default function MKG2ClaimsDetector() {
     const claim = claims.find(c => c.id === claimId)
     if (!claim) return
 
-    // Update training session — remove false_positives, keep the rest with corrections
+    const docKey = normalizeTrainingDocumentKey(uploadedFile?.name)
+    const currentApproved = trainingDocuments.find(doc => doc.document_key === docKey)?.approved_claims || []
+
+    // Update document-level training — remove false_positives, keep corrected examples.
     if (rejectionType !== 'false_positive') {
       const trainingClaim = {
         text: claim.text,
@@ -1228,27 +1371,20 @@ export default function MKG2ClaimsDetector() {
             : null,
         correction: rejectionType
       }
-      const nextApproved = [...approvedClaimsForSession.filter(c => c.text !== claim.text), trainingClaim]
-      setApprovedClaimsForSession(nextApproved)
-      if (currentTrainingSessionId) {
-        api.updateTrainingSessionClaims(currentTrainingSessionId, nextApproved)
-          .then(updated => {
-            setTrainingSessions(prev => prev.map(s => s.id === updated.id ? updated : s))
-          })
-          .catch(err => logger.warn('Training session update failed:', err.message))
-      }
+      const nextApproved = [
+        ...currentApproved.filter(c => normalizeTrainingClaimText(c.text) !== normalizeTrainingClaimText(claim.text)),
+        trainingClaim
+      ]
+      persistTrainingDocumentClaims(nextApproved)
+        .catch(err => logger.warn('Training document update failed:', err.message))
     } else {
-      // false_positive: remove from approved if it was previously added
-      const nextApproved = approvedClaimsForSession.filter(c => c.text !== claim.text)
-      if (nextApproved.length !== approvedClaimsForSession.length) {
-        setApprovedClaimsForSession(nextApproved)
-        if (currentTrainingSessionId) {
-          api.updateTrainingSessionClaims(currentTrainingSessionId, nextApproved)
-            .then(updated => {
-              setTrainingSessions(prev => prev.map(s => s.id === updated.id ? updated : s))
-            })
-            .catch(err => logger.warn('Training session update failed:', err.message))
-        }
+      // false_positive: remove from approved set if it exists.
+      const nextApproved = currentApproved.filter(
+        c => normalizeTrainingClaimText(c.text) !== normalizeTrainingClaimText(claim.text)
+      )
+      if (nextApproved.length !== currentApproved.length) {
+        persistTrainingDocumentClaims(nextApproved)
+          .catch(err => logger.warn('Training document update failed:', err.message))
       }
     }
 
@@ -1288,11 +1424,26 @@ export default function MKG2ClaimsDetector() {
 
   const handleDeleteTrainingSession = async (sessionId) => {
     try {
-      await api.deleteTrainingSession(sessionId)
-      setTrainingSessions(prev => prev.filter(s => s.id !== sessionId))
-      if (currentTrainingSessionId === sessionId) setCurrentTrainingSessionId(null)
+      const target = trainingDocuments.find(doc =>
+        doc.id === sessionId || doc.source_session_ids?.includes(sessionId)
+      )
+      if (!target) return
+
+      const deleteIds = target.source_session_ids?.length
+        ? target.source_session_ids
+        : [target.id]
+
+      const deletions = await Promise.allSettled(
+        deleteIds.map(id => api.deleteTrainingSession(id))
+      )
+      const hasSuccess = deletions.some(result => result.status === 'fulfilled')
+      if (!hasSuccess) throw new Error('Delete training document failed')
+
+      setTrainingDocuments(prev =>
+        prev.filter(doc => doc.document_key !== target.document_key)
+      )
     } catch (err) {
-      logger.error('Delete training session error:', err)
+      logger.error('Delete training document error:', err)
     }
   }
 
@@ -1300,12 +1451,9 @@ export default function MKG2ClaimsDetector() {
     if (!selectedBrandId) return
     try {
       await api.clearTrainingSessions(selectedBrandId)
-      setTrainingSessions([])
-      setTrainingExamples([])
-      setCurrentTrainingSessionId(null)
-      setApprovedClaimsForSession([])
+      setTrainingDocuments([])
     } catch (err) {
-      logger.error('Clear training sessions error:', err)
+      logger.error('Clear training documents error:', err)
     }
   }
 
@@ -1504,7 +1652,7 @@ export default function MKG2ClaimsDetector() {
             style={{ position: 'relative' }}
           >
             <Icon name="flask" size={18} />
-            {trainingSessions.length > 0 && (
+            {(trainingDocuments.length > 0 || ecosystemTrainingExamples.length > 0) && (
               <span className="trainingBadgeDot" />
             )}
           </button>
@@ -1597,15 +1745,7 @@ export default function MKG2ClaimsDetector() {
                     {/* AI Model */}
                     <div className="settingItem">
                       <label className="settingLabel">AI Model</label>
-                      <DropdownMenu
-                        trigger="button"
-                        triggerLabel={MODEL_OPTIONS.find(m => m.id === selectedModel)?.label || 'Select model...'}
-                        items={MODEL_OPTIONS.map(item => ({
-                          ...item,
-                          onClick: () => setSelectedModel(item.id)
-                        }))}
-                        size="medium"
-                      />
+                      <div>{ANALYSIS_MODEL_LABEL}</div>
                     </div>
                   </div>
                 }
@@ -1728,7 +1868,7 @@ export default function MKG2ClaimsDetector() {
                       <div className="modelPerformance">
                         <div className="resultRow">
                           <span className="resultLabel">Model</span>
-                          <span className="resultValue">{lastUsage?.modelDisplayName || 'Gemini 3 Pro'}</span>
+                          <span className="resultValue">{lastUsage?.modelDisplayName || 'Gemini 3 Pro (Preview)'}</span>
                         </div>
                         <div className="resultRow">
                           <span className="resultLabel">Claims Detected</span>
@@ -1741,15 +1881,15 @@ export default function MKG2ClaimsDetector() {
                         <div className="divider" />
                         <div className="resultRow">
                           <span className="resultLabel">End-to-End Time</span>
-                          <span className="resultValue">{(endToEndMs / 1000).toFixed(1)}s</span>
+                          <span className="resultValue">{formatMinutes(endToEndMs)}</span>
                         </div>
                         <div className="resultRow">
                           <span className="resultLabel">Claim Detection Time</span>
-                          <span className="resultValue">{(analysisMs / 1000).toFixed(1)}s</span>
+                          <span className="resultValue">{formatMinutes(analysisMs)}</span>
                         </div>
                         <div className="resultRow">
                           <span className="resultLabel">Reference Matching Time</span>
-                          <span className="resultValue">{matchingStats ? `${(matchingMs / 1000).toFixed(1)}s` : 'N/A'}</span>
+                          <span className="resultValue">{matchingStats ? formatMinutes(matchingMs) : 'N/A'}</span>
                         </div>
                         <div className="divider" />
                         <div className="resultRow">
@@ -1844,6 +1984,14 @@ export default function MKG2ClaimsDetector() {
                         <>
                           <Icon name="gitCompare" size={14} />
                           <span>Matched {matchingStats.matched} of {matchingStats.total} claims</span>
+                          {cacheHit && (
+                            <span
+                              className="matchingCacheBadge"
+                              title="Match metrics restored from cached analysis"
+                            >
+                              Cached match
+                            </span>
+                          )}
                         </>
                       ) : (
                         <>
@@ -2005,11 +2153,13 @@ export default function MKG2ClaimsDetector() {
       <TrainingDataOverlay
         isOpen={showTrainingOverlay}
         onClose={() => setShowTrainingOverlay(false)}
-        sessions={trainingSessions}
+        sessions={trainingDocuments}
         onDeleteSession={handleDeleteTrainingSession}
         onClearAll={handleClearTrainingSessions}
         onExport={handleExportTrainingSessions}
         hasActiveBrand={!!selectedBrandId}
+        ecosystemBrandCount={ecosystemTrainingBrandCount}
+        ecosystemExampleCount={ecosystemTrainingExamples.length}
       />
 
       {/* New Brand Modal */}

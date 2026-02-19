@@ -106,6 +106,15 @@
   margin-bottom: 10px;
 }
 
+.ecosystemSummary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--gray-5);
+  margin-bottom: 10px;
+}
+
 /* Session list */
 .sessionList {
   display: flex;

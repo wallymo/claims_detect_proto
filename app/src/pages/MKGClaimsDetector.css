@@ -461,6 +461,20 @@
   color: var(--color-text-primary, #1f2937);
 }
 
+.matchingCacheBadge {
+  margin-left: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--gray-4, #bdbdbd);
+  background: var(--gray-3, #e0e0e0);
+  color: var(--color-text-secondary, #4b5563);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 .reanalyzeLink {
   background: none;
   border: none;
