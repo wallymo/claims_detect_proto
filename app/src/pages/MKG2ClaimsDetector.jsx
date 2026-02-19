@@ -550,6 +550,25 @@ export default function MKG2ClaimsDetector() {
 
   // ===== Analysis =====
 
+  // Proactively check if current file+settings combo has a cached result
+  useEffect(() => {
+    if (!uploadedFile) {
+      setHasCachedResult(false)
+      setPendingReanalyzeConfirm(false)
+      return
+    }
+    const _promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
+    const _refIds = referenceDocuments.map(r => r.id)
+    const key = makeAnalysisCacheKey(
+      uploadedFile, selectedModel, _promptKey, editablePrompt,
+      selectedDocType || 'speaker-notes', selectedBrandId, _refIds
+    )
+    const cached = readAnalysisCache(key)
+    setHasCachedResult(!!cached)
+    // If file changed while confirm was showing, dismiss it
+    setPendingReanalyzeConfirm(false)
+  }, [uploadedFile, selectedModel, selectedPrompt, editablePrompt, selectedDocType, selectedBrandId, referenceDocuments])
+
   const handleAnalyze = async () => {
     if (!uploadedFile) return
 
