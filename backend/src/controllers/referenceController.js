@@ -56,7 +56,7 @@ export const referenceController = {
         ReferenceFact.createPending(ref.id)
         extractFacts(text, { pageCount })
           .then(facts => {
-            ReferenceFact.createOrUpdate(ref.id, facts, 'indexed', 'gemini-2.5-flash')
+            ReferenceFact.createOrUpdate(ref.id, facts, 'indexed', 'gemini-3.1-pro-preview')
             console.log(`Auto-indexed ref ${ref.id} (${displayAlias}): ${facts.length} facts`)
           })
           .catch(err => {

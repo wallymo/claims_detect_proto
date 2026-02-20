@@ -60,4 +60,74 @@ describe('claimDedup', () => {
     expect(result.duplicateCount).toBe(0)
     expect(result.claims).toHaveLength(2)
   })
+
+  it('aggressively near-dedupes same-page variants and keeps the most complete sentence', () => {
+    const claims = [
+      {
+        id: 'claim_001',
+        page: 2,
+        text: 'Reduction in annualized relapse rate vs placebo',
+        confidence: 0.9
+      },
+      {
+        id: 'claim_002',
+        page: 2,
+        text: 'Drug X demonstrated a 42% reduction in annualized relapse rate versus placebo in adults with relapsing disease.',
+        confidence: 0.82
+      }
+    ]
+
+    const result = dedupeClaimsByPageAndText(claims, { strategy: 'aggressive-near' })
+
+    expect(result.uniqueCount).toBe(1)
+    expect(result.duplicateCount).toBe(1)
+    expect(result.nearDuplicateCount).toBe(1)
+    expect(result.claims[0].id).toBe('claim_002')
+  })
+
+  it('prefers qualifier-rich claim text when near-duplicate variants compete', () => {
+    const claims = [
+      {
+        id: 'claim_001',
+        page: 4,
+        text: 'Drug X improved response rate versus placebo',
+        confidence: 0.95
+      },
+      {
+        id: 'claim_002',
+        page: 4,
+        text: 'Drug X improved response rate versus placebo (p<0.01; 95% CI 1.2-2.4; N=314).',
+        confidence: 0.84
+      }
+    ]
+
+    const result = dedupeClaimsByPageAndText(claims, { strategy: 'aggressive-near' })
+
+    expect(result.uniqueCount).toBe(1)
+    expect(result.claims[0].id).toBe('claim_002')
+  })
+
+  it('does not near-merge same-page claims with conflicting key statistics', () => {
+    const claims = [
+      { id: 'claim_001', page: 1, text: 'Drug X reduced risk by 42% vs placebo (p<0.01).' },
+      { id: 'claim_002', page: 1, text: 'Drug X reduced risk by 28% vs placebo (p=0.04).' }
+    ]
+
+    const result = dedupeClaimsByPageAndText(claims, { strategy: 'aggressive-near' })
+
+    expect(result.uniqueCount).toBe(2)
+    expect(result.duplicateCount).toBe(0)
+  })
+
+  it('supports rollback by keeping exact-only behavior when strategy=exact', () => {
+    const claims = [
+      { id: 'claim_001', page: 5, text: 'Drug X reduced annualized relapse rate versus placebo.' },
+      { id: 'claim_002', page: 5, text: 'Drug X reduced annualized relapse rate vs placebo in adults.' }
+    ]
+
+    const result = dedupeClaimsByPageAndText(claims, { strategy: 'exact' })
+
+    expect(result.uniqueCount).toBe(2)
+    expect(result.nearDuplicateCount).toBe(0)
+  })
 })

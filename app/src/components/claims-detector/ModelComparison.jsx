@@ -8,7 +8,7 @@ import Badge from '@/components/atoms/Badge/Badge'
 import Spinner from '@/components/atoms/Spinner/Spinner'
 
 const MODELS = [
-  { id: 'gemini-3', name: 'Gemini 3', icon: 'zap' },
+  { id: 'gemini-3', name: 'Gemini 3.1 Pro', icon: 'zap' },
   { id: 'claude-opus', name: 'Claude Opus 4.6', icon: 'cpu' },
   { id: 'gpt-5.2-codex', name: 'GPT-5.2 Codex', icon: 'brain' }
 ]

@@ -282,6 +282,63 @@ function createFallbackReferenceLoader(allReferences, telemetry) {
 const FACT_ANCHOR_MIN_SIMILARITY = 0.90
 const FACT_ANCHOR_MIN_KEYWORD_OVERLAP = 2
 const TIER2_MAX_REFERENCES = 3
+const EVIDENCE_TYPE_PRIORITY = {
+  table_cell: 4,
+  text_quote: 3,
+  figure_caption: 2,
+  chart_label: 1
+}
+
+function normalizeEvidenceType(value) {
+  if (!value) return 'text_quote'
+  const normalized = String(value).trim().toLowerCase()
+  if (normalized in EVIDENCE_TYPE_PRIORITY) return normalized
+  return 'text_quote'
+}
+
+function getEvidenceTypePriority(value) {
+  return EVIDENCE_TYPE_PRIORITY[normalizeEvidenceType(value)] || 0
+}
+
+function rankEvidenceQuotes(quotes) {
+  if (!Array.isArray(quotes)) return []
+  return [...quotes]
+    .filter(q => typeof q?.text === 'string' && q.text.trim().length > 0)
+    .map((quote, index) => ({
+      ...quote,
+      evidence_type: normalizeEvidenceType(quote.evidence_type),
+      _index: index
+    }))
+    .sort((a, b) => {
+      const typeDiff = getEvidenceTypePriority(b.evidence_type) - getEvidenceTypePriority(a.evidence_type)
+      if (typeDiff !== 0) return typeDiff
+      return a._index - b._index
+    })
+}
+
+function resolveExtractionMatchConfidence(verificationStatus, evidenceType) {
+  const base = verificationStatus === 'verified' ? 0.95 : 0.80
+  const normalizedType = normalizeEvidenceType(evidenceType)
+
+  if (normalizedType === 'table_cell') return clamp(base + 0.02, 0, 1)
+  if (normalizedType === 'figure_caption') return clamp(base - 0.01, 0, 1)
+  if (normalizedType === 'chart_label') return clamp(base - 0.05, 0, 1)
+  return base
+}
+
+function applyMatchConfidenceToClaim(claim) {
+  if (!claim?.matched) return claim
+  if (!Number.isFinite(claim.matchConfidence) || !Number.isFinite(claim.confidence)) return claim
+  if (claim.matchConfidence >= 0.90) return claim
+
+  const loweredConfidence = clamp(Math.min(claim.confidence, claim.matchConfidence), 0, 1)
+  if (loweredConfidence === claim.confidence) return claim
+
+  return {
+    ...claim,
+    confidence: loweredConfidence
+  }
+}
 
 async function factAnchoredSearch(claim, brandId, telemetry) {
   try {
@@ -399,43 +456,27 @@ async function fullReferenceExtraction(claim, candidateRefs, allReferences, tele
       }
 
       // Tier 2b: Verify the quote
-      const bestQuote = result.quotes[0]
-      const verification = verifyQuote(bestQuote.text, textData.content_text)
+      const rankedQuotes = rankEvidenceQuotes(result.quotes)
+      let matchedQuote = null
+      let matchedVerification = null
 
-      refDiag.quoteLength = bestQuote.text?.length ?? 0
-      refDiag.verificationStatus = verification.status
-      refDiag.quotePreview = bestQuote.text?.slice(0, 120) ?? null
-
-      if (verification.status === 'unverified') {
-        // Try second quote if available before counting as unverified
-        if (result.quotes.length > 1) {
-          const altVerification = verifyQuote(result.quotes[1].text, textData.content_text)
-          refDiag.altQuoteStatus = altVerification.status
-          refDiag.altQuotePreview = result.quotes[1].text?.slice(0, 120) ?? null
-
-          if (altVerification.status !== 'unverified') {
-            telemetry.verified_quotes = (telemetry.verified_quotes || 0) + 1
-            refDiag.result = 'matched-alt-quote'
-            diagnostics.push(refDiag)
-
-            const pageEstimate = altVerification.charOffset != null && textData.page_count
-              ? Math.floor(altVerification.charOffset / (textData.content_text.length / textData.page_count)) + 1
-              : result.quotes[1].page_estimate
-            return {
-              matched: true,
-              matchConfidence: altVerification.status === 'verified' ? 0.90 : 0.75,
-              matchTier: altVerification.status === 'verified' ? 'verified-extraction' : 'partial-extraction',
-              reference: {
-                id: candidateRef.reference_id,
-                name: candidateRef.display_alias,
-                page: pageEstimate,
-                excerpt: result.quotes[1].text
-              },
-              matchReasoning: result.reasoning
-            }
-          }
+      for (let quoteIndex = 0; quoteIndex < rankedQuotes.length; quoteIndex++) {
+        const quote = rankedQuotes[quoteIndex]
+        const verification = verifyQuote(quote.text, textData.content_text)
+        if (quoteIndex === 0) {
+          refDiag.quoteLength = quote.text?.length ?? 0
+          refDiag.verificationStatus = verification.status
+          refDiag.quotePreview = quote.text?.slice(0, 120) ?? null
+          refDiag.evidenceType = quote.evidence_type
         }
+        if (verification.status !== 'unverified') {
+          matchedQuote = quote
+          matchedVerification = verification
+          break
+        }
+      }
 
+      if (!matchedQuote || !matchedVerification) {
         telemetry.unverified_quotes = (telemetry.unverified_quotes || 0) + 1
         refDiag.result = 'unverified'
         diagnostics.push(refDiag)
@@ -443,24 +484,26 @@ async function fullReferenceExtraction(claim, candidateRefs, allReferences, tele
       }
 
       // Verified or partial match
-      const pageEstimate = verification.charOffset != null && textData.page_count
-        ? Math.floor(verification.charOffset / (textData.content_text.length / textData.page_count)) + 1
-        : bestQuote.page_estimate
+      const pageEstimate = matchedVerification.charOffset != null && textData.page_count
+        ? Math.floor(matchedVerification.charOffset / (textData.content_text.length / textData.page_count)) + 1
+        : matchedQuote.page_estimate
 
       telemetry.verified_quotes = (telemetry.verified_quotes || 0) + 1
       refDiag.result = 'matched'
-      refDiag.matchTier = verification.status === 'verified' ? 'verified-extraction' : 'partial-extraction'
+      refDiag.matchTier = matchedVerification.status === 'verified' ? 'verified-extraction' : 'partial-extraction'
+      refDiag.matchedEvidenceType = matchedQuote.evidence_type
       diagnostics.push(refDiag)
 
       return {
         matched: true,
-        matchConfidence: verification.status === 'verified' ? 0.95 : 0.80,
-        matchTier: verification.status === 'verified' ? 'verified-extraction' : 'partial-extraction',
+        matchConfidence: resolveExtractionMatchConfidence(matchedVerification.status, matchedQuote.evidence_type),
+        matchTier: matchedVerification.status === 'verified' ? 'verified-extraction' : 'partial-extraction',
         reference: {
           id: candidateRef.reference_id,
           name: candidateRef.display_alias,
           page: pageEstimate,
-          excerpt: bestQuote.text
+          excerpt: matchedQuote.text,
+          evidenceType: matchedQuote.evidence_type
         },
         matchReasoning: result.reasoning
       }
@@ -764,7 +807,8 @@ export async function matchAllClaimsToReferences(claims, references, onProgress,
           })
         }
       }).then((matchResult) => {
-        results[claimIndex] = matchResult
+        const normalizedMatchResult = applyMatchConfidenceToClaim(matchResult)
+        results[claimIndex] = normalizedMatchResult
         completed += 1
         const progressPayload = {
           current: completed,
@@ -774,7 +818,7 @@ export async function matchAllClaimsToReferences(claims, references, onProgress,
           stage: 'done'
         }
         onProgress?.(progressPayload)
-        onClaimResult?.({ ...progressPayload, claim: matchResult })
+        onClaimResult?.({ ...progressPayload, claim: normalizedMatchResult })
       }).catch((error) => {
         logger.error(`Claim matching failed for claim ${claim.id}:`, error)
         results[claimIndex] = {

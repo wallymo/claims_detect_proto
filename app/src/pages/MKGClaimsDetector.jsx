@@ -21,9 +21,11 @@ import { analyzeDocument as analyzeWithGemini, checkGeminiConnection, ALL_CLAIMS
 
 // Utils
 import { enrichClaimsWithPositions, addGlobalIndices } from '@/utils/textMatcher'
+import { dedupeClaimsByPageAndText, getClaimDedupOptions } from '@/utils/claimDedup'
 import { logger } from '@/utils/logger'
 
-const ANALYSIS_MODEL_LABEL = 'Google Gemini 3 Pro (Preview)'
+const ANALYSIS_MODEL_LABEL = 'Google Gemini 3.1 Pro (Preview)'
+const CLAIM_DEDUP_OPTIONS = getClaimDedupOptions()
 
 function formatMinutes(ms) {
   return `${(ms / 60000).toFixed(2)} min`
@@ -98,6 +100,29 @@ export default function MKGClaimsDetector({ demoMode = false }) {
       return addGlobalIndices(prev)
     })
   }, [])
+
+  // Last-line dedupe safety net for any path that reintroduces duplicates.
+  useEffect(() => {
+    if (!claims.length) return
+
+    const deduped = dedupeClaimsByPageAndText(claims, CLAIM_DEDUP_OPTIONS)
+    if (deduped.duplicateCount === 0) return
+
+    logger.info({
+      event: 'mkg_claim_dedupe_guard',
+      duplicates_removed: deduped.duplicateCount,
+      exact_duplicates_removed: deduped.exactDuplicateCount,
+      near_duplicates_removed: deduped.nearDuplicateCount,
+      unique_claims: deduped.uniqueCount,
+      original_claims: claims.length
+    })
+
+    const indexed = addGlobalIndices(deduped.claims)
+    if (activeClaimId && !indexed.some(c => c.id === activeClaimId)) {
+      setActiveClaimId(indexed[0]?.id || null)
+    }
+    setClaims(indexed)
+  }, [claims, activeClaimId])
 
   // Sync editable prompt when Claim Focus changes
   useEffect(() => {
@@ -202,10 +227,23 @@ export default function MKGClaimsDetector({ demoMode = false }) {
       }
 
       // STEP 3: Process claims
-      const claimsNeedingPositions = result.claims.filter(c => !c.position)
+      const rawDetectedClaims = Array.isArray(result.claims) ? result.claims : []
+      const dedupedDetected = dedupeClaimsByPageAndText(rawDetectedClaims, CLAIM_DEDUP_OPTIONS)
+      if (dedupedDetected.duplicateCount > 0) {
+        logger.info({
+          event: 'mkg_detected_claim_dedupe',
+          duplicates_removed: dedupedDetected.duplicateCount,
+          exact_duplicates_removed: dedupedDetected.exactDuplicateCount,
+          near_duplicates_removed: dedupedDetected.nearDuplicateCount,
+          unique_claims: dedupedDetected.uniqueCount,
+          original_claims: rawDetectedClaims.length
+        })
+      }
+
+      const claimsNeedingPositions = dedupedDetected.claims.filter(c => !c.position)
       const claimsWithPositions = claimsNeedingPositions.length > 0 && extractedPages.length > 0
-        ? enrichClaimsWithPositions(result.claims, extractedPages)
-        : result.claims
+        ? enrichClaimsWithPositions(dedupedDetected.claims, extractedPages)
+        : dedupedDetected.claims
 
       setClaims(addGlobalIndices(claimsWithPositions))
       setProcessingTime(Date.now() - startTime)
@@ -508,7 +546,7 @@ export default function MKGClaimsDetector({ demoMode = false }) {
                     <div className="modelPerformance">
                       <div className="resultRow">
                         <span className="resultLabel">Model</span>
-                        <span className="resultValue">{lastUsage?.modelDisplayName || 'Gemini 3 Pro (Preview)'}</span>
+                        <span className="resultValue">{lastUsage?.modelDisplayName || 'Gemini 3.1 Pro (Preview)'}</span>
                       </div>
                       <div className="resultRow">
                         <span className="resultLabel">Latency</span>

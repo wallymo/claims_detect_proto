@@ -28,11 +28,12 @@ import * as api from '@/services/api'
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.min.mjs`
 import { enrichClaimsWithPositions, addGlobalIndices } from '@/utils/textMatcher'
-import { dedupeClaimsByPageAndText } from '@/utils/claimDedup'
+import { dedupeClaimsByPageAndText, getClaimDedupOptions } from '@/utils/claimDedup'
 import { logger } from '@/utils/logger'
 
-const ANALYSIS_MODEL = 'gemini-3-pro'
-const ANALYSIS_MODEL_LABEL = 'Google Gemini 3 Pro (Preview)'
+const ANALYSIS_MODEL = 'gemini-3.1-pro-preview'
+const ANALYSIS_MODEL_LABEL = 'Google Gemini 3.1 Pro (Preview)'
+const CLAIM_DEDUP_OPTIONS = getClaimDedupOptions()
 
 const PROMPT_OPTIONS = [
   { id: 'all-claims', label: 'All Claims', promptKey: 'all' },
@@ -430,13 +431,15 @@ export default function MKG2ClaimsDetector() {
   useEffect(() => {
     if (!claims.length) return
 
-    const deduped = dedupeClaimsByPageAndText(claims)
+    const deduped = dedupeClaimsByPageAndText(claims, CLAIM_DEDUP_OPTIONS)
     if (deduped.duplicateCount === 0) return
 
     const indexedClaims = addGlobalIndices(deduped.claims)
     logger.info({
       event: 'mkg2_claim_dedupe_guard',
       duplicates_removed: deduped.duplicateCount,
+      exact_duplicates_removed: deduped.exactDuplicateCount,
+      near_duplicates_removed: deduped.nearDuplicateCount,
       unique_claims: deduped.uniqueCount,
       original_claims: claims.length
     })
@@ -735,12 +738,14 @@ export default function MKG2ClaimsDetector() {
     const _cached = readAnalysisCache(_cacheKey)
     if (_cached) {
       const cachedClaims = Array.isArray(_cached.claims) ? _cached.claims : []
-      const dedupedCached = dedupeClaimsByPageAndText(cachedClaims)
+      const dedupedCached = dedupeClaimsByPageAndText(cachedClaims, CLAIM_DEDUP_OPTIONS)
       const indexedCachedClaims = addGlobalIndices(dedupedCached.claims)
       if (dedupedCached.duplicateCount > 0) {
         logger.info({
           event: 'mkg2_cached_claim_dedupe',
           duplicates_removed: dedupedCached.duplicateCount,
+          exact_duplicates_removed: dedupedCached.exactDuplicateCount,
+          near_duplicates_removed: dedupedCached.nearDuplicateCount,
           unique_claims: dedupedCached.uniqueCount,
           original_claims: cachedClaims.length
         })
@@ -870,11 +875,13 @@ export default function MKG2ClaimsDetector() {
 
       // Process claims
       const rawDetectedClaims = Array.isArray(result.claims) ? result.claims : []
-      const dedupedDetected = dedupeClaimsByPageAndText(rawDetectedClaims)
+      const dedupedDetected = dedupeClaimsByPageAndText(rawDetectedClaims, CLAIM_DEDUP_OPTIONS)
       if (dedupedDetected.duplicateCount > 0) {
         logger.info({
           event: 'mkg2_detected_claim_dedupe',
           duplicates_removed: dedupedDetected.duplicateCount,
+          exact_duplicates_removed: dedupedDetected.exactDuplicateCount,
+          near_duplicates_removed: dedupedDetected.nearDuplicateCount,
           unique_claims: dedupedDetected.uniqueCount,
           original_claims: rawDetectedClaims.length,
           model: selectedModel
@@ -911,6 +918,8 @@ export default function MKG2ClaimsDetector() {
         analysis_total_ms: analysisTotalMs,
         original_claims: rawDetectedClaims.length,
         duplicates_removed: dedupedDetected.duplicateCount,
+        exact_duplicates_removed: dedupedDetected.exactDuplicateCount,
+        near_duplicates_removed: dedupedDetected.nearDuplicateCount,
         total_claims: indexedClaims.length,
         model: selectedModel,
         doc_type: selectedDocType
@@ -1868,7 +1877,7 @@ export default function MKG2ClaimsDetector() {
                       <div className="modelPerformance">
                         <div className="resultRow">
                           <span className="resultLabel">Model</span>
-                          <span className="resultValue">{lastUsage?.modelDisplayName || 'Gemini 3 Pro (Preview)'}</span>
+                          <span className="resultValue">{lastUsage?.modelDisplayName || 'Gemini 3.1 Pro (Preview)'}</span>
                         </div>
                         <div className="resultRow">
                           <span className="resultLabel">Claims Detected</span>

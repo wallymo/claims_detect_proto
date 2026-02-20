@@ -19,7 +19,7 @@ import { ThemeToggle } from '@/components/theme'
 import { getDefaultDocument } from '@/mocks/documents'
 import { getClaimsForDocument, CLAIM_TYPES } from '@/mocks/claims'
 
-const GEMINI_MODEL_LABEL = 'Google Gemini 3 Pro (Preview)'
+const GEMINI_MODEL_LABEL = 'Google Gemini 3.1 Pro (Preview)'
 
 function formatMinutes(ms) {
   return `${(ms / 60000).toFixed(2)} min`

@@ -13,6 +13,11 @@
 
 import { GoogleGenAI } from '@google/genai'
 import { logger } from '@/utils/logger'
+import {
+  dedupeClaimsByPageAndText,
+  getClaimDedupOptions,
+  CLAIM_DEDUP_DEBUG_ENABLED
+} from '@/utils/claimDedup'
 
 // Singleton client instance
 let geminiClient = null
@@ -31,10 +36,11 @@ const getGeminiClient = () => {
 
 // Model configuration - SSOT for model selection
 const GEMINI_MODEL_FROM_ENV = String(import.meta.env.VITE_GEMINI_MODEL || '').trim()
-export const GEMINI_MODEL = GEMINI_MODEL_FROM_ENV || 'gemini-3-pro-preview'
+export const GEMINI_MODEL = GEMINI_MODEL_FROM_ENV || 'gemini-3.1-pro-preview'
 
 // Friendly display names for models
 export const MODEL_DISPLAY_NAMES = {
+  'gemini-3.1-pro-preview': 'Gemini 3.1 Pro (Preview)',
   'gemini-3-pro-preview': 'Gemini 3 Pro (Preview)',
   'gemini-2.5-pro': 'Gemini 2.5 Pro',
   'gemini-2.5-flash': 'Gemini 2.5 Flash',
@@ -47,6 +53,7 @@ export const MODEL_DISPLAY_NAMES = {
 // Pricing per 1M tokens (USD) - approximate rates for Gemini Pro
 // Update these based on current Google AI pricing
 const PRICING = {
+  'gemini-3.1-pro-preview': { input: 1.25, output: 5.00 },  // $/1M tokens
   'gemini-3-pro-preview': { input: 1.25, output: 5.00 },  // $/1M tokens
   'gemini-2.5-pro': { input: 1.25, output: 5.00 }, // keep in sync with current Google pricing
   'gemini-2.5-flash': { input: 0.075, output: 0.30 },
@@ -235,51 +242,58 @@ function normalizeRawClaims(rawClaims) {
     .filter(Boolean)
 }
 
-// Strip citation/reference markers from claim text for display and dedup comparison.
-// Conservative: only removes superscript Unicode digits and symbol markers (†‡§*).
-// Does NOT remove plain trailing numbers — those may be part of the claim (e.g. "N = 240").
-function stripCitationMarkers(text) {
-  return String(text || '')
-    .replace(/[\u00B9\u00B2\u00B3\u2070-\u2079]+/g, '') // superscript digits ¹²³⁰-⁹
-    .replace(/[†‡§]+/g, '')                               // dagger / annotation markers (not * — valid in stats)
-    .replace(/\s+/g, ' ')
-    .trim()
+function dedupeRawClaims(rawClaims, options = {}, sourceLabel = 'raw') {
+  const candidates = rawClaims.map((claim, index) => ({
+    id: `raw_${sourceLabel}_${index + 1}`,
+    text: claim.claim,
+    page: claim.page,
+    confidence: Number.isFinite(claim.confidence) ? claim.confidence / 100 : 0.6,
+    position: { x: claim.x, y: claim.y },
+    __raw: claim
+  }))
+
+  const deduped = dedupeClaimsByPageAndText(candidates, options)
+  return {
+    ...deduped,
+    claims: deduped.claims.map(claim => claim.__raw)
+  }
 }
 
-function claimDeduplicationKey(claim) {
-  // Key on page + normalized text only — position is intentionally excluded.
-  // Same sentence on the same page is always a duplicate regardless of coordinate jitter.
-  // Cross-page duplicates (slide vs appendix) are intentionally preserved.
-  const text = stripCitationMarkers(String(claim.claim || '')).toLowerCase().replace(/\s+/g, ' ').trim()
-  const page = claim.page || 0
-  return `${page}|${text}`
-}
-
-function mergeRawClaims(primaryClaims, visualClaims) {
+function mergeRawClaims(primaryClaims, visualClaims, dedupOptions) {
   // Merge primary union + visual sweep. Dedup key is page+text (no coordinates) —
   // same sentence on the same page is always one claim regardless of where it sits.
   // Cross-page duplicates (e.g. slide vs appendix) are intentionally preserved.
   // Filter visual-sweep claims with (0,0) coords — text echoes without real position data.
   const validVisualClaims = visualClaims.filter(c => c.x !== 0 || c.y !== 0)
+  const merged = [
+    ...primaryClaims.map(claim => ({ ...claim, _source: 'primary' })),
+    ...validVisualClaims.map(claim => ({ ...claim, _source: 'visual-sweep' }))
+  ]
+  const deduped = dedupeRawClaims(merged, dedupOptions, 'merged')
 
-  const seen = new Set()
-  const merged = []
-
-  for (const claim of primaryClaims) {
-    const key = claimDeduplicationKey(claim)
-    seen.add(key)
-    merged.push({ ...claim, _source: 'primary' })
+  if (CLAIM_DEDUP_DEBUG_ENABLED && Array.isArray(deduped.mergeEvents) && deduped.mergeEvents.length > 0) {
+    logger.info({
+      event: 'gemini_claim_dedup_debug',
+      scope: 'merge_raw_claims',
+      merge_events_count: deduped.mergeEvents.length,
+      sample: deduped.mergeEvents.slice(0, 8)
+    })
   }
 
-  for (const claim of validVisualClaims) {
-    const key = claimDeduplicationKey(claim)
-    if (!seen.has(key)) {
-      seen.add(key)
-      merged.push({ ...claim, _source: 'visual-sweep' })
+  const visualNewUnique = Math.max(0, deduped.claims.length - primaryClaims.length)
+  const visualDeduped = Math.max(0, validVisualClaims.length - visualNewUnique)
+
+  return {
+    claims: deduped.claims,
+    stats: {
+      visualFiltered: visualClaims.length - validVisualClaims.length,
+      visualDeduped,
+      visualNewUnique,
+      duplicateCount: deduped.duplicateCount,
+      exactDuplicateCount: deduped.exactDuplicateCount,
+      nearDuplicateCount: deduped.nearDuplicateCount
     }
   }
-
-  return merged
 }
 
 function rawClaimsToFrontendClaims(rawClaims) {
@@ -718,11 +732,10 @@ ${OUTPUT_DEDUP_RULES}
     }
     const allPrimaryResponses = passOutcomes.map(o => o.response)
 
-    // Union claims across all successful passes — each pass may catch unique claims
-    // due to Gemini non-determinism. Dedup by page+text (no coordinates) so the same
-    // sentence on the same page is never counted twice regardless of position jitter.
-    const primaryDedup = new Set()
-    const unionedPrimaryClaims = []
+    // Union claims across all successful passes via shared dedup rules so
+    // detection and UI-level collapse use the same behavior.
+    const detectionDedupOptions = getClaimDedupOptions()
+    let unionedPrimaryClaims = []
     const perPassCounts = []
     let parseFailures = 0
 
@@ -737,15 +750,24 @@ ${OUTPUT_DEDUP_RULES}
         logger.warn(`[Gemini] Pass ${pass} JSON parse failed, skipping: ${err.message}`)
       }
 
-      let newInPass = 0
-      for (const claim of passClaims) {
-        const key = claimDeduplicationKey(claim)
-        if (!primaryDedup.has(key)) {
-          primaryDedup.add(key)
-          unionedPrimaryClaims.push(claim)
-          newInPass++
-        }
+      const beforeUnique = unionedPrimaryClaims.length
+      const deduped = dedupeRawClaims(
+        [...unionedPrimaryClaims, ...passClaims],
+        detectionDedupOptions,
+        'primary-pass'
+      )
+      unionedPrimaryClaims = deduped.claims
+      const newInPass = Math.max(0, unionedPrimaryClaims.length - beforeUnique)
+
+      if (CLAIM_DEDUP_DEBUG_ENABLED && Array.isArray(deduped.mergeEvents) && deduped.mergeEvents.length > 0) {
+        logger.info({
+          event: 'gemini_claim_dedup_debug',
+          scope: `primary_pass_${pass}`,
+          merge_events_count: deduped.mergeEvents.length,
+          sample: deduped.mergeEvents.slice(0, 6)
+        })
       }
+
       perPassCounts.push({ pass, total: passClaims.length, newUnique: newInPass })
       logger.info(
         `[Gemini] Pass ${pass}/${DETECTION_PASSES}: ${passClaims.length} claims detected, ${newInPass} new unique, ${unionedPrimaryClaims.length} total union`
@@ -803,7 +825,8 @@ ${OUTPUT_DEDUP_RULES}
     }
 
     onProgress?.(88, 'Analyzing document...')
-    const mergedRawClaims = mergeRawClaims(unionedPrimaryClaims, visualClaims)
+    const merged = mergeRawClaims(unionedPrimaryClaims, visualClaims, detectionDedupOptions)
+    const mergedRawClaims = merged.claims
     const claims = rawClaimsToFrontendClaims(mergedRawClaims)
 
     onProgress?.(95, 'Analyzing document...')
@@ -823,12 +846,12 @@ ${OUTPUT_DEDUP_RULES}
 
     // Log for reproducibility tracking
     const modelVersion = allPrimaryResponses[0]?.modelVersion || GEMINI_MODEL
-    const visualFiltered = visualClaims.length - visualClaims.filter(c => c.x !== 0 || c.y !== 0).length
-    const visualNewUnique = claims.length - unionedPrimaryClaims.length
-    const visualDeduped = visualClaims.filter(c => c.x !== 0 || c.y !== 0).length - visualNewUnique
+    const visualFiltered = merged.stats.visualFiltered
+    const visualNewUnique = merged.stats.visualNewUnique
+    const visualDeduped = merged.stats.visualDeduped
 
     logger.info(
-      `[Gemini] Model: ${modelVersion}, Claims: ${claims.length} (primary_union=${unionedPrimaryClaims.length}, visual_raw=${visualClaims.length}, visual_filtered_zero=${visualFiltered}, visual_deduped=${visualDeduped}, visual_new=${visualNewUnique}, passes=${DETECTION_PASSES}, visual_enabled=${GEMINI_VISUAL_SWEEP_ENABLED}), Tokens: ${inputTokens}/${outputTokens}, Cost: $${cost.toFixed(4)}`
+      `[Gemini] Model: ${modelVersion}, Claims: ${claims.length} (primary_union=${unionedPrimaryClaims.length}, visual_raw=${visualClaims.length}, visual_filtered_zero=${visualFiltered}, visual_deduped=${visualDeduped}, visual_new=${visualNewUnique}, dedup_exact=${merged.stats.exactDuplicateCount}, dedup_near=${merged.stats.nearDuplicateCount}, passes=${DETECTION_PASSES}, visual_enabled=${GEMINI_VISUAL_SWEEP_ENABLED}), Tokens: ${inputTokens}/${outputTokens}, Cost: $${cost.toFixed(4)}`
     )
 
     // Store run diagnostics in window for console inspection
@@ -929,8 +952,7 @@ Rules:
 - Only match if the reference actually substantiates the claim. A low confidence match is better than a false positive.`
 
   try {
-    // Use gemini-2.0-flash for matching — gemini-3-pro-preview doesn't support responseMimeType JSON
-    const matchingModel = 'gemini-2.0-flash'
+    const matchingModel = GEMINI_MODEL
     const response = await client.models.generateContent({
       model: matchingModel,
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -974,14 +996,14 @@ Rules:
 export async function extractSupportingQuote(claimText, referenceText, referenceName) {
   const client = getGeminiClient()
 
-  const prompt = `You are an MLR (Medical, Legal, Regulatory) reviewer checking whether a reference document contains content relevant to a specific claim. Your job is to help human reviewers find the right passages — err on the side of INCLUSION.
+  const prompt = `You are an MLR (Medical, Legal, Regulatory) reviewer checking whether a reference document contains content relevant to a specific claim. Your job is to help human reviewers find the right passages — err on the side of INCLUSION without fabricating evidence.
 
 CLAIM: "${claimText}"
 
 REFERENCE DOCUMENT (${referenceName}):
 ${referenceText}
 
-TASK: Find the exact sentence(s) in this reference that support, partially support, or are directly relevant to this claim. Quote them VERBATIM — do not paraphrase, do not combine sentences, do not add words.
+TASK: Find the exact sentence(s), table cells, chart labels, or figure captions in this reference that support, partially support, or are directly relevant to this claim. Quote them VERBATIM — do not paraphrase, do not combine sentences, do not add words.
 
 Return JSON:
 {
@@ -989,7 +1011,8 @@ Return JSON:
   "quotes": [
     {
       "text": "exact verbatim quote copied from the reference above",
-      "page_estimate": number or null
+      "page_estimate": number or null,
+      "evidence_type": "text_quote" | "table_cell" | "figure_caption" | "chart_label"
     }
   ],
   "reasoning": "1-2 sentence explanation of how the quote relates to the claim"
@@ -1001,13 +1024,14 @@ Rules:
   - Source statistics from which the claim's numbers could be calculated or inferred
   - Related efficacy, safety, or endpoint data on the same topic
   - Context that a human reviewer would want to see alongside this claim
+- Graphs and tables are valid evidence when their labels/cells/captions contain the relevant data point.
 - Quotes must be VERBATIM text from the reference document above. Copy-paste, do not rephrase.
 - Multiple quotes are allowed if multiple sentences together relate to the claim.
 - Only return supported=false if the reference contains NO content relevant to the claim's topic.
-- When in doubt, return supported=true — it is better to surface a potentially relevant quote than to miss a real match. Human reviewers will make the final call.`
+- Use only evidence present in the provided extracted reference text. Do not OCR, do not invent missing numbers, and do not infer unlabeled chart values.`
 
   try {
-    const matchingModel = 'gemini-2.0-flash'
+    const matchingModel = GEMINI_MODEL
     const response = await client.models.generateContent({
       model: matchingModel,
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -1061,9 +1085,8 @@ Return a JSON object with:
 }`
 
   try {
-    // Use gemini-2.0-flash — supports responseMimeType JSON (gemini-3-pro-preview doesn't)
     const response = await client.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model: GEMINI_MODEL,
       contents: [
         {
           role: 'user',
@@ -1157,6 +1180,7 @@ export async function debugGeminiAPI() {
     // Try different model name formats
     logger.info('Testing different model name formats...')
     const modelFormats = [
+      'gemini-3.1-pro-preview',
       'gemini-3-pro-preview',
       'gemini-3-flash-preview',
       'gemini-2.5-flash',

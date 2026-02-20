@@ -121,7 +121,7 @@ async function main() {
         // Store results
         db.prepare(`
           UPDATE reference_facts
-          SET facts_json = ?, extraction_status = 'indexed', model_used = 'gemini-2.0-flash',
+          SET facts_json = ?, extraction_status = 'indexed', model_used = 'gemini-3.1-pro-preview',
               error_message = NULL, updated_at = CURRENT_TIMESTAMP
           WHERE reference_id = ?
         `).run(JSON.stringify(facts), ref.id)
