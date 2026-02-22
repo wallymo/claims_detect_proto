@@ -66,9 +66,7 @@ Add `mediaResolution: 'MEDIA_RESOLUTION_HIGH'` to Gemini's primary detection pas
 
 ## Files Changed
 
-- `app/src/services/gemini.js` — shared visual block, sweep prompt, merge fix, media resolution
-- `app/src/services/openai.js` — inject shared visual block into prompt
-- `app/src/services/anthropic.js` — inject shared visual block into prompt
+- `app/src/services/gemini.js` — shared visual block, sweep prompt, merge fix, media resolution (only file modified — OpenAI/Anthropic receive changes automatically via their existing imports from gemini.js)
 
 ## What This Does NOT Change
 
