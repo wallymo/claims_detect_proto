@@ -425,15 +425,17 @@ function mergeRawClaims(primaryClaims, visualClaims, dedupOptions) {
   const CHART_FALLBACK_X = 85 // Right margin — opposite left-aligned text pins
   const CHART_FALLBACK_Y = 30 // Upper slide region where charts typically live
 
+  let chartFallbackIndex = 0
   const validVisualClaims = visualClaims.filter(c => {
     if (c.x !== 0 || c.y !== 0) return true // Has real coordinates — keep
     // (0,0) claim: check if it's an echo of a primary claim
     const key = `${c.page}|${normalizeDedupText(c.claim)}`
     if (primaryTextKeys.has(key)) return false // Text echo — drop
-    // Chart-derived claim without coords — assign right-margin fallback
+    // Chart-derived claim without coords — assign right-margin fallback, distributed vertically
     c.x = CHART_FALLBACK_X
-    c.y = CHART_FALLBACK_Y
+    c.y = Math.min(CHART_FALLBACK_Y + (chartFallbackIndex * 8), 50)
     c._chartFallbackPosition = true
+    chartFallbackIndex++
     return true
   })
 
@@ -513,6 +515,26 @@ Focus on what each graphic CLAIMS through its visual representation:
 - **Legend categories** that imply a comparison (e.g., "Yes vs No", "Treatment vs Control").
 - **Sample sizes (N=)** shown on axis labels or legends.
 ${topRegionHint}
+
+## MOA / Pathway Diagrams
+- **Mechanism of action diagrams**: What selectivity, binding, or inhibition is claimed? (e.g., "Drug X selectively inhibits JAK1 without affecting JAK3")
+- **Receptor binding illustrations**: What receptor specificity or affinity is shown?
+- **Cascade/signaling diagrams**: What downstream effects are being claimed? What pathways are activated or blocked?
+- **Pharmacodynamic illustrations**: What biological process does the drug modulate?
+- Any labeled mechanism step that implies therapeutic advantage is a claim.
+
+## Flowcharts / Treatment Algorithms
+- **Treatment sequencing diagrams**: What ordering or positioning is recommended? (e.g., "After failure of first-line therapy, switch to Drug X")
+- **Patient selection criteria**: What eligibility, stratification, or biomarker criteria appear at decision nodes?
+- **Clinical decision trees**: What outcomes or test results drive treatment decisions?
+- **Recommended pathways**: Do they imply comparative advantage over alternatives?
+- Each decision node containing a clinical criterion is a potential claim.
+
+## Medical Illustrations / Anatomical Diagrams
+- **Site-of-action diagrams**: What tissue penetration, organ targeting, or drug distribution is shown? These imply PK/PD claims.
+- **Before/after comparisons**: Visual efficacy demonstrations (dermatology, ophthalmology, etc.) are claims requiring substantiation.
+- **Timeline diagrams**: Onset of action, duration of response, or treatment milestones shown visually are temporal efficacy claims.
+- **Drug distribution illustrations**: BBB crossing, tissue concentration, bioavailability shown visually = PK claims.
 
 # Rules
 - Describe what the chart SHOWS as a relationship or comparison — not just individual bar heights or dot positions.
@@ -711,6 +733,47 @@ export const OUTPUT_DEDUP_RULES = `
 - If the same claim appears on DIFFERENT pages/slides, keep one instance per page/slide.
 - Do NOT dedupe across the full document.`
 
+export const VISUAL_CLAIMS_INSTRUCTIONS = `
+# Visual Element Claims
+IMPORTANT: Charts, graphs, tables, diagrams, and illustrations contain claims that require substantiation just like text. Analyze EVERY visual element.
+
+## Charts & Graphs
+- Extract the RELATIONSHIP each chart shows (comparison, trend, superiority), not just axis labels
+- Bar/line/pie/scatter charts, Kaplan-Meier curves, forest plots, waterfall/spider/swimmer plots
+- Each distinct comparison or data point visible in a chart is a SEPARATE claim
+
+## Tables
+- EVERY data cell with an outcome, rate, percentage, p-value, hazard ratio, odds ratio, or delta is a claim
+- Table titles framing a claim count as claims themselves
+
+## MOA / Pathway Diagrams
+- Mechanism of action diagrams showing selectivity, receptor binding, or pathway inhibition are claims
+- "Selectively targets X receptor" shown visually = efficacy/specificity claim
+- Cascade/signaling diagrams showing downstream effects = mechanism claims
+- Any labeled step implying therapeutic advantage requires substantiation
+
+## Flowcharts / Treatment Algorithms
+- Treatment sequencing diagrams imply positioning claims (e.g., "use after first-line failure")
+- Patient selection criteria at decision nodes = population claims
+- Recommended pathways implying comparative advantage over alternatives
+
+## Medical Illustrations
+- Anatomical diagrams showing site-of-action, tissue penetration, or drug distribution = PK/PD claims
+- Blood-brain barrier crossing, organ targeting = bioavailability claims
+- Before/after visual comparisons = efficacy claims requiring substantiation
+
+## Infographics & Pictographs
+- Icon arrays showing proportions (e.g., 7/10 figures highlighted = "70% response rate")
+- Timeline graphics showing onset of action or duration of response = temporal efficacy claims
+- Percentage wheels, pictographs with statistics
+
+## Visual Element Rules
+- Chart titles and axis labels that frame a claim ARE claims
+- Annotation markers (†, ‡, §, *) near visual elements must be flagged
+- Extract only explicit values visible in the graphic — do NOT estimate unlabeled bar heights
+- Each distinct comparison, trend, or data relationship = separate claim
+- When uncertain about a visual element, include with lower confidence rather than omitting`
+
 // User-facing prompt for All Claims (shown in UI, editable)
 export const ALL_CLAIMS_PROMPT_USER = `# Task
 Extract ALL claims requiring MLR substantiation from this pharmaceutical document.
@@ -725,6 +788,7 @@ Extract ALL claims requiring MLR substantiation from this pharmaceutical documen
 - Each distinct data point, statistic, or substantiation-requiring statement is a SEPARATE claim
 - If two statements need different references to substantiate them, they are separate claims
 - Include charts/graphs/infographics with statistical claims
+${VISUAL_CLAIMS_INSTRUCTIONS}
 - Flag ALL annotation markers (†, ‡, §, *) — each dagger/double dagger references a footnote with study details, populations, or statistical qualifiers that require substantiation
 - Complete, self-contained statements only
 - Deduplicate PER PAGE/SLIDE only (never across the full document)
@@ -765,6 +829,7 @@ Extract DISEASE STATE claims requiring MLR substantiation.
 - Each distinct data point or substantiation-requiring statement is a SEPARATE claim
 - If two statements need different references, they are separate claims
 - Include visual elements with statistical claims
+${VISUAL_CLAIMS_INSTRUCTIONS}
 - Flag ALL annotation markers (†, ‡, §, *) — each links to substantiation-requiring footnote text
 - Deduplicate PER PAGE/SLIDE only (never across the full document)
 
@@ -803,6 +868,7 @@ Extract MEDICATION claims requiring MLR substantiation.
 - If two statements need different references, they are separate claims
 - Flag ALL annotation markers (†, ‡, §, *) — each dagger/double dagger is a distinct substantiation point
 - Deduplicate PER PAGE/SLIDE only (never across the full document)
+${VISUAL_CLAIMS_INSTRUCTIONS}
 
 # Confidence (0-100)
 90-100: "Clinically proven to reduce X" | 70-89: "Starts working in 3 days" | 50-69: "Helps patients feel better" | 30-49: "New era in treatment"
@@ -944,6 +1010,7 @@ ${OUTPUT_DEDUP_RULES}
         config: {
           systemInstruction: SYSTEM_INSTRUCTION,
           temperature: 0, topP: 0.1, topK: 1,
+          mediaResolution: 'MEDIA_RESOLUTION_HIGH',
           maxOutputTokens: 64000,
           responseMimeType: 'application/json',
           responseJsonSchema: CLAIMS_JSON_SCHEMA
