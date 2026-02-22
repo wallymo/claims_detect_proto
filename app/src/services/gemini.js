@@ -16,6 +16,7 @@ import { logger } from '@/utils/logger'
 import {
   dedupeClaimsByPageAndText,
   getClaimDedupOptions,
+  normalizeDedupText,
   CLAIM_DEDUP_DEBUG_ENABLED
 } from '@/utils/claimDedup'
 
@@ -36,11 +37,10 @@ const getGeminiClient = () => {
 
 // Model configuration - SSOT for model selection
 const GEMINI_MODEL_FROM_ENV = String(import.meta.env.VITE_GEMINI_MODEL || '').trim()
-export const GEMINI_MODEL = GEMINI_MODEL_FROM_ENV || 'gemini-3.1-pro-preview'
+export const GEMINI_MODEL = GEMINI_MODEL_FROM_ENV || 'gemini-3-pro-preview'
 
 // Friendly display names for models
 export const MODEL_DISPLAY_NAMES = {
-  'gemini-3.1-pro-preview': 'Gemini 3.1 Pro (Preview)',
   'gemini-3-pro-preview': 'Gemini 3 Pro (Preview)',
   'gemini-2.5-pro': 'Gemini 2.5 Pro',
   'gemini-2.5-flash': 'Gemini 2.5 Flash',
@@ -53,7 +53,6 @@ export const MODEL_DISPLAY_NAMES = {
 // Pricing per 1M tokens (USD) - approximate rates for Gemini Pro
 // Update these based on current Google AI pricing
 const PRICING = {
-  'gemini-3.1-pro-preview': { input: 1.25, output: 5.00 },  // $/1M tokens
   'gemini-3-pro-preview': { input: 1.25, output: 5.00 },  // $/1M tokens
   'gemini-2.5-pro': { input: 1.25, output: 5.00 }, // keep in sync with current Google pricing
   'gemini-2.5-flash': { input: 0.075, output: 0.30 },
@@ -61,6 +60,136 @@ const PRICING = {
   'gemini-1.5-flash': { input: 0.075, output: 0.30 },
   'gemini-1.5-pro': { input: 1.25, output: 5.00 },
   'default': { input: 1.25, output: 5.00 }
+}
+
+const GEMINI_MODEL_FALLBACK_ORDER = [
+  'gemini-3-pro-preview',
+  'gemini-2.5-pro'
+]
+
+const resolvedGeminiModelCache = new Map()
+
+function normalizeModelName(model) {
+  return String(model || '').trim()
+}
+
+function getGeminiModelCandidates(preferredModel) {
+  const preferred = normalizeModelName(preferredModel) || GEMINI_MODEL
+  const cached = normalizeModelName(resolvedGeminiModelCache.get(preferred))
+  const candidates = []
+  const push = (model) => {
+    const normalized = normalizeModelName(model)
+    if (!normalized || candidates.includes(normalized)) return
+    candidates.push(normalized)
+  }
+
+  if (cached) push(cached)
+  push(preferred)
+
+  const preferredIndex = GEMINI_MODEL_FALLBACK_ORDER.indexOf(preferred)
+  if (preferredIndex >= 0) {
+    GEMINI_MODEL_FALLBACK_ORDER.slice(preferredIndex + 1).forEach(push)
+  } else {
+    GEMINI_MODEL_FALLBACK_ORDER.forEach(push)
+  }
+
+  return candidates
+}
+
+function shouldRetryWithFallbackModel(error) {
+  const message = String(error?.message || '').toLowerCase()
+  return (
+    message.includes('resource_exhausted') ||
+    message.includes('quota') ||
+    message.includes('rate limit') ||
+    message.includes('429') ||
+    message.includes('timeout') ||
+    message.includes('timed out') ||
+    message.includes('fetch failed') ||
+    message.includes('network') ||
+    message.includes('service unavailable') ||
+    message.includes('temporarily unavailable') ||
+    message.includes('deadline exceeded') ||
+    message.includes('internal') ||
+    message.includes('500') ||
+    message.includes('502') ||
+    message.includes('503') ||
+    message.includes('504') ||
+    message.includes('unsupported model') ||
+    message.includes('not found') ||
+    message.includes('forbidden') ||
+    message.includes('permission') ||
+    message.includes('access')
+  )
+}
+
+function shortErrorMessage(error) {
+  const raw = String(error?.message || error || '')
+  const compact = raw.replace(/\s+/g, ' ').trim()
+  return compact.length > 180 ? `${compact.slice(0, 177)}...` : compact
+}
+
+function summarizeSettledFailures(settledResults, prefix = 'pass') {
+  const failures = []
+  for (let i = 0; i < settledResults.length; i += 1) {
+    const result = settledResults[i]
+    if (!result || result.status !== 'rejected') continue
+    failures.push(`${prefix}${i + 1}: ${shortErrorMessage(result.reason)}`)
+  }
+  if (failures.length === 0) return []
+  return [...new Set(failures)]
+}
+
+function toUserFacingGeminiError(error) {
+  const message = String(error?.message || error || '').replace(/\s+/g, ' ').trim()
+  const lower = message.toLowerCase()
+
+  if (
+    lower.includes('"code":429') ||
+    (lower.includes('429') && (lower.includes('quota') || lower.includes('rate limit')))
+  ) {
+    return 'Gemini API quota exceeded (429) for both primary and fallback models. Check Gemini billing/rate limits and retry.'
+  }
+
+  if (lower.includes('fetch failed') || lower.includes('network') || lower.includes('service unavailable')) {
+    return 'Gemini API network/service error. Retry in a minute; if it persists, check network access and Gemini API status.'
+  }
+
+  return message || 'Gemini analysis failed'
+}
+
+async function generateContentWithModelFallback(client, { preferredModel, contents, config, purpose = 'request' }) {
+  const preferred = normalizeModelName(preferredModel) || GEMINI_MODEL
+  const candidates = getGeminiModelCandidates(preferred)
+  let lastError = null
+
+  for (let i = 0; i < candidates.length; i += 1) {
+    const model = candidates[i]
+    try {
+      const response = await client.models.generateContent({
+        model,
+        contents,
+        config
+      })
+      resolvedGeminiModelCache.set(preferred, model)
+      if (model !== preferred) {
+        logger.warn(`[Gemini] Using fallback model "${model}" for ${purpose} (preferred "${preferred}")`)
+      }
+      return { response, model }
+    } catch (error) {
+      lastError = error
+      const hasNext = i < candidates.length - 1
+      if (!hasNext || !shouldRetryWithFallbackModel(error)) {
+        throw error
+      }
+      const nextModel = candidates[i + 1]
+      logger.warn(
+        `[Gemini] Model "${model}" failed for ${purpose}: ${shortErrorMessage(error)}. Trying "${nextModel}".`
+      )
+    }
+  }
+
+  throw lastError || new Error('No Gemini model could complete the request')
 }
 
 function parseBooleanEnvFlag(value, fallback) {
@@ -79,6 +208,10 @@ const GEMINI_VISUAL_SWEEP_ENABLED = parseBooleanEnvFlag(
   import.meta.env.VITE_GEMINI_VISUAL_SWEEP_ENABLED,
   true
 )
+const GEMINI_VISUAL_SWEEP_REQUIRED = parseBooleanEnvFlag(
+  import.meta.env.VITE_GEMINI_VISUAL_SWEEP_REQUIRED,
+  true
+)
 
 function parsePositiveInt(value, fallback) {
   const parsed = Number.parseInt(value, 10)
@@ -89,6 +222,25 @@ const DETECTION_PASSES = Math.min(
   parsePositiveInt(import.meta.env.VITE_DETECTION_PASSES, 1),
   5  // Hard cap — more than 5 parallel calls is unreasonable
 )
+const GEMINI_VISUAL_SWEEP_TIMEOUT_MS = parsePositiveInt(
+  import.meta.env.VITE_GEMINI_VISUAL_SWEEP_TIMEOUT_MS,
+  90_000
+)
+
+function withTimeout(promise, timeoutMs, label = 'Operation') {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return promise
+
+  let timer = null
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+  })
+
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer)
+  })
+}
 // System instruction (moved out of user prompt for efficiency)
 // Generic — doc-type-specific guidance is in the user prompt
 const SYSTEM_INSTRUCTION = `You are a veteran MLR (Medical, Legal, Regulatory) reviewer for pharmaceutical promotional materials. Your mission: surface EVERY statement that could require substantiation. Flag 20 borderline phrases rather than let 1 slip through. When unsure, include it with lower confidence rather than omit.
@@ -261,10 +413,30 @@ function dedupeRawClaims(rawClaims, options = {}, sourceLabel = 'raw') {
 
 function mergeRawClaims(primaryClaims, visualClaims, dedupOptions) {
   // Merge primary union + visual sweep. Dedup key is page+text (no coordinates) —
-  // same sentence on the same page is always one claim regardless of where it sits.
-  // Cross-page duplicates (e.g. slide vs appendix) are intentionally preserved.
-  // Filter visual-sweep claims with (0,0) coords — text echoes without real position data.
-  const validVisualClaims = visualClaims.filter(c => c.x !== 0 || c.y !== 0)
+  // same sentence on the same page/slide is always one claim regardless of where it sits.
+  // Cross-page/slide repeats (e.g. slide vs appendix) are intentionally preserved.
+
+  // For (0,0) visual claims: check if they're text echoes (same text as primary) or
+  // genuine chart-derived claims. Echoes are dropped; chart claims get a right-margin
+  // fallback position so they appear distinct from left-aligned text claims.
+  const primaryTextKeys = new Set(
+    primaryClaims.map(c => `${c.page}|${normalizeDedupText(c.claim)}`)
+  )
+  const CHART_FALLBACK_X = 85 // Right margin — opposite left-aligned text pins
+  const CHART_FALLBACK_Y = 30 // Upper slide region where charts typically live
+
+  const validVisualClaims = visualClaims.filter(c => {
+    if (c.x !== 0 || c.y !== 0) return true // Has real coordinates — keep
+    // (0,0) claim: check if it's an echo of a primary claim
+    const key = `${c.page}|${normalizeDedupText(c.claim)}`
+    if (primaryTextKeys.has(key)) return false // Text echo — drop
+    // Chart-derived claim without coords — assign right-margin fallback
+    c.x = CHART_FALLBACK_X
+    c.y = CHART_FALLBACK_Y
+    c._chartFallbackPosition = true
+    return true
+  })
+
   const merged = [
     ...primaryClaims.map(claim => ({ ...claim, _source: 'primary' })),
     ...validVisualClaims.map(claim => ({ ...claim, _source: 'visual-sweep' }))
@@ -282,6 +454,7 @@ function mergeRawClaims(primaryClaims, visualClaims, dedupOptions) {
 
   const visualNewUnique = Math.max(0, deduped.claims.length - primaryClaims.length)
   const visualDeduped = Math.max(0, validVisualClaims.length - visualNewUnique)
+  const chartFallbackCount = validVisualClaims.filter(c => c._chartFallbackPosition).length
 
   return {
     claims: deduped.claims,
@@ -289,6 +462,7 @@ function mergeRawClaims(primaryClaims, visualClaims, dedupOptions) {
       visualFiltered: visualClaims.length - validVisualClaims.length,
       visualDeduped,
       visualNewUnique,
+      chartFallbackPositioned: chartFallbackCount,
       duplicateCount: deduped.duplicateCount,
       exactDuplicateCount: deduped.exactDuplicateCount,
       nearDuplicateCount: deduped.nearDuplicateCount
@@ -314,26 +488,40 @@ function buildVisualSweepPrompt(docType) {
     : ''
 
   return `# Task
-Run a SECOND PASS focused on claims embedded in GRAPHICAL elements — charts, graphs, tables, infographics, and diagrams. The first pass focused on text; this pass targets visual data representations.
+Run a SECOND PASS focused on claims embedded in GRAPHICAL elements — charts, graphs, tables, infographics, and diagrams. The first pass already captured text and speaker notes; this pass targets VISUAL DATA and the RELATIONSHIPS that charts communicate.
 
-# What to Extract — VISUAL DATA, not just labels
-Focus on the DATA the graphic is communicating, not just text around it:
-- **Bar/line/pie charts**: What outcome does the chart show? If a bar represents "47% reduction" or a line shows a downward trend with a label, that is a claim. Extract the specific value and what it measures.
-- **Kaplan-Meier / survival curves**: Separation between curves, hazard ratios, median survival times shown graphically.
+IMPORTANT: Do NOT repeat or paraphrase speaker notes or callout text. Focus exclusively on what the GRAPHIC ITSELF shows — the comparisons, trends, and data relationships visible in the visual elements.
+
+# What to Extract — RELATIONSHIPS and DATA, not labels
+Focus on what each graphic CLAIMS through its visual representation:
+
+## Chart Types
+- **Grouped/stacked bar charts**: What comparison is being shown? Which group is higher/lower? Extract the relationship (e.g., "GBS-DS 3-5 patients showed higher rates of poor outcomes than GBS-DS 0-2 across all time points").
+- **Dot plots / strip plots / beeswarm plots**: What distribution pattern is visible? Are values elevated or clustered for certain groups? (e.g., "NfL levels were elevated across all GBS subtypes compared to healthy controls").
+- **Box-and-whisker plots**: Median differences, spread, outliers between groups.
+- **Bar/line/pie charts**: What outcome or trend does the chart show? Extract specific labeled values and what they measure.
+- **Scatter plots**: Correlation direction, clustering, labeled data points.
+- **Kaplan-Meier / survival curves**: Separation between curves, hazard ratios, median survival times.
 - **Forest plots**: Point estimates, confidence intervals, overall effect sizes.
-- **Tables**: EVERY data cell that states an outcome, rate, percentage, p-value, hazard ratio, odds ratio, or delta. Each cell with a distinct substantiation point is a separate claim.
-- **Waterfall / spider / swimmer plots**: Individual response rates, durations, thresholds shown.
-- **Infographics with numbers**: Icons paired with statistics (e.g., clock icon + "Works in 3 days"), pictographs, percentage wheels.
-- **Annotation markers (†, ‡, §, *)**: Symbols appearing ON or NEAR visual elements that link to study qualifiers — both the annotated visual claim AND the footnote are claims.
+- **Tables**: EVERY data cell that states an outcome, rate, percentage, p-value, hazard ratio, odds ratio, or delta.
+- **Waterfall / spider / swimmer plots**: Individual response rates, durations, thresholds.
+- **Infographics with numbers**: Icons paired with statistics, pictographs, percentage wheels.
+
+## Also Extract
+- **Chart titles and axis labels** that frame a claim (e.g., "Factors Associated With Poor Outcomes" frames the entire chart as a claim).
+- **Annotation markers (†, ‡, §, *)** on or near visual elements — both the annotated visual claim AND the footnote.
+- **Legend categories** that imply a comparison (e.g., "Yes vs No", "Treatment vs Control").
+- **Sample sizes (N=)** shown on axis labels or legends.
 ${topRegionHint}
 
 # Rules
-- Read the VISUAL representation, not just surrounding text. A bar at 47% is a claim even if no text label says "47%".
-- Extract only explicit values visible in the graphic. Do NOT estimate or fabricate numbers from bar heights or line positions — only extract values that are labeled or printed.
-- Split separate data points into separate claims — each table cell, each bar, each curve metric.
+- Describe what the chart SHOWS as a relationship or comparison — not just individual bar heights or dot positions.
+- Extract only explicit values visible in the graphic. Do NOT estimate unlabeled bar heights or dot positions.
+- Each distinct comparison, trend, or data point in a graphic is a separate claim.
+- Deduplicate PER PAGE/SLIDE only (never across the full document).
 - Do not invent values not visible in the graphic.
 - If uncertain, include with lower confidence rather than omitting.
-- Do NOT output duplicate claims on the same page.
+- Do NOT output claims that simply repeat speaker notes text verbatim.
 
 # Output
 Return ONLY JSON matching the required schema.`
@@ -518,9 +706,10 @@ export function promptHasDocTypeScaffold(promptText) {
 
 export const OUTPUT_DEDUP_RULES = `
 # Output Hygiene
-- Do NOT return duplicate claims.
-- If the same claim text appears multiple times on the SAME page, return only one instance.
-- If the same claim appears on DIFFERENT pages, keep one instance per page.`
+- Deduplication scope is PER PAGE/SLIDE only.
+- If the same claim text appears multiple times on the SAME page/slide, return only one instance.
+- If the same claim appears on DIFFERENT pages/slides, keep one instance per page/slide.
+- Do NOT dedupe across the full document.`
 
 // User-facing prompt for All Claims (shown in UI, editable)
 export const ALL_CLAIMS_PROMPT_USER = `# Task
@@ -538,7 +727,7 @@ Extract ALL claims requiring MLR substantiation from this pharmaceutical documen
 - Include charts/graphs/infographics with statistical claims
 - Flag ALL annotation markers (†, ‡, §, *) — each dagger/double dagger references a footnote with study details, populations, or statistical qualifiers that require substantiation
 - Complete, self-contained statements only
-- Do NOT output duplicate claims on the same page
+- Deduplicate PER PAGE/SLIDE only (never across the full document)
 
 # Confidence (0-100)
 90-100: Explicit stats, specific numbers | 70-89: Benefit promises, comparisons | 50-69: Borderline phrasing | 30-49: Weak promotional signal
@@ -577,7 +766,7 @@ Extract DISEASE STATE claims requiring MLR substantiation.
 - If two statements need different references, they are separate claims
 - Include visual elements with statistical claims
 - Flag ALL annotation markers (†, ‡, §, *) — each links to substantiation-requiring footnote text
-- Do NOT output duplicate claims on the same page
+- Deduplicate PER PAGE/SLIDE only (never across the full document)
 
 # Confidence (0-100)
 90-100: Explicit stats, prevalence data | 70-89: Burden assertions, unmet needs | 50-69: Borderline | 30-49: Weak contextual
@@ -613,7 +802,7 @@ Extract MEDICATION claims requiring MLR substantiation.
 - Each distinct data point or substantiation-requiring statement is a SEPARATE claim
 - If two statements need different references, they are separate claims
 - Flag ALL annotation markers (†, ‡, §, *) — each dagger/double dagger is a distinct substantiation point
-- Do NOT output duplicate claims on the same page
+- Deduplicate PER PAGE/SLIDE only (never across the full document)
 
 # Confidence (0-100)
 90-100: "Clinically proven to reduce X" | 70-89: "Starts working in 3 days" | 50-69: "Helps patients feel better" | 30-49: "New era in treatment"
@@ -648,7 +837,8 @@ function buildTrainingExamplesBlock(trainingExamples) {
   return `\n\nPRIOR APPROVED EXAMPLES (BRAND + ECOSYSTEM):\nThe following claims were previously reviewed and confirmed as valid examples:\n${lines}\n\nUse these as calibration examples. Detect claims of similar type, language pattern, and specificity.\n`
 }
 
-export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null, _pageImages = null, docType = 'speaker-notes', factInventory = '', trainingExamples = []) {
+export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null, _pageImages = null, docType = 'speaker-notes', factInventory = '', trainingExamples = [], { modelOverride } = {}) {
+  const activeModel = modelOverride || GEMINI_MODEL
   const client = getGeminiClient()
   // Kept for API-compat with other providers; Gemini uses native PDF input.
   void _pageImages
@@ -701,12 +891,51 @@ ${OUTPUT_DEDUP_RULES}
   onProgress?.(25, 'Analyzing document...')
 
   try {
+    let visualSweepPromise = null
+    if (GEMINI_VISUAL_SWEEP_ENABLED) {
+      const visualSweepPrompt = buildVisualSweepPrompt(docType)
+      onProgress?.(30, 'Analyzing document...')
+      visualSweepPromise = withTimeout(
+        generateContentWithModelFallback(client, {
+          preferredModel: activeModel,
+          purpose: 'visual sweep',
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: 'application/pdf',
+                    data: base64Data
+                  }
+                },
+                { text: visualSweepPrompt }
+              ]
+            }
+          ],
+          config: {
+            systemInstruction: SYSTEM_INSTRUCTION,
+            temperature: 0,
+            topP: 0.1,
+            topK: 1,
+            mediaResolution: 'MEDIA_RESOLUTION_HIGH',
+            maxOutputTokens: 64000,
+            responseMimeType: 'application/json',
+            responseJsonSchema: CLAIMS_JSON_SCHEMA
+          }
+        }),
+        GEMINI_VISUAL_SWEEP_TIMEOUT_MS,
+        'Gemini visual sweep'
+      )
+    }
+
     // Fire all primary passes simultaneously — pick the one with the highest claim count.
     // Gemini is non-deterministic even at temperature 0; running passes in parallel and
     // selecting the richest result improves recall without adding sequential latency.
     const passPromises = Array.from({ length: DETECTION_PASSES }, (_, i) =>
-      client.models.generateContent({
-        model: GEMINI_MODEL,
+      generateContentWithModelFallback(client, {
+        preferredModel: activeModel,
+        purpose: `claim detection pass ${i + 1}`,
         contents: [{ role: 'user', parts: [
           { inlineData: { mimeType: 'application/pdf', data: base64Data } },
           // Each pass gets a unique cache-bust suffix so Gemini treats them as independent requests
@@ -719,7 +948,7 @@ ${OUTPUT_DEDUP_RULES}
           responseMimeType: 'application/json',
           responseJsonSchema: CLAIMS_JSON_SCHEMA
         }
-      }).then(response => ({ pass: i + 1, response }))
+      }).then(({ response, model }) => ({ pass: i + 1, response, model }))
     )
 
     // allSettled: a single transient API failure doesn't abort the whole analysis
@@ -727,8 +956,21 @@ ${OUTPUT_DEDUP_RULES}
     const passOutcomes = passSettled
       .filter(r => r.status === 'fulfilled')
       .map(r => r.value)
+
+    const passFailures = summarizeSettledFailures(passSettled, 'pass ')
+    if (passFailures.length > 0) {
+      logger.warn({
+        event: 'gemini_detection_pass_failures',
+        failed_passes: passFailures.length,
+        sample: passFailures.slice(0, 6)
+      })
+    }
+
     if (passOutcomes.length === 0) {
-      throw new Error('All detection passes failed — Gemini API may be unavailable')
+      const reason = passFailures.length > 0
+        ? ` Reasons: ${passFailures.slice(0, 3).join(' | ')}`
+        : ''
+      throw new Error(`All detection passes failed — Gemini API may be unavailable.${reason}`)
     }
     const allPrimaryResponses = passOutcomes.map(o => o.response)
 
@@ -787,41 +1029,21 @@ ${OUTPUT_DEDUP_RULES}
 
     let visualSweepResponse = null
     let visualClaims = []
-    if (GEMINI_VISUAL_SWEEP_ENABLED) {
-      onProgress?.(75, 'Analyzing document...')
-      const visualSweepPrompt = buildVisualSweepPrompt(docType)
+    if (visualSweepPromise) {
+      onProgress?.(78, 'Analyzing document...')
+      try {
+        const visualSweepCall = await visualSweepPromise
 
-      visualSweepResponse = await client.models.generateContent({
-        model: GEMINI_MODEL,
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                inlineData: {
-                  mimeType: 'application/pdf',
-                  data: base64Data
-                }
-              },
-              { text: visualSweepPrompt }
-            ]
-          }
-        ],
-        config: {
-          systemInstruction: SYSTEM_INSTRUCTION,
-          temperature: 0,
-          topP: 0.1,
-          topK: 1,
-          mediaResolution: 'MEDIA_RESOLUTION_HIGH',
-          maxOutputTokens: 64000,
-          responseMimeType: 'application/json',
-          responseJsonSchema: CLAIMS_JSON_SCHEMA
+        visualSweepResponse = visualSweepCall.response
+        const visualText = visualSweepResponse.candidates?.[0]?.content?.parts?.[0]?.text || visualSweepResponse.text
+        const visualJson = parseJsonResponse(visualText, 'Gemini visual sweep response')
+        visualClaims = normalizeRawClaims(visualJson.claims)
+      } catch (visualSweepError) {
+        if (GEMINI_VISUAL_SWEEP_REQUIRED) {
+          throw new Error(`Visual sweep failed: ${visualSweepError.message}`)
         }
-      })
-
-      const visualText = visualSweepResponse.candidates?.[0]?.content?.parts?.[0]?.text || visualSweepResponse.text
-      const visualJson = parseJsonResponse(visualText, 'Gemini visual sweep response')
-      visualClaims = normalizeRawClaims(visualJson.claims)
+        logger.warn(`[Gemini] Visual sweep skipped: ${visualSweepError.message}`)
+      }
     }
 
     onProgress?.(88, 'Analyzing document...')
@@ -842,16 +1064,18 @@ ${OUTPUT_DEDUP_RULES}
     const visualUsage = extractUsageMetadata(visualSweepResponse)
     inputTokens += visualUsage.inputTokens
     outputTokens += visualUsage.outputTokens
-    const cost = calculateCost(GEMINI_MODEL, inputTokens, outputTokens)
+    const resolvedModel = passOutcomes[0]?.model || activeModel
+    const cost = calculateCost(resolvedModel, inputTokens, outputTokens)
 
     // Log for reproducibility tracking
-    const modelVersion = allPrimaryResponses[0]?.modelVersion || GEMINI_MODEL
+    const modelVersion = allPrimaryResponses[0]?.modelVersion || resolvedModel
     const visualFiltered = merged.stats.visualFiltered
     const visualNewUnique = merged.stats.visualNewUnique
     const visualDeduped = merged.stats.visualDeduped
+    const chartFallback = merged.stats.chartFallbackPositioned
 
     logger.info(
-      `[Gemini] Model: ${modelVersion}, Claims: ${claims.length} (primary_union=${unionedPrimaryClaims.length}, visual_raw=${visualClaims.length}, visual_filtered_zero=${visualFiltered}, visual_deduped=${visualDeduped}, visual_new=${visualNewUnique}, dedup_exact=${merged.stats.exactDuplicateCount}, dedup_near=${merged.stats.nearDuplicateCount}, passes=${DETECTION_PASSES}, visual_enabled=${GEMINI_VISUAL_SWEEP_ENABLED}), Tokens: ${inputTokens}/${outputTokens}, Cost: $${cost.toFixed(4)}`
+      `[Gemini] Model: ${modelVersion}, Claims: ${claims.length} (primary_union=${unionedPrimaryClaims.length}, visual_raw=${visualClaims.length}, visual_filtered_echo=${visualFiltered}, visual_deduped=${visualDeduped}, visual_new=${visualNewUnique}, chart_fallback=${chartFallback}, dedup_exact=${merged.stats.exactDuplicateCount}, dedup_near=${merged.stats.nearDuplicateCount}, passes=${DETECTION_PASSES}, visual_enabled=${GEMINI_VISUAL_SWEEP_ENABLED}), Tokens: ${inputTokens}/${outputTokens}, Cost: $${cost.toFixed(4)}`
     )
 
     // Store run diagnostics in window for console inspection
@@ -863,7 +1087,8 @@ ${OUTPUT_DEDUP_RULES}
       perPassCounts,
       visual: {
         raw: visualClaims.length,
-        filteredZeroCoords: visualFiltered,
+        filteredEchoes: visualFiltered,
+        chartFallbackPositioned: chartFallback,
         deduped: visualDeduped,
         newUnique: visualNewUnique,
       },
@@ -876,13 +1101,13 @@ ${OUTPUT_DEDUP_RULES}
       window.__claimsDiagnostics.push(runDiagnostics)
     }
 
-    const pricing = PRICING[GEMINI_MODEL] || PRICING['default']
+    const pricing = PRICING[modelVersion] || PRICING['default']
     return {
       success: true,
       claims,
       usage: {
-        model: GEMINI_MODEL,
-        modelDisplayName: MODEL_DISPLAY_NAMES[GEMINI_MODEL] || GEMINI_MODEL,
+        model: modelVersion,
+        modelDisplayName: MODEL_DISPLAY_NAMES[modelVersion] || modelVersion,
         inputTokens,
         outputTokens,
         cost,
@@ -894,7 +1119,7 @@ ${OUTPUT_DEDUP_RULES}
     logger.error('Gemini analysis error:', error)
     return {
       success: false,
-      error: error.message,
+      error: toUserFacingGeminiError(error),
       claims: [],
       usage: null
     }
@@ -952,9 +1177,9 @@ Rules:
 - Only match if the reference actually substantiates the claim. A low confidence match is better than a false positive.`
 
   try {
-    const matchingModel = GEMINI_MODEL
-    const response = await client.models.generateContent({
-      model: matchingModel,
+    const { response, model: matchingModel } = await generateContentWithModelFallback(client, {
+      preferredModel: GEMINI_MODEL,
+      purpose: 'reference matching',
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
         temperature: 0,
@@ -1031,9 +1256,9 @@ Rules:
 - Use only evidence present in the provided extracted reference text. Do not OCR, do not invent missing numbers, and do not infer unlabeled chart values.`
 
   try {
-    const matchingModel = GEMINI_MODEL
-    const response = await client.models.generateContent({
-      model: matchingModel,
+    const { response, model: matchingModel } = await generateContentWithModelFallback(client, {
+      preferredModel: GEMINI_MODEL,
+      purpose: 'quote extraction',
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
         temperature: 0,
@@ -1085,8 +1310,9 @@ Return a JSON object with:
 }`
 
   try {
-    const response = await client.models.generateContent({
-      model: GEMINI_MODEL,
+    const { response } = await generateContentWithModelFallback(client, {
+      preferredModel: GEMINI_MODEL,
+      purpose: 'pdf text extraction',
       contents: [
         {
           role: 'user',
@@ -1124,15 +1350,22 @@ Return a JSON object with:
 /**
  * Check if the Gemini API is configured and working
  */
-export async function checkGeminiConnection() {
+export async function checkGeminiConnection(preferredModel = GEMINI_MODEL) {
   try {
     const client = getGeminiClient()
-    const response = await client.models.generateContent({
-      model: GEMINI_MODEL,
+    const { response, model } = await generateContentWithModelFallback(client, {
+      preferredModel,
+      purpose: 'connection check',
       contents: [{ role: 'user', parts: [{ text: 'Say "connected" if you can read this.' }] }]
     })
     const text = response.candidates?.[0]?.content?.parts?.[0]?.text || response.text || 'connected'
-    return { connected: true, response: text }
+    const normalizedPreferredModel = normalizeModelName(preferredModel) || GEMINI_MODEL
+    return {
+      connected: true,
+      response: text,
+      model,
+      fallbackUsed: model !== normalizedPreferredModel
+    }
   } catch (error) {
     return { connected: false, error: error.message }
   }
@@ -1180,8 +1413,8 @@ export async function debugGeminiAPI() {
     // Try different model name formats
     logger.info('Testing different model name formats...')
     const modelFormats = [
-      'gemini-3.1-pro-preview',
       'gemini-3-pro-preview',
+      'gemini-2.5-pro',
       'gemini-3-flash-preview',
       'gemini-2.5-flash',
       'gemini-2.0-flash',

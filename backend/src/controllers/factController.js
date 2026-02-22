@@ -56,7 +56,7 @@ export const factController = {
       // Run extraction async (non-blocking)
       extractFacts(ref.content_text, { pageCount: ref.page_count })
         .then(facts => {
-          ReferenceFact.createOrUpdate(refId, facts, 'indexed', 'gemini-3.1-pro-preview')
+          ReferenceFact.createOrUpdate(refId, facts, 'indexed', 'gemini-3-pro-preview')
           console.log(`Indexed ref ${refId} (${ref.display_alias}): ${facts.length} facts`)
         })
         .catch(err => {

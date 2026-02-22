@@ -20,8 +20,8 @@ import LibraryTab from '@/components/claims-detector/LibraryTab'
 import TrainingDataOverlay from '@/components/mkg/TrainingDataOverlay/TrainingDataOverlay'
 
 // Services
-import { analyzeDocument as analyzeWithGemini, checkGeminiConnection, ALL_CLAIMS_PROMPT_USER, MEDICATION_PROMPT_USER, getDocTypeInstructions } from '@/services/gemini'
-import { matchAllClaimsToReferences, getMatchingStats } from '@/services/referenceMatching'
+import { analyzeDocument as analyzeWithGemini, checkGeminiConnection, ALL_CLAIMS_PROMPT_USER, MEDICATION_PROMPT_USER, getDocTypeInstructions, GEMINI_MODEL } from '@/services/gemini'
+import { getMatchingStats } from '@/services/referenceMatching'
 import * as api from '@/services/api'
 
 // Utils
@@ -31,8 +31,10 @@ import { enrichClaimsWithPositions, addGlobalIndices } from '@/utils/textMatcher
 import { dedupeClaimsByPageAndText, getClaimDedupOptions } from '@/utils/claimDedup'
 import { logger } from '@/utils/logger'
 
-const ANALYSIS_MODEL = 'gemini-3.1-pro-preview'
-const ANALYSIS_MODEL_LABEL = 'Google Gemini 3.1 Pro (Preview)'
+const MODEL_OPTIONS = [
+  { id: 'gemini', label: 'Gemini 3 Pro (Preview)', modelId: GEMINI_MODEL },
+  { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', modelId: 'gemini-2.5-pro' }
+]
 const CLAIM_DEDUP_OPTIONS = getClaimDedupOptions()
 
 const PROMPT_OPTIONS = [
@@ -49,41 +51,223 @@ const PROMPT_DISPLAY_TEXT = {
 
 // ===== Analysis Result Cache =====
 
-const ANALYSIS_CACHE_NS = 'claims_analysis_v2'
+const ANALYSIS_CACHE_NS = 'claims_analysis_v3'
+const ANALYSIS_CACHE_VERSION = String(import.meta.env.VITE_ANALYSIS_CACHE_VERSION || '2026-02-20').trim() || '2026-02-20'
+const ANALYSIS_BROWSER_CACHE_NS = `${ANALYSIS_CACHE_NS}:browser`
 
-function makeAnalysisCacheKey(file, model, promptKey, editablePrompt, docType, brandId, refIds) {
+function parseBooleanEnvFlag(value, fallback) {
+  if (value === undefined || value === null || value === '') return fallback
+  const normalized = String(value).trim().toLowerCase()
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false
+  return fallback
+}
+
+function parsePositiveIntEnv(value, fallback) {
+  const parsed = Number.parseInt(value, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+const PERSISTENT_ANALYSIS_CACHE_ENABLED = parseBooleanEnvFlag(
+  import.meta.env.VITE_PERSISTENT_ANALYSIS_CACHE_ENABLED,
+  true
+)
+const ANALYSIS_CACHE_STORE_DIAGNOSTICS = parseBooleanEnvFlag(
+  import.meta.env.VITE_ANALYSIS_CACHE_STORE_DIAGNOSTICS,
+  false
+)
+
+const fileShaPromiseCache = new WeakMap()
+const analysisCacheMetaByKey = new Map()
+
+function stableStringHash(value) {
+  const source = String(value || '')
   let h = 0
-  for (let i = 0; i < editablePrompt.length; i++) {
-    h = (Math.imul(31, h) + editablePrompt.charCodeAt(i)) | 0
+  for (let i = 0; i < source.length; i += 1) {
+    h = (Math.imul(31, h) + source.charCodeAt(i)) | 0
   }
-  // Include a refs fingerprint so detection-only results don't collide with matched results.
-  // Sort ref IDs for stable ordering regardless of load order.
-  const refsFingerprint = refIds && refIds.length > 0 ? [...refIds].sort().join(',') : 'norefs'
-  return `${ANALYSIS_CACHE_NS}|${file.name}|${file.size}|${file.lastModified}|${model}|${promptKey}|${docType}|${brandId || ''}|${h}|${refsFingerprint}`
+  return (h >>> 0).toString(16).padStart(8, '0')
 }
 
-function readAnalysisCache(key) {
-  try { return JSON.parse(sessionStorage.getItem(key) || 'null') } catch { return null }
+function makeReferenceFingerprint(refIds) {
+  return refIds && refIds.length > 0 ? [...refIds].sort((a, b) => a - b).join(',') : 'norefs'
 }
 
-function writeAnalysisCache(key, claims, extras = {}) {
+function rememberAnalysisCacheDescriptor(descriptor) {
+  analysisCacheMetaByKey.set(descriptor.key, descriptor)
+  if (analysisCacheMetaByKey.size <= 300) return
+  const oldest = analysisCacheMetaByKey.keys().next().value
+  if (oldest) analysisCacheMetaByKey.delete(oldest)
+}
+
+function getAnalysisCacheDescriptor(key) {
+  return analysisCacheMetaByKey.get(key) || null
+}
+
+function readBrowserAnalysisCache(key) {
+  if (!key) return null
   try {
-    const existing = readAnalysisCache(key) || {}
-    const payload = {
-      ts: Date.now(),
-      claims,
-      analysisMs: Number.isFinite(extras.analysisMs) ? extras.analysisMs : existing.analysisMs,
-      usage: extras.usage !== undefined ? extras.usage : existing.usage,
-      matchingStats: extras.matchingStats !== undefined ? extras.matchingStats : existing.matchingStats
-    }
-    sessionStorage.setItem(key, JSON.stringify(payload))
+    return JSON.parse(localStorage.getItem(`${ANALYSIS_BROWSER_CACHE_NS}|${key}`) || 'null')
+  } catch {
+    return null
+  }
+}
+
+function writeBrowserAnalysisCache(key, payload) {
+  if (!key) return
+  try {
+    localStorage.setItem(`${ANALYSIS_BROWSER_CACHE_NS}|${key}`, JSON.stringify(payload))
   } catch {
     /* quota */
   }
 }
 
+function deleteBrowserAnalysisCache(key) {
+  if (!key) return
+  try { localStorage.removeItem(`${ANALYSIS_BROWSER_CACHE_NS}|${key}`) } catch { /* ignore */ }
+}
+
+function normalizePayloadClaims(claims) {
+  const normalized = Array.isArray(claims) ? claims : []
+  if (ANALYSIS_CACHE_STORE_DIAGNOSTICS) return normalized
+  return normalized.map((claim) => {
+    if (!claim || typeof claim !== 'object') return claim
+    const next = { ...claim }
+    delete next.diagnostics
+    return next
+  })
+}
+
+function buildAnalysisCachePayload(claims, extras = {}, existing = null) {
+  const base = existing && typeof existing === 'object' ? existing : {}
+  const payload = {
+    ts: Date.now(),
+    cacheVersion: ANALYSIS_CACHE_VERSION,
+    claims: normalizePayloadClaims(claims),
+    analysisMs: Number.isFinite(extras.analysisMs) ? extras.analysisMs : base.analysisMs,
+    usage: extras.usage !== undefined ? extras.usage : base.usage,
+    matchingStats: extras.matchingStats !== undefined ? extras.matchingStats : base.matchingStats
+  }
+
+  if (ANALYSIS_CACHE_STORE_DIAGNOSTICS && extras.diagnostics !== undefined) {
+    payload.diagnostics = extras.diagnostics
+  }
+  return payload
+}
+
+async function sha256Hex(input) {
+  if (typeof crypto === 'undefined' || !crypto.subtle) {
+    return `fallback_${stableStringHash(input)}`
+  }
+  const enc = new TextEncoder()
+  const bytes = typeof input === 'string' ? enc.encode(input) : input
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+async function getFileSha256(file) {
+  if (!file) return ''
+  if (fileShaPromiseCache.has(file)) return fileShaPromiseCache.get(file)
+
+  const promise = (async () => {
+    try {
+      const buffer = await file.arrayBuffer()
+      return await sha256Hex(buffer)
+    } catch {
+      return `fallback_${stableStringHash(`${file.name}|${file.size}|${file.lastModified}`)}`
+    }
+  })()
+
+  fileShaPromiseCache.set(file, promise)
+  return promise
+}
+
+async function makeAnalysisCacheDescriptor(file, model, promptKey, editablePrompt, docType, brandId, refIds) {
+  const fileSha = await getFileSha256(file)
+  const promptHash = stableStringHash(editablePrompt)
+  const referencesFingerprint = makeReferenceFingerprint(refIds)
+  const normalizedDocType = docType || 'speaker-notes'
+  const normalizedBrandId = Number.isFinite(Number(brandId)) ? Number(brandId) : null
+
+  const key = [
+    ANALYSIS_CACHE_NS,
+    ANALYSIS_CACHE_VERSION,
+    fileSha,
+    model,
+    promptKey,
+    normalizedDocType,
+    normalizedBrandId || '',
+    promptHash,
+    referencesFingerprint
+  ].join('|')
+
+  const descriptor = {
+    key,
+    meta: {
+      cache_version: ANALYSIS_CACHE_VERSION,
+      brand_id: normalizedBrandId,
+      file_sha256: fileSha,
+      model,
+      prompt_key: promptKey,
+      prompt_hash: promptHash,
+      doc_type: normalizedDocType,
+      reference_fingerprint: referencesFingerprint,
+      diagnostics_enabled: ANALYSIS_CACHE_STORE_DIAGNOSTICS
+    }
+  }
+  rememberAnalysisCacheDescriptor(descriptor)
+  return descriptor
+}
+
+async function readAnalysisCache(key) {
+  if (!key) return null
+  const localPayload = readBrowserAnalysisCache(key)
+  if (!PERSISTENT_ANALYSIS_CACHE_ENABLED) return localPayload
+
+  try {
+    const cache = await api.getAnalysisCache(key)
+    if (cache?.payload) {
+      const payload = cache.payload
+      if (!payload.ts) {
+        const fallbackTs = cache.updated_at || cache.created_at
+        payload.ts = fallbackTs ? new Date(fallbackTs).getTime() : Date.now()
+      }
+      writeBrowserAnalysisCache(key, payload)
+      return payload
+    }
+  } catch (err) {
+    logger.warn('Persistent analysis cache read failed, falling back to browser cache:', err.message)
+  }
+
+  return localPayload
+}
+
+function writeAnalysisCache(key, claims, extras = {}) {
+  if (!key) return
+  const existing = readBrowserAnalysisCache(key) || null
+  const payload = buildAnalysisCachePayload(claims, extras, existing)
+  writeBrowserAnalysisCache(key, payload)
+
+  if (!PERSISTENT_ANALYSIS_CACHE_ENABLED) return
+  const descriptor = getAnalysisCacheDescriptor(key)
+  if (!descriptor) return
+
+  void api.upsertAnalysisCache({
+    key,
+    meta: descriptor.meta,
+    payload
+  }).catch((err) => {
+    logger.warn('Persistent analysis cache write failed:', err.message)
+  })
+}
+
 function deleteAnalysisCache(key) {
-  try { sessionStorage.removeItem(key) } catch { /* ignore */ }
+  if (!key) return
+  deleteBrowserAnalysisCache(key)
+  if (!PERSISTENT_ANALYSIS_CACHE_ENABLED) return
+  void api.deleteAnalysisCacheEntry(key).catch((err) => {
+    logger.warn('Persistent analysis cache delete failed:', err.message)
+  })
 }
 
 function formatTimeAgo(ts) {
@@ -182,6 +366,15 @@ function normalizeFactText(text) {
 }
 
 const MATCHED_CLAIM_FIELDS = ['matched', 'matchConfidence', 'matchTier', 'reference', 'matchReasoning']
+const MATCHING_TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled'])
+const MATCHING_JOB_POLL_INTERVAL_MS = Math.max(
+  400,
+  Number.parseInt(import.meta.env.VITE_MATCHING_JOB_POLL_INTERVAL_MS || '1000', 10) || 1000
+)
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 function mergeMatchFields(existingClaim, matchedClaim) {
   if (!matchedClaim) return existingClaim
@@ -206,7 +399,9 @@ export default function MKG2ClaimsDetector() {
   const fileInputRef = useRef(null)
 
   // Settings state
-  const selectedModel = ANALYSIS_MODEL
+  const [selectedModelId, setSelectedModelId] = useState('gemini')
+  const selectedModelOption = MODEL_OPTIONS.find(m => m.id === selectedModelId) || MODEL_OPTIONS[0]
+  const selectedModel = selectedModelOption.modelId
   const [selectedPrompt, _setSelectedPrompt] = useState('all-claims')
   const [editablePrompt, setEditablePrompt] = useState('')
   const [isEditingPrompt, setIsEditingPrompt] = useState(false)
@@ -247,6 +442,9 @@ export default function MKG2ClaimsDetector() {
   const [hasCachedResult, setHasCachedResult] = useState(false)
   const currentCacheKeyRef = useRef(null)
   const cancelAnalysisRef = useRef(false)
+  const matchingJobIdRef = useRef(null)
+  const matchingCancelRequestedRef = useRef(false)
+  const matchingEventSourceRef = useRef(null)
 
   // Claims state
   const [claims, setClaims] = useState([])
@@ -314,6 +512,22 @@ export default function MKG2ClaimsDetector() {
     ).size,
     [ecosystemTrainingExamples]
   )
+
+  const cancelActiveMatchingJob = useCallback(async () => {
+    if (matchingEventSourceRef.current) {
+      matchingEventSourceRef.current.close()
+      matchingEventSourceRef.current = null
+    }
+
+    const jobId = matchingJobIdRef.current
+    if (!jobId) return
+
+    try {
+      await api.cancelReferenceMatchingJob(jobId)
+    } catch (err) {
+      logger.warn(`Could not cancel matching job ${jobId}:`, err.message)
+    }
+  }, [])
 
   // Load brands, references, and folders on mount
   useEffect(() => {
@@ -415,6 +629,13 @@ export default function MKG2ClaimsDetector() {
     }, 1000)
     return () => clearInterval(interval)
   }, [isAnalyzing, isMatching])
+
+  useEffect(() => {
+    return () => {
+      matchingCancelRequestedRef.current = true
+      void cancelActiveMatchingJob()
+    }
+  }, [cancelActiveMatchingJob])
 
   // Ensure claims have global indices
   useEffect(() => {
@@ -678,6 +899,10 @@ export default function MKG2ClaimsDetector() {
   const handleUploadClick = () => fileInputRef.current?.click()
 
   const handleRemoveDocument = () => {
+    cancelAnalysisRef.current = true
+    matchingCancelRequestedRef.current = true
+    void cancelActiveMatchingJob()
+    matchingJobIdRef.current = null
     setUploadedFile(null)
     setUploadState('empty')
     setClaims([])
@@ -710,32 +935,63 @@ export default function MKG2ClaimsDetector() {
 
   // Proactively check if current file+settings combo has a cached result
   useEffect(() => {
-    if (!uploadedFile) {
-      setHasCachedResult(false)
-      return
+    let cancelled = false
+
+    const checkCachedResult = async () => {
+      if (!uploadedFile) {
+        if (!cancelled) setHasCachedResult(false)
+        return
+      }
+
+      try {
+        const promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
+        const refIds = referenceDocuments.map(r => r.id)
+        const descriptor = await makeAnalysisCacheDescriptor(
+          uploadedFile,
+          selectedModel,
+          promptKey,
+          editablePrompt,
+          selectedDocType || 'speaker-notes',
+          selectedBrandId,
+          refIds
+        )
+        if (cancelled) return
+        const cached = await readAnalysisCache(descriptor.key)
+        if (!cancelled) setHasCachedResult(!!cached)
+      } catch (err) {
+        if (!cancelled) {
+          logger.warn('Could not resolve analysis cache status:', err.message)
+          setHasCachedResult(false)
+        }
+      }
     }
-    const _promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
-    const _refIds = referenceDocuments.map(r => r.id)
-    const key = makeAnalysisCacheKey(
-      uploadedFile, selectedModel, _promptKey, editablePrompt,
-      selectedDocType || 'speaker-notes', selectedBrandId, _refIds
-    )
-    const cached = readAnalysisCache(key)
-    setHasCachedResult(!!cached)
+
+    void checkCachedResult()
+    return () => {
+      cancelled = true
+    }
   }, [uploadedFile, selectedModel, selectedPrompt, editablePrompt, selectedDocType, selectedBrandId, referenceDocuments])
 
   const handleAnalyze = async () => {
     if (!uploadedFile) return
     cancelAnalysisRef.current = false
+    matchingCancelRequestedRef.current = false
+    matchingJobIdRef.current = null
 
     const _promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
     const _refIds = referenceDocuments.map(r => r.id)
-    const _cacheKey = makeAnalysisCacheKey(
-      uploadedFile, selectedModel, _promptKey, editablePrompt,
-      selectedDocType || 'speaker-notes', selectedBrandId, _refIds
+    const cacheDescriptor = await makeAnalysisCacheDescriptor(
+      uploadedFile,
+      selectedModel,
+      _promptKey,
+      editablePrompt,
+      selectedDocType || 'speaker-notes',
+      selectedBrandId,
+      _refIds
     )
+    const _cacheKey = cacheDescriptor.key
     currentCacheKeyRef.current = _cacheKey
-    const _cached = readAnalysisCache(_cacheKey)
+    const _cached = await readAnalysisCache(_cacheKey)
     if (_cached) {
       const cachedClaims = Array.isArray(_cached.claims) ? _cached.claims : []
       const dedupedCached = dedupeClaimsByPageAndText(cachedClaims, CLAIM_DEDUP_OPTIONS)
@@ -755,11 +1011,13 @@ export default function MKG2ClaimsDetector() {
       const restoredMatchingStats = _cached?.matchingStats && typeof _cached.matchingStats === 'object'
         ? _cached.matchingStats
         : (hasMatchingMetadata(indexedCachedClaims) ? getMatchingStats(indexedCachedClaims) : null)
+      const hasCachedMatches = !!restoredMatchingStats || hasMatchingMetadata(indexedCachedClaims)
+      const shouldRunMatchingFromCache = !hasCachedMatches && !!selectedBrandId && referenceDocuments.length > 0
 
       setClaims(indexedCachedClaims)
       setCacheHit({ ts: _cached.ts })
       setAnalysisComplete(true)
-      setMatchingComplete(true)
+      setMatchingComplete(hasCachedMatches)
       setAnalysisProgress(100)
       setAnalysisStatus('Claims detected')
       setAnalysisError(null)
@@ -768,6 +1026,14 @@ export default function MKG2ClaimsDetector() {
       setMatchingStats(restoredMatchingStats)
       setIsMatching(false)
       setIsAnalyzing(false)
+
+      if (shouldRunMatchingFromCache) {
+        await runReferenceMatching(
+          indexedCachedClaims,
+          Number.isFinite(_cached?.analysisMs) ? _cached.analysisMs : null,
+          _cached?.usage || null
+        )
+      }
       return
     }
     setCacheHit(null)
@@ -785,7 +1051,7 @@ export default function MKG2ClaimsDetector() {
       const promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
       setAnalysisProgress(5)
       setAnalysisStatus('Analyzing document...')
-      const connectionCheck = await checkGeminiConnection()
+      const connectionCheck = await checkGeminiConnection(selectedModelOption.modelId)
       if (!connectionCheck.connected) {
         throw new Error(`Gemini API not connected: ${connectionCheck.error}`)
       }
@@ -865,10 +1131,11 @@ export default function MKG2ClaimsDetector() {
         }
       }
 
-      const result = await analyzeWithGemini(uploadedFile, (progress, status) => {
+      const progressCb = (progress, status) => {
         setAnalysisProgress(progress)
         setAnalysisStatus(status)
-      }, promptKey, editablePrompt, null, selectedDocType || 'speaker-notes', factInventory, trainingExamples)
+      }
+      const result = await analyzeWithGemini(uploadedFile, progressCb, promptKey, editablePrompt, null, selectedDocType || 'speaker-notes', factInventory, trainingExamples, { modelOverride: selectedModelOption.modelId })
 
       if (cancelAnalysisRef.current) return
       if (!result.success) throw new Error(result.error || 'Analysis failed')
@@ -943,15 +1210,22 @@ export default function MKG2ClaimsDetector() {
     }
   }
 
-  const handleConfirmReanalyze = () => {
+  const handleConfirmReanalyze = async () => {
+    if (!uploadedFile) return
+
     // Compute the key fresh in case currentCacheKeyRef hasn't been set yet
     const _promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
     const _refIds = referenceDocuments.map(r => r.id)
-    const key = makeAnalysisCacheKey(
-      uploadedFile, selectedModel, _promptKey, editablePrompt,
-      selectedDocType || 'speaker-notes', selectedBrandId, _refIds
+    const descriptor = await makeAnalysisCacheDescriptor(
+      uploadedFile,
+      selectedModel,
+      _promptKey,
+      editablePrompt,
+      selectedDocType || 'speaker-notes',
+      selectedBrandId,
+      _refIds
     )
-    deleteAnalysisCache(key)
+    deleteAnalysisCache(descriptor.key)
     if (currentCacheKeyRef.current) deleteAnalysisCache(currentCacheKeyRef.current)
     currentCacheKeyRef.current = null
     setCacheHit(null)
@@ -961,6 +1235,9 @@ export default function MKG2ClaimsDetector() {
 
   const handleCancelAnalysis = () => {
     cancelAnalysisRef.current = true
+    matchingCancelRequestedRef.current = true
+    void cancelActiveMatchingJob()
+    matchingJobIdRef.current = null
     setIsAnalyzing(false)
     setIsMatching(false)
     setAnalysisComplete(false)
@@ -994,12 +1271,14 @@ export default function MKG2ClaimsDetector() {
 
   const runReferenceMatching = async (detectedClaims, analysisTotalMs = null, analysisUsage = null) => {
     setIsMatching(true)
+    matchingCancelRequestedRef.current = false
     const totalClaims = detectedClaims.length
     setMatchingProgress(`Reviewing references... 0/${totalClaims} claims`)
     const matchingStartedAt = Date.now()
+    let maxShownClaimCount = 0
+    let lastClaimUpdateSeq = 0
     const pendingClaimUpdates = new Map()
     let flushHandle = null
-    let maxShownClaimCount = 0
 
     const applyPendingClaimUpdates = () => {
       if (!pendingClaimUpdates.size) return
@@ -1007,7 +1286,7 @@ export default function MKG2ClaimsDetector() {
       const updates = new Map(pendingClaimUpdates)
       pendingClaimUpdates.clear()
 
-      setClaims(prev => {
+      setClaims((prev) => {
         let changed = false
         const merged = prev.map((claim) => {
           const nextMatch = updates.get(claim.id)
@@ -1028,6 +1307,128 @@ export default function MKG2ClaimsDetector() {
         applyPendingClaimUpdates()
       }, 120)
     }
+
+    const queueClaimUpdate = (claimUpdate) => {
+      if (!claimUpdate?.id) return
+      pendingClaimUpdates.set(claimUpdate.id, claimUpdate)
+
+      if (pendingClaimUpdates.size >= 6) {
+        if (flushHandle) {
+          clearTimeout(flushHandle)
+          flushHandle = null
+        }
+        applyPendingClaimUpdates()
+        return
+      }
+      scheduleClaimUpdateFlush()
+    }
+
+    const updateProgressFromJob = (progress, status) => {
+      const totalClaimsForProgress = Math.max(0, Number(progress?.total) || totalClaims)
+      if (totalClaimsForProgress === 0) {
+        setMatchingProgress('Reviewing references...')
+      } else {
+        const completed = Math.max(0, Math.min(Number(progress?.current) || 0, totalClaimsForProgress))
+        const stage = String(progress?.stage || status || '').toLowerCase()
+        const inFlightCount = completed < totalClaimsForProgress ? completed + 1 : totalClaimsForProgress
+        const shownCount = stage === 'done' ? completed : inFlightCount
+        const monotonicCount = Math.max(maxShownClaimCount, shownCount)
+        maxShownClaimCount = monotonicCount
+        setMatchingProgress(`Reviewing references... ${monotonicCount}/${totalClaimsForProgress} claims`)
+      }
+
+      const claimSeq = Number(progress?.latest_claim_result_seq) || 0
+      if (claimSeq > lastClaimUpdateSeq && progress?.latest_claim_result) {
+        lastClaimUpdateSeq = claimSeq
+        queueClaimUpdate(progress.latest_claim_result)
+      }
+    }
+
+    const closeEventSource = () => {
+      if (matchingEventSourceRef.current) {
+        matchingEventSourceRef.current.close()
+        matchingEventSourceRef.current = null
+      }
+    }
+
+    const pollUntilTerminal = async (jobId, seedJob) => {
+      let terminalJob = seedJob
+
+      while (!MATCHING_TERMINAL_STATUSES.has(terminalJob?.status)) {
+        if (cancelAnalysisRef.current || matchingCancelRequestedRef.current) {
+          await cancelActiveMatchingJob()
+          return terminalJob
+        }
+
+        await sleep(MATCHING_JOB_POLL_INTERVAL_MS)
+        if (!matchingJobIdRef.current) return terminalJob
+
+        const polled = await api.getReferenceMatchingJob(jobId)
+        const nextJob = polled?.job
+        if (!nextJob) {
+          throw new Error('Matching job status response was empty')
+        }
+
+        terminalJob = nextJob
+        updateProgressFromJob(terminalJob.progress, terminalJob.status)
+      }
+
+      return terminalJob
+    }
+
+    const waitForTerminalViaSse = (jobId, initialJob) => new Promise((resolve, reject) => {
+      if (typeof EventSource === 'undefined') {
+        reject(new Error('EventSource is not supported in this browser'))
+        return
+      }
+
+      const source = api.createReferenceMatchingJobEventSource(jobId)
+      matchingEventSourceRef.current = source
+      let settled = false
+
+      const cleanup = () => {
+        if (settled) return
+        settled = true
+        if (matchingEventSourceRef.current === source) {
+          matchingEventSourceRef.current = null
+        }
+        source.close()
+      }
+
+      source.onmessage = (event) => {
+        let payload = null
+        try {
+          payload = JSON.parse(event.data)
+        } catch {
+          return
+        }
+        const nextJob = payload?.job
+        if (!nextJob) return
+
+        updateProgressFromJob(nextJob.progress, nextJob.status)
+
+        if (cancelAnalysisRef.current || matchingCancelRequestedRef.current) {
+          cleanup()
+          resolve(nextJob)
+          return
+        }
+
+        if (MATCHING_TERMINAL_STATUSES.has(nextJob.status)) {
+          cleanup()
+          resolve(nextJob)
+        }
+      }
+
+      source.onerror = () => {
+        if (cancelAnalysisRef.current || matchingCancelRequestedRef.current) {
+          cleanup()
+          resolve(initialJob)
+          return
+        }
+        cleanup()
+        reject(new Error('SSE stream interrupted'))
+      }
+    })
 
     try {
       if (!detectedClaims.length) {
@@ -1052,50 +1453,58 @@ export default function MKG2ClaimsDetector() {
         throw new Error('No brand selected for reference matching')
       }
 
-      const { claims: enrichedClaims, telemetry } = await matchAllClaimsToReferences(
-        detectedClaims,
-        referencesForMatch,
-        ({ current, total, stage }) => {
-          const totalClaimsForProgress = Math.max(0, Number(total) || 0)
-          if (totalClaimsForProgress === 0) {
-            setMatchingProgress('Reviewing references...')
-            return
-          }
+      const matchingOptions = {}
+      const configuredConcurrency = parsePositiveIntEnv(import.meta.env.VITE_MATCHING_CONCURRENCY, null)
+      const configuredTopK = parsePositiveIntEnv(import.meta.env.VITE_MATCHING_TOPK, null)
+      const configuredCandidatePool = parsePositiveIntEnv(import.meta.env.VITE_MATCHING_CANDIDATE_POOL, null)
+      if (configuredConcurrency) matchingOptions.concurrency = configuredConcurrency
+      if (configuredTopK) matchingOptions.topK = configuredTopK
+      if (configuredCandidatePool) matchingOptions.candidatePool = configuredCandidatePool
 
-          const completed = Math.max(0, Math.min(Number(current) || 0, totalClaimsForProgress))
-          // While a claim is in-flight, show the next slot; once finished, show completed count.
-          const inFlightCount = completed < totalClaimsForProgress ? completed + 1 : totalClaimsForProgress
-          const shownCount = stage === 'done' ? completed : inFlightCount
-          const monotonicCount = Math.max(maxShownClaimCount, shownCount)
-          maxShownClaimCount = monotonicCount
-          setMatchingProgress(`Reviewing references... ${monotonicCount}/${totalClaimsForProgress} claims`)
-        },
-        matchBrandId,
-        {
-          onClaimResult: ({ claim }) => {
-            if (!claim?.id) return
-            pendingClaimUpdates.set(claim.id, claim)
-
-            // Flush immediately when enough updates accumulate to keep UI responsive
-            if (pendingClaimUpdates.size >= 6) {
-              if (flushHandle) {
-                clearTimeout(flushHandle)
-                flushHandle = null
-              }
-              applyPendingClaimUpdates()
-              return
-            }
-
-            scheduleClaimUpdateFlush()
-          }
-        }
-      )
-
-      if (flushHandle) {
-        clearTimeout(flushHandle)
-        flushHandle = null
+      const started = await api.startReferenceMatchingJob(matchBrandId, {
+        claims: detectedClaims,
+        references: referencesForMatch,
+        options: matchingOptions
+      })
+      const startedJob = started?.job
+      if (!startedJob?.job_id) {
+        throw new Error('Failed to start matching job')
       }
-      applyPendingClaimUpdates()
+      matchingJobIdRef.current = startedJob.job_id
+
+      let terminalJob = startedJob
+      updateProgressFromJob(terminalJob.progress, terminalJob.status)
+
+      try {
+        terminalJob = await waitForTerminalViaSse(startedJob.job_id, startedJob)
+      } catch (sseError) {
+        if (!cancelAnalysisRef.current && !matchingCancelRequestedRef.current) {
+          logger.warn('Matching SSE stream failed; falling back to polling:', sseError.message)
+        }
+        terminalJob = await pollUntilTerminal(startedJob.job_id, terminalJob)
+      }
+
+      if (!MATCHING_TERMINAL_STATUSES.has(terminalJob?.status)) {
+        terminalJob = await pollUntilTerminal(startedJob.job_id, terminalJob)
+      }
+
+      if (cancelAnalysisRef.current || matchingCancelRequestedRef.current) {
+        await cancelActiveMatchingJob()
+        return
+      }
+
+      if (terminalJob.status === 'cancelled') {
+        if (cancelAnalysisRef.current || matchingCancelRequestedRef.current) return
+        setMatchingProgress('Matching cancelled')
+        return
+      }
+      if (terminalJob.status === 'failed') {
+        throw new Error(terminalJob.error || 'Matching job failed')
+      }
+
+      const enrichedClaims = Array.isArray(terminalJob.result?.claims) ? terminalJob.result.claims : []
+      const telemetry = terminalJob.result?.telemetry || null
+      if (cancelAnalysisRef.current || matchingCancelRequestedRef.current) return
 
       const matchingTotalMs = Date.now() - matchingStartedAt
       setClaims(prev => {
@@ -1241,13 +1650,16 @@ export default function MKG2ClaimsDetector() {
         })
       }).catch(() => { /* best-effort */ })
     } catch (error) {
+      if (cancelAnalysisRef.current || matchingCancelRequestedRef.current) return
       logger.error('Reference matching error:', error)
       setMatchingProgress(`Matching error: ${error.message}`)
     } finally {
+      closeEventSource()
       if (flushHandle) {
         clearTimeout(flushHandle)
       }
       applyPendingClaimUpdates()
+      matchingJobIdRef.current = null
       setIsMatching(false)
     }
   }
@@ -1646,7 +2058,7 @@ export default function MKG2ClaimsDetector() {
       <div className="header">
         <div className="headerLeft">
           <div className="titleSection">
-            <h1 className="title">Claims Detector</h1>
+            <h1 className="title">Annotation Activation</h1>
             <Badge variant="info">POC2</Badge>
           </div>
           <p className="subtitle">
@@ -1754,7 +2166,15 @@ export default function MKG2ClaimsDetector() {
                     {/* AI Model */}
                     <div className="settingItem">
                       <label className="settingLabel">AI Model</label>
-                      <div>{ANALYSIS_MODEL_LABEL}</div>
+                      <select
+                        value={selectedModelId}
+                        onChange={e => setSelectedModelId(e.target.value)}
+                        className="settingSelect"
+                      >
+                        {MODEL_OPTIONS.map(m => (
+                          <option key={m.id} value={m.id}>{m.label}</option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                 }
@@ -1877,7 +2297,7 @@ export default function MKG2ClaimsDetector() {
                       <div className="modelPerformance">
                         <div className="resultRow">
                           <span className="resultLabel">Model</span>
-                          <span className="resultValue">{lastUsage?.modelDisplayName || 'Gemini 3.1 Pro (Preview)'}</span>
+                          <span className="resultValue">{lastUsage?.modelDisplayName || selectedModelOption.label}</span>
                         </div>
                         <div className="resultRow">
                           <span className="resultLabel">Claims Detected</span>
@@ -2332,9 +2752,16 @@ function ReferenceViewerContent({ referenceId, page, excerpt }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [pinY, setPinY] = useState(null)
+  const [highlightRects, setHighlightRects] = useState([])
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
   const canvasRef = useRef(null)
   const containerRef = useRef(null)
+
+  useEffect(() => {
+    if (Number.isFinite(page) && page > 0) {
+      setCurrentPage(Math.max(1, Math.floor(page)))
+    }
+  }, [page])
 
   // Load PDF blob into PDF.js
   useEffect(() => {
@@ -2342,6 +2769,9 @@ function ReferenceViewerContent({ referenceId, page, excerpt }) {
     async function load() {
       try {
         setLoading(true)
+        setError(null)
+        setPinY(null)
+        setHighlightRects([])
         const blob = await api.fetchReferenceFile(referenceId)
         if (cancelled) return
         const arrayBuffer = await blob.arrayBuffer()
@@ -2385,26 +2815,65 @@ function ReferenceViewerContent({ referenceId, page, excerpt }) {
           const textContent = await pdfPage.getTextContent()
           if (cancelled) return
 
-          const items = textContent.items.filter(i => i.str?.trim())
+          const items = textContent.items.filter(i => i.str?.trim() && Array.isArray(i.transform))
           const pageText = items.map(i => i.str).join(' ').toLowerCase()
-          // Use first 60 chars of excerpt as search needle (specific enough to locate the paragraph)
-          const needle = excerpt.toLowerCase().trim().slice(0, 60)
-          const matchIdx = pageText.indexOf(needle)
+          const normalizedExcerpt = String(excerpt || '').toLowerCase().replace(/\s+/g, ' ').trim()
+          const candidateNeedles = [
+            normalizedExcerpt.slice(0, 180),
+            normalizedExcerpt.slice(0, 140),
+            normalizedExcerpt.slice(0, 90),
+          ].filter((candidate, index, arr) => candidate.length >= 24 && arr.indexOf(candidate) === index)
+
+          let matchIdx = -1
+          let matchedNeedle = ''
+          for (const candidate of candidateNeedles) {
+            const idx = pageText.indexOf(candidate)
+            if (idx !== -1) {
+              matchIdx = idx
+              matchedNeedle = candidate
+              break
+            }
+          }
 
           if (matchIdx !== -1) {
             let charCount = 0
+            const matchEnd = matchIdx + matchedNeedle.length
+            const nextRects = []
+
             for (const item of items) {
-              if (charCount + item.str.length >= matchIdx) {
-                // Convert PDF y (bottom-up) to canvas y (top-down)
-                const yCanvas = (baseViewport.height - item.transform[5]) * fitScale
-                if (!cancelled) setPinY(Math.max(0, yCanvas - item.height * fitScale))
-                break
+              const itemStart = charCount
+              const itemEnd = itemStart + item.str.length
+              const overlaps = itemEnd >= matchIdx && itemStart <= matchEnd
+
+              if (overlaps) {
+                const width = Math.max(6, (item.width || 0) * fitScale)
+                const height = Math.max(10, (item.height || 0) * fitScale)
+                const left = item.transform[4] * fitScale
+                const top = (baseViewport.height - item.transform[5]) * fitScale - height
+                nextRects.push({
+                  left: Math.max(0, left),
+                  top: Math.max(0, top),
+                  width,
+                  height
+                })
               }
+
               charCount += item.str.length + 1
             }
+
+            if (!cancelled) {
+              setHighlightRects(nextRects)
+              setPinY(nextRects.length > 0 ? nextRects[0].top : null)
+            }
           } else {
-            if (!cancelled) setPinY(null)
+            if (!cancelled) {
+              setPinY(null)
+              setHighlightRects([])
+            }
           }
+        } else if (!cancelled) {
+          setPinY(null)
+          setHighlightRects([])
         }
       } catch (err) {
         logger.error('Reference render error:', err)
@@ -2467,6 +2936,27 @@ function ReferenceViewerContent({ referenceId, page, excerpt }) {
       >
         <div style={{ position: 'relative', width: canvasSize.width, margin: '0 auto' }}>
           <canvas ref={canvasRef} style={{ display: 'block', boxShadow: '0 2px 12px rgba(0,0,0,0.18)' }} />
+
+          {/* Text highlight overlay for matched supporting excerpt */}
+          {highlightRects.length > 0 && (
+            <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+              {highlightRects.map((rect, idx) => (
+                <div
+                  key={`${rect.left}-${rect.top}-${idx}`}
+                  style={{
+                    position: 'absolute',
+                    left: rect.left,
+                    top: rect.top,
+                    width: rect.width,
+                    height: rect.height,
+                    background: 'rgba(255, 193, 7, 0.28)',
+                    border: '1px solid rgba(255, 152, 0, 0.7)',
+                    borderRadius: 2,
+                  }}
+                />
+              ))}
+            </div>
+          )}
 
           {/* Amber pin marker in the left margin */}
           {pinY !== null && (

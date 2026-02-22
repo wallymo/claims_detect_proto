@@ -90,6 +90,7 @@ export default function MKGClaimCard({
   const rejectionTypeLabels = {
     false_positive: { label: 'False positive', desc: "This isn't actually a claim" },
     wrong_reference: { label: 'Wrong reference', desc: 'Claim is valid, but wrong reference was matched' },
+    correct_reference_wrong_location: { label: 'Correct reference wrong location', desc: 'Reference is correct, but the page/location excerpt is wrong' },
     missing_reference: { label: 'Missing reference', desc: 'This claim needs a reference that was not matched' }
   }
 

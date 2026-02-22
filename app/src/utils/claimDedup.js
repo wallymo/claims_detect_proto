@@ -2,8 +2,9 @@
  * Claim deduplication helpers
  *
  * Dedupe policy:
- * - Duplicate if SAME page + same normalized text
- * - Keep cross-page repeats (same sentence on different pages)
+ * - Duplicate if SAME page/slide + same normalized text
+ * - Keep cross-page/slide repeats (same sentence on different pages/slides)
+ * - Never dedupe globally across the whole document
  */
 
 const SUPERSCRIPT_MARKERS_RE = /[\u00B9\u00B2\u00B3\u2070-\u2079]+/g

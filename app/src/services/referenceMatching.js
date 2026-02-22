@@ -16,13 +16,37 @@ function parsePositiveIntEnv(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
+function parseBoundedFloatEnv(value, fallback, min = 0, max = 1) {
+  const parsed = Number.parseFloat(value)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(min, Math.min(max, parsed))
+}
+
 const viteEnv = typeof import.meta !== 'undefined' ? import.meta.env : {}
 
 const MATCHING_HYBRID_ENABLED = parseBooleanEnvFlag(viteEnv.VITE_MATCHING_HYBRID_ENABLED, true)
+const MATCHING_SEMANTIC_DIRECT_FALLBACK_ENABLED = parseBooleanEnvFlag(
+  viteEnv.VITE_MATCHING_SEMANTIC_DIRECT_FALLBACK_ENABLED,
+  true
+)
 
 const DEFAULT_TOP_K = parsePositiveIntEnv(viteEnv.VITE_MATCHING_TOPK, 20)
 const DEFAULT_CANDIDATE_POOL = parsePositiveIntEnv(viteEnv.VITE_MATCHING_CANDIDATE_POOL, 40)
 const DEFAULT_MATCHING_CONCURRENCY = parsePositiveIntEnv(viteEnv.VITE_MATCHING_CONCURRENCY, 4)
+const DEFAULT_TIER2_MAX_REFERENCES = parsePositiveIntEnv(viteEnv.VITE_MATCHING_TIER2_MAX_REFERENCES, 5)
+
+const SEMANTIC_DIRECT_FALLBACK_MIN_SEMANTIC = parseBoundedFloatEnv(
+  viteEnv.VITE_MATCHING_SEMANTIC_DIRECT_MIN_SEMANTIC,
+  0.82
+)
+const SEMANTIC_DIRECT_FALLBACK_MIN_HYBRID = parseBoundedFloatEnv(
+  viteEnv.VITE_MATCHING_SEMANTIC_DIRECT_MIN_HYBRID,
+  0.70
+)
+const SEMANTIC_DIRECT_FALLBACK_MIN_MARGIN = parseBoundedFloatEnv(
+  viteEnv.VITE_MATCHING_SEMANTIC_DIRECT_MIN_MARGIN,
+  0.01
+)
 
 const HYBRID_WEIGHTS = {
   semantic: 0.75,
@@ -281,7 +305,7 @@ function createFallbackReferenceLoader(allReferences, telemetry) {
 
 const FACT_ANCHOR_MIN_SIMILARITY = 0.90
 const FACT_ANCHOR_MIN_KEYWORD_OVERLAP = 2
-const TIER2_MAX_REFERENCES = 3
+const TIER2_MAX_REFERENCES = Math.max(1, Math.min(DEFAULT_TIER2_MAX_REFERENCES, 8))
 const EVIDENCE_TYPE_PRIORITY = {
   table_cell: 4,
   text_quote: 3,
@@ -337,6 +361,48 @@ function applyMatchConfidenceToClaim(claim) {
   return {
     ...claim,
     confidence: loweredConfidence
+  }
+}
+
+function buildSemanticDirectFallbackMatch(allReferences, topCandidate, leadMargin) {
+  if (!MATCHING_SEMANTIC_DIRECT_FALLBACK_ENABLED || !topCandidate) return null
+
+  const semantic = clamp(topCandidate.semantic_score || 0, 0, 1)
+  const hybrid = clamp(topCandidate.hybrid_score || semantic, 0, 1)
+  const margin = Number.isFinite(leadMargin) ? Math.max(0, leadMargin) : 0
+
+  const passesScoreGate = (
+    semantic >= SEMANTIC_DIRECT_FALLBACK_MIN_SEMANTIC ||
+    hybrid >= SEMANTIC_DIRECT_FALLBACK_MIN_HYBRID
+  )
+  const passesMarginGate = (
+    margin >= SEMANTIC_DIRECT_FALLBACK_MIN_MARGIN ||
+    semantic >= SEMANTIC_DIRECT_FALLBACK_MIN_SEMANTIC + 0.03 ||
+    hybrid >= SEMANTIC_DIRECT_FALLBACK_MIN_HYBRID + 0.03
+  )
+
+  if (!passesScoreGate || !passesMarginGate) return null
+
+  const refObj = Array.isArray(allReferences)
+    ? allReferences.find((ref) => (
+      ref.id === topCandidate.reference_id ||
+      normalizeAlias(ref.display_alias || ref.name) === normalizeAlias(topCandidate.display_alias)
+    ))
+    : null
+
+  return {
+    matched: true,
+    matchConfidence: hybrid,
+    matchTier: 'semantic-direct-fallback',
+    reference: {
+      id: refObj?.id || topCandidate.reference_id,
+      name: topCandidate.display_alias || refObj?.display_alias || refObj?.name || null,
+      page: topCandidate.page_estimate ?? null,
+      excerpt: typeof topCandidate.passage_text === 'string'
+        ? topCandidate.passage_text.slice(0, 400)
+        : null
+    },
+    matchReasoning: `No verified quote found; using high-confidence semantic fallback (hybrid ${(hybrid * 100).toFixed(0)}%, semantic ${(semantic * 100).toFixed(0)}%, lead +${(margin * 100).toFixed(0)}).`
   }
 }
 
@@ -529,6 +595,7 @@ async function fullReferenceExtraction(claim, candidateRefs, allReferences, tele
  * Tier 2b: Quote verification against actual text
  *
  * Falls back to keyword matching if the backend search fails.
+ * Falls back to direct semantic match if extraction cannot verify a quote.
  */
 async function matchSingleClaim(claim, brandId, allReferences, options = {}) {
   const {
@@ -626,6 +693,24 @@ async function matchSingleClaim(claim, brandId, allReferences, options = {}) {
     const extractionMatch = await fullReferenceExtraction(claim, candidateRefs, allReferences, telemetry, diagnostics)
     if (extractionMatch) {
       return { ...claim, ...extractionMatch, diagnostics }
+    }
+
+    const topCandidate = rerankedResults[0]
+    const leadMargin = topCandidate
+      ? (topCandidate.hybrid_score || 0) - (rerankedResults[1]?.hybrid_score || 0)
+      : 0
+    const semanticFallbackMatch = buildSemanticDirectFallbackMatch(allReferences, topCandidate, leadMargin)
+    if (semanticFallbackMatch) {
+      telemetry.semantic_direct_fallback_count = (telemetry.semantic_direct_fallback_count || 0) + 1
+      diagnostics.push({
+        tier: 'final',
+        result: 'semantic-direct-fallback',
+        refName: topCandidate?.display_alias || null,
+        semantic: Number(topCandidate?.semantic_score?.toFixed(3)),
+        hybrid: Number(topCandidate?.hybrid_score?.toFixed(3)),
+        leadMargin: Number(leadMargin.toFixed(3))
+      })
+      return { ...claim, ...semanticFallbackMatch, diagnostics }
     }
 
     diagnostics.push({ tier: 'final', result: 'no-match', lastTier: 'extraction' })
@@ -769,6 +854,7 @@ export async function matchAllClaimsToReferences(claims, references, onProgress,
     extraction_ai_calls: 0,
     verified_quotes: 0,
     unverified_quotes: 0,
+    semantic_direct_fallback_count: 0,
     keyword_fallback_count: 0,
     matching_ai_calls: 0,
     matching_ai_input_tokens: 0,
@@ -777,7 +863,9 @@ export async function matchAllClaimsToReferences(claims, references, onProgress,
     concurrency: CONCURRENCY,
     top_k: topK,
     candidate_pool: candidatePool,
-    hybrid_enabled: MATCHING_HYBRID_ENABLED
+    hybrid_enabled: MATCHING_HYBRID_ENABLED,
+    tier2_max_references: TIER2_MAX_REFERENCES,
+    semantic_direct_fallback_enabled: MATCHING_SEMANTIC_DIRECT_FALLBACK_ENABLED
   }
 
   const getFallbackReferencesWithText = createFallbackReferenceLoader(references, telemetry)
@@ -851,6 +939,7 @@ export async function matchAllClaimsToReferences(claims, references, onProgress,
   const pipelineSummary = {
     fact_anchored_matched: 0,
     semantic_no_passages: 0,
+    semantic_direct_fallback_matched: 0,
     keyword_fallback_matched: 0,
     extraction_matched: 0,
     extraction_not_supported: 0,
@@ -863,6 +952,7 @@ export async function matchAllClaimsToReferences(claims, references, onProgress,
 
     if (claim.matchTier === 'fact-anchored') pipelineSummary.fact_anchored_matched++
     else if (claim.matchTier === 'verified-extraction' || claim.matchTier === 'partial-extraction') pipelineSummary.extraction_matched++
+    else if (claim.matchTier === 'semantic-direct-fallback') pipelineSummary.semantic_direct_fallback_matched++
     else if (claim.matchTier === 'keyword-fallback') pipelineSummary.keyword_fallback_matched++
     else if (!claim.matched) {
       // Determine why it didn't match from diagnostics

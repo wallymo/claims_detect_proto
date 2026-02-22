@@ -183,6 +183,57 @@ export async function searchPassages(brandId, claimText, topK = 5, options = {})
   })
 }
 
+// ========== Matching Jobs (Server-Side Async Matching) ==========
+
+export async function startReferenceMatchingJob(brandId, { claims, references, options } = {}) {
+  return request(`/brands/${brandId}/matching-jobs`, {
+    method: 'POST',
+    body: JSON.stringify({ claims, references, options })
+  })
+}
+
+export async function getReferenceMatchingJob(jobId) {
+  return request(`/matching-jobs/${jobId}`)
+}
+
+export async function cancelReferenceMatchingJob(jobId) {
+  return request(`/matching-jobs/${jobId}`, {
+    method: 'DELETE'
+  })
+}
+
+export function createReferenceMatchingJobEventSource(jobId) {
+  const normalizedJobId = encodeURIComponent(String(jobId || '').trim())
+  return new EventSource(`${API_BASE}/matching-jobs/${normalizedJobId}/events`)
+}
+
+// ========== Persistent Analysis Cache ==========
+
+export async function getAnalysisCache(key) {
+  const data = await request(`/analysis-cache?key=${encodeURIComponent(key)}`)
+  return data.cache || null
+}
+
+export async function upsertAnalysisCache({ key, meta, payload }) {
+  return request('/analysis-cache', {
+    method: 'POST',
+    body: JSON.stringify({ key, meta, payload })
+  })
+}
+
+export async function deleteAnalysisCacheEntry(key) {
+  return request(`/analysis-cache?key=${encodeURIComponent(key)}`, {
+    method: 'DELETE'
+  })
+}
+
+export async function pruneAnalysisCache(maxRows) {
+  return request('/analysis-cache/prune', {
+    method: 'POST',
+    body: JSON.stringify(Number.isFinite(maxRows) ? { max_rows: maxRows } : {})
+  })
+}
+
 // ========== Feedback ==========
 
 export async function createFeedback({ claim_id, document_id, reference_doc_id, decision, reason, confidence_score, rejection_type, corrected_reference_id }) {
@@ -233,4 +284,3 @@ export async function exportTrainingSessions(brandId) {
   a.click()
   document.body.removeChild(a)
 }
-

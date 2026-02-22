@@ -24,7 +24,7 @@ import { enrichClaimsWithPositions, addGlobalIndices } from '@/utils/textMatcher
 import { dedupeClaimsByPageAndText, getClaimDedupOptions } from '@/utils/claimDedup'
 import { logger } from '@/utils/logger'
 
-const ANALYSIS_MODEL_LABEL = 'Google Gemini 3.1 Pro (Preview)'
+const ANALYSIS_MODEL_LABEL = 'Google Gemini 3 Pro (Preview)'
 const CLAIM_DEDUP_OPTIONS = getClaimDedupOptions()
 
 function formatMinutes(ms) {
@@ -342,7 +342,7 @@ export default function MKGClaimsDetector({ demoMode = false }) {
       <div className="header">
         <div className="headerLeft">
           <div className="titleSection">
-            <h1 className="title">Claims Detector</h1>
+            <h1 className="title">Annotation Activation</h1>
             {!demoMode && <Badge variant="info">POC2</Badge>}
           </div>
           <p className="subtitle">
@@ -546,7 +546,7 @@ export default function MKGClaimsDetector({ demoMode = false }) {
                     <div className="modelPerformance">
                       <div className="resultRow">
                         <span className="resultLabel">Model</span>
-                        <span className="resultValue">{lastUsage?.modelDisplayName || 'Gemini 3.1 Pro (Preview)'}</span>
+                        <span className="resultValue">{lastUsage?.modelDisplayName || 'Gemini 3 Pro (Preview)'}</span>
                       </div>
                       <div className="resultRow">
                         <span className="resultLabel">Latency</span>

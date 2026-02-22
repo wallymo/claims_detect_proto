@@ -108,6 +108,11 @@ export function initDb() {
   const migration010 = fs.readFileSync(migration010Path, 'utf-8')
   db.exec(migration010)
 
+  // 011: persistent analysis cache
+  const migration011Path = path.resolve(__dirname, '../../migrations/011_analysis_cache.sql')
+  const migration011 = fs.readFileSync(migration011Path, 'utf-8')
+  db.exec(migration011)
+
   console.log('Database initialized:', env.DB_PATH)
   return db
 }
