@@ -788,10 +788,10 @@ Extract ALL claims requiring MLR substantiation from this pharmaceutical documen
 - Each distinct data point, statistic, or substantiation-requiring statement is a SEPARATE claim
 - If two statements need different references to substantiate them, they are separate claims
 - Include charts/graphs/infographics with statistical claims
-${VISUAL_CLAIMS_INSTRUCTIONS}
 - Flag ALL annotation markers (†, ‡, §, *) — each dagger/double dagger references a footnote with study details, populations, or statistical qualifiers that require substantiation
 - Complete, self-contained statements only
 - Deduplicate PER PAGE/SLIDE only (never across the full document)
+${VISUAL_CLAIMS_INSTRUCTIONS}
 
 # Confidence (0-100)
 90-100: Explicit stats, specific numbers | 70-89: Benefit promises, comparisons | 50-69: Borderline phrasing | 30-49: Weak promotional signal
@@ -829,9 +829,9 @@ Extract DISEASE STATE claims requiring MLR substantiation.
 - Each distinct data point or substantiation-requiring statement is a SEPARATE claim
 - If two statements need different references, they are separate claims
 - Include visual elements with statistical claims
-${VISUAL_CLAIMS_INSTRUCTIONS}
 - Flag ALL annotation markers (†, ‡, §, *) — each links to substantiation-requiring footnote text
 - Deduplicate PER PAGE/SLIDE only (never across the full document)
+${VISUAL_CLAIMS_INSTRUCTIONS}
 
 # Confidence (0-100)
 90-100: Explicit stats, prevalence data | 70-89: Burden assertions, unmet needs | 50-69: Borderline | 30-49: Weak contextual
