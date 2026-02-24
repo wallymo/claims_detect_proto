@@ -111,6 +111,8 @@ export const factController = {
             reference_id: fs.reference_id,
             display_alias: fs.display_alias,
             facts: fs.facts,
+            confirmed_count: fs.confirmed_count || 0,
+            rejected_count: fs.rejected_count || 0,
             similarity
           }
         })

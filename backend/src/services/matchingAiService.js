@@ -2,10 +2,9 @@ import { GoogleGenAI } from '@google/genai'
 
 let geminiClient = null
 
-const GEMINI_MODEL = String(process.env.VITE_GEMINI_MODEL || '').trim() || 'gemini-3.1-pro-preview'
+const GEMINI_MODEL = String(process.env.VITE_GEMINI_MODEL || '').trim() || 'gemini-2.5-pro'
 
 const MODEL_DISPLAY_NAMES = {
-  'gemini-3.1-pro-preview': 'Gemini 3.1 Pro (Preview)',
   'gemini-3-pro-preview': 'Gemini 3 Pro (Preview)',
   'gemini-2.5-pro': 'Gemini 2.5 Pro',
   'gemini-2.5-flash': 'Gemini 2.5 Flash',
@@ -15,7 +14,6 @@ const MODEL_DISPLAY_NAMES = {
 }
 
 const PRICING = {
-  'gemini-3.1-pro-preview': { input: 1.25, output: 5.00 },
   'gemini-3-pro-preview': { input: 1.25, output: 5.00 },
   'gemini-2.5-pro': { input: 1.25, output: 5.00 },
   'gemini-2.5-flash': { input: 0.075, output: 0.30 },
@@ -26,9 +24,8 @@ const PRICING = {
 }
 
 const GEMINI_MODEL_FALLBACK_ORDER = [
-  'gemini-3.1-pro-preview',
-  'gemini-3-pro-preview',
-  'gemini-2.5-pro'
+  'gemini-2.5-pro',
+  'gemini-3-pro-preview'
 ]
 
 const resolvedModelCache = new Map()
@@ -93,6 +90,17 @@ function shortErrorMessage(error) {
   return compact.length > 180 ? `${compact.slice(0, 177)}...` : compact
 }
 
+function isRateLimitError(error) {
+  const msg = String(error?.message || '').toLowerCase()
+  return msg.includes('429') || msg.includes('quota') || msg.includes('rate limit') || msg.includes('resource_exhausted')
+}
+
+function backoffDelay(attempt) {
+  const base = 1000 * Math.pow(2, attempt)
+  const jitter = Math.random() * 500
+  return base + jitter
+}
+
 async function generateContentWithModelFallback({ preferredModel, contents, config, purpose = 'request' }) {
   const client = getClient()
   const preferred = normalizeModelName(preferredModel) || GEMINI_MODEL
@@ -122,6 +130,13 @@ async function generateContentWithModelFallback({ preferredModel, contents, conf
       }
       const nextModel = candidates[i + 1]
       console.warn(`[matching-ai] Model "${model}" failed for ${purpose}: ${shortErrorMessage(error)}. Trying "${nextModel}".`)
+
+      // Brief backoff before trying fallback model on rate limit errors
+      if (isRateLimitError(error)) {
+        const delay = backoffDelay(0)
+        console.warn(`[matching-ai] Rate limited — waiting ${Math.round(delay)}ms before fallback`)
+        await new Promise(resolve => setTimeout(resolve, delay))
+      }
     }
   }
 

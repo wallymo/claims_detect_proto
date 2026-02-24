@@ -18,6 +18,10 @@ import MKGClaimCard from '@/components/mkg/MKGClaimCard'
 import DocumentTypeSelector from '@/components/claims-detector/DocumentTypeSelector'
 import LibraryTab from '@/components/claims-detector/LibraryTab'
 import TrainingDataOverlay from '@/components/mkg/TrainingDataOverlay/TrainingDataOverlay'
+import TrainingStatusBanner from '@/components/mkg/TrainingStatusBanner/TrainingStatusBanner'
+import ComparisonSummary from '@/components/mkg/ComparisonSummary/ComparisonSummary'
+import MissedClaimForm from '@/components/mkg/MissedClaimForm/MissedClaimForm'
+import Alert from '@/components/molecules/Alert/Alert'
 
 // Services
 import { analyzeDocument as analyzeWithGemini, checkGeminiConnection, ALL_CLAIMS_PROMPT_USER, MEDICATION_PROMPT_USER, getDocTypeInstructions, GEMINI_MODEL } from '@/services/gemini'
@@ -26,14 +30,15 @@ import * as api from '@/services/api'
 
 // Utils
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.min.mjs`
+import pdfjsWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl
 import { enrichClaimsWithPositions, addGlobalIndices } from '@/utils/textMatcher'
 import { dedupeClaimsByPageAndText, getClaimDedupOptions } from '@/utils/claimDedup'
 import { logger } from '@/utils/logger'
 
 const MODEL_OPTIONS = [
-  { id: 'gemini', label: 'Gemini 3 Pro (Preview)', modelId: GEMINI_MODEL },
-  { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', modelId: 'gemini-2.5-pro' }
+  { id: 'gemini', label: 'Gemini 2.5 Pro', modelId: GEMINI_MODEL },
+  { id: 'gemini-3-pro-preview', label: 'Gemini 3 Pro (Preview)', modelId: 'gemini-3-pro-preview' }
 ]
 const CLAIM_DEDUP_OPTIONS = getClaimDedupOptions()
 
@@ -452,8 +457,29 @@ export default function MKG2ClaimsDetector() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [sortOrder, setSortOrder] = useState('annotation')
+  const [collapsedPages, setCollapsedPages] = useState({})
   const [showClaimPins, setShowClaimPins] = useState(true)
   const [isConfigPanelCollapsed, setIsConfigPanelCollapsed] = useState(false)
+
+  // Missed claim reporting state
+  const [missedClaims, setMissedClaims] = useState([])
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [pendingPinPosition, setPendingPinPosition] = useState(null) // { x, y, page }
+  const [missedClaimToast, setMissedClaimToast] = useState(false)
+
+  // Combine real missed claims with pending pin so ClaimPinsOverlay renders it immediately
+  const displayMissedClaims = useMemo(() => {
+    if (!pendingPinPosition) return missedClaims
+    return [
+      ...missedClaims,
+      {
+        id: 'pending-missed-claim',
+        position: { x: pendingPinPosition.x, y: pendingPinPosition.y },
+        page: pendingPinPosition.page,
+        status: 'pending'
+      }
+    ]
+  }, [missedClaims, pendingPinPosition])
 
   // Cost tracking
   const [lastUsage, setLastUsage] = useState(null)
@@ -483,6 +509,9 @@ export default function MKG2ClaimsDetector() {
   const [trainingDocuments, setTrainingDocuments] = useState([])
   const [ecosystemTrainingExamples, setEcosystemTrainingExamples] = useState([])
   const [showTrainingOverlay, setShowTrainingOverlay] = useState(false)
+  const [baselineClaimCount, setBaselineClaimCount] = useState(null)
+  const [isRunningBaseline, setIsRunningBaseline] = useState(false)
+  const [showComparison, setShowComparison] = useState(false)
 
   const claimsListRef = useRef(null)
   const claimsPanelRef = useRef(null)
@@ -512,6 +541,26 @@ export default function MKG2ClaimsDetector() {
     ).size,
     [ecosystemTrainingExamples]
   )
+
+  const promptInjectionText = useMemo(() => {
+    if (!Array.isArray(trainingExamples) || trainingExamples.length === 0) return ''
+    const approved = trainingExamples.filter(c => c?.type !== 'MissedClaim' && c?.type !== 'FalsePositive')
+    const missed = trainingExamples.filter(c => c?.type === 'MissedClaim')
+    const falsePositives = trainingExamples.filter(c => c?.type === 'FalsePositive')
+    const blocks = []
+    if (approved.length > 0) {
+      blocks.push('PRIOR APPROVED EXAMPLES (detect claims like these):\n' + approved.map(c => '- "' + c.text + '"').join('\n'))
+    }
+    if (missed.length > 0) {
+      blocks.push('PREVIOUSLY MISSED CLAIMS (you MUST detect these patterns):\n' + missed.map(c => '- "' + c.text + '"').join('\n'))
+    }
+    if (falsePositives.length > 0) {
+      blocks.push('FALSE POSITIVE PATTERNS (do NOT flag these):\n' + falsePositives.map(c => '- "' + c.text + '"').join('\n'))
+    }
+    return blocks.join('\n\n')
+  }, [trainingExamples])
+
+  const trainingDocumentCount = useMemo(() => trainingDocuments.length, [trainingDocuments])
 
   const cancelActiveMatchingJob = useCallback(async () => {
     if (matchingEventSourceRef.current) {
@@ -892,7 +941,12 @@ export default function MKG2ClaimsDetector() {
       setAnalysisComplete(false)
       setMatchingComplete(false)
       setClaims([])
+      setStatusFilter('all')
+      setCollapsedPages({})
       setMatchingStats(null)
+      setMissedClaims([])
+      setSelectionMode(false)
+      setPendingPinPosition(null)
     }, 500)
   }
 
@@ -906,10 +960,15 @@ export default function MKG2ClaimsDetector() {
     setUploadedFile(null)
     setUploadState('empty')
     setClaims([])
+    setStatusFilter('all')
+    setCollapsedPages({})
     setAnalysisComplete(false)
     setMatchingComplete(false)
     setAnalysisError(null)
     setMatchingStats(null)
+    setMissedClaims([])
+    setSelectionMode(false)
+    setPendingPinPosition(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -1180,6 +1239,22 @@ export default function MKG2ClaimsDetector() {
       setAnalysisComplete(true)
       setIsAnalyzing(false)
 
+      // Save analysis run for history tracking
+      try {
+        await api.createAnalysisRun({
+          brand_id: selectedBrandId || null,
+          document_name: uploadedFile.name,
+          model: selectedModelOption?.modelId || selectedModel,
+          training_example_count: trainingExamples.length,
+          ecosystem_example_count: ecosystemTrainingExamples.length,
+          claim_count: indexedClaims.length,
+          matched_count: 0,
+          avg_confidence: indexedClaims.length > 0 ? indexedClaims.reduce((sum, c) => sum + (c.confidence || 0), 0) / indexedClaims.length : null
+        })
+      } catch (runErr) {
+        logger.warn('Failed to save analysis run:', runErr.message)
+      }
+
       logger.info({
         event: 'mkg2_analysis_summary',
         analysis_total_ms: analysisTotalMs,
@@ -1232,6 +1307,27 @@ export default function MKG2ClaimsDetector() {
     setHasCachedResult(false)
     handleAnalyze()
   }
+
+  const handleCompareWithoutTraining = useCallback(async () => {
+    if (!uploadedFile || isRunningBaseline) return
+    if (!window.confirm('This will re-analyze the document without training data to compare. This costs API credits. Continue?')) return
+    setIsRunningBaseline(true)
+    setShowComparison(true)
+    setBaselineClaimCount(null)
+    try {
+      const progressCb = () => {}
+      const promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
+      const result = await analyzeWithGemini(uploadedFile, progressCb, promptKey, editablePrompt, null, selectedDocType || 'speaker-notes', '', [], { modelOverride: selectedModelOption?.modelId })
+      if (result.success) {
+        const rawClaims = Array.isArray(result.claims) ? result.claims : []
+        setBaselineClaimCount(rawClaims.length)
+      }
+    } catch (err) {
+      logger.error('Baseline comparison failed:', err)
+    } finally {
+      setIsRunningBaseline(false)
+    }
+  }, [uploadedFile, isRunningBaseline, selectedPrompt, editablePrompt, selectedDocType, selectedModelOption])
 
   const handleCancelAnalysis = () => {
     cancelAnalysisRef.current = true
@@ -1799,14 +1895,18 @@ export default function MKG2ClaimsDetector() {
       persistTrainingDocumentClaims(nextApproved)
         .catch(err => logger.warn('Training document update failed:', err.message))
     } else {
-      // false_positive: remove from approved set if it exists.
-      const nextApproved = currentApproved.filter(
-        c => normalizeTrainingClaimText(c.text) !== normalizeTrainingClaimText(claim.text)
-      )
-      if (nextApproved.length !== currentApproved.length) {
-        persistTrainingDocumentClaims(nextApproved)
-          .catch(err => logger.warn('Training document update failed:', err.message))
+      // false_positive: remove from approved set and add as FalsePositive training example
+      const fpTrainingClaim = {
+        text: claim.text,
+        type: 'FalsePositive',
+        confidence: claim.confidence
       }
+      const nextApproved = [
+        ...currentApproved.filter(c => normalizeTrainingClaimText(c.text) !== normalizeTrainingClaimText(claim.text)),
+        fpTrainingClaim
+      ]
+      persistTrainingDocumentClaims(nextApproved)
+        .catch(err => logger.warn('Training document update failed:', err.message))
     }
 
     // Fire-and-forget feedback to backend
@@ -1823,11 +1923,21 @@ export default function MKG2ClaimsDetector() {
 
   const handleClaimSelect = (claimId) => {
     setActiveClaimId(claimId)
-    if (claimId && claimsListRef.current) {
-      const cardEl = claimsListRef.current.querySelector(`[data-claim-id="${claimId}"]`)
-      if (cardEl) {
-        cardEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    if (claimId) {
+      const selectedClaim = claims.find(c => c.id === claimId)
+      const selectedPage = Math.max(1, Number(selectedClaim?.page) || 1)
+      if (selectedClaim && collapsedPages[selectedPage]) {
+        setCollapsedPages(prev => ({ ...prev, [selectedPage]: false }))
       }
+    }
+    if (claimId && claimsListRef.current) {
+      // Wait a frame so collapsed groups can expand before scrolling to card.
+      requestAnimationFrame(() => {
+        const cardEl = claimsListRef.current?.querySelector(`[data-claim-id="${claimId}"]`)
+        if (cardEl) {
+          cardEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      })
     }
   }
 
@@ -1839,6 +1949,70 @@ export default function MKG2ClaimsDetector() {
         excerpt: claim.reference.excerpt
       })
     }
+  }
+
+  // ===== Missed Claim Reporting =====
+
+  const handlePinPlace = (position) => {
+    setPendingPinPosition(position)
+    setSelectionMode(false)
+  }
+
+  const handleMissedClaimSubmit = (formData) => {
+    if (!pendingPinPosition) return
+
+    const missedClaim = {
+      id: `missed-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      text: formData.text,
+      position: { x: pendingPinPosition.x, y: pendingPinPosition.y },
+      page: pendingPinPosition.page,
+      referenceId: formData.referenceId,
+      referenceName: formData.referenceName,
+      supportingText: formData.supportingText,
+      status: 'missed'
+    }
+
+    setMissedClaims(prev => [...prev, missedClaim])
+    setPendingPinPosition(null)
+
+    // Show success toast
+    setMissedClaimToast(true)
+    setTimeout(() => setMissedClaimToast(false), 3000)
+
+    // Fire-and-forget feedback to backend
+    api.createFeedback({
+      claim_id: missedClaim.id,
+      document_id: uploadedFile?.name,
+      reference_doc_id: formData.referenceId || null,
+      decision: 'missed',
+      reason: formData.supportingText || '',
+      confidence_score: null
+    }).catch(err => logger.error('Missed claim feedback save error:', err))
+
+    // Add to training data for future runs
+    const trainingClaim = {
+      text: formData.text,
+      type: 'MissedClaim',
+      confidence: 1.0,
+      reference: formData.referenceId ? { id: formData.referenceId, name: formData.referenceName } : null,
+      supportingText: formData.supportingText
+    }
+    const docKey = normalizeTrainingDocumentKey(uploadedFile?.name)
+    const currentApproved = trainingDocuments.find(doc => doc.document_key === docKey)?.approved_claims || []
+    const nextApproved = [
+      ...currentApproved.filter(c => normalizeTrainingClaimText(c.text) !== normalizeTrainingClaimText(formData.text)),
+      trainingClaim
+    ]
+    persistTrainingDocumentClaims(nextApproved)
+      .catch(err => logger.warn('Training document update for missed claim failed:', err.message))
+  }
+
+  const handleMissedClaimCancel = () => {
+    setPendingPinPosition(null)
+  }
+
+  const handleRemoveMissedClaim = (missedClaimId) => {
+    setMissedClaims(prev => prev.filter(mc => mc.id !== missedClaimId))
   }
 
   // ===== Training Data Actions =====
@@ -2025,6 +2199,45 @@ export default function MKG2ClaimsDetector() {
   const pendingCount = claims.filter(c => c.status === 'pending').length
   const approvedCount = claims.filter(c => c.status === 'approved').length
   const rejectedCount = claims.filter(c => c.status === 'rejected').length
+  const missedCount = missedClaims.length
+
+  // ===== Validation Scorecard Metrics =====
+  const validationMetrics = useMemo(() => {
+    const reviewed = claims.filter(c => c.status === 'approved' || c.status === 'rejected')
+    const approved = claims.filter(c => c.status === 'approved').length
+    const falsePositives = claims.filter(c => c.status === 'rejected' && c.rejectionType === 'false_positive').length
+    const correctedRejections = claims.filter(c =>
+      c.status === 'rejected' && c.rejectionType && c.rejectionType !== 'false_positive'
+    ).length
+    const missed = missedClaims.length
+
+    const reviewedCount = reviewed.length
+    const totalClaims = claims.length
+
+    // Precision: approved / (approved + false_positives)
+    const precisionDenom = approved + falsePositives
+    const precision = precisionDenom > 0 ? (approved / precisionDenom) * 100 : null
+
+    // Recall: (approved + corrected_rejections) / (approved + corrected_rejections + missed)
+    const recallDenom = approved + correctedRejections + missed
+    const recall = recallDenom > 0 ? ((approved + correctedRejections) / recallDenom) * 100 : null
+
+    // Mapping accuracy: approved / (approved + wrong_reference + wrong_location + missing_reference)
+    const mappingDenom = approved + correctedRejections
+    const mappingAccuracy = mappingDenom > 0 ? (approved / mappingDenom) * 100 : null
+
+    return {
+      reviewedCount,
+      totalClaims,
+      missed,
+      approved,
+      falsePositives,
+      correctedRejections,
+      precision,
+      recall,
+      mappingAccuracy
+    }
+  }, [claims, missedClaims])
   const matchedRateLabel = matchingStats ? `${matchingStats.matchRate}%` : 'N/A'
 
   const analysisMs = processingTime || 0
@@ -2035,8 +2248,31 @@ export default function MKG2ClaimsDetector() {
   const referenceMatchingRunCost = matchingStats?.matching_ai_cost || 0
   const totalRunAICost = claimDetectionRunCost + referenceMatchingRunCost
 
+  const pageOptions = useMemo(() => {
+    const uniquePages = new Set()
+    claims.forEach((claim) => {
+      uniquePages.add(Math.max(1, Number(claim.page) || 1))
+    })
+    return Array.from(uniquePages).sort((a, b) => a - b)
+  }, [claims])
+
+  // When page options change, initialize any new pages (default expanded)
+  useEffect(() => {
+    setCollapsedPages(prev => {
+      const next = {}
+      let changed = Object.keys(prev).length !== pageOptions.length
+
+      pageOptions.forEach((page) => {
+        if (prev[page] === undefined) changed = true
+        next[page] = prev[page] ?? false
+      })
+
+      return changed ? next : prev
+    })
+  }, [pageOptions])
+
   // Always show all claims — better to over-flag than miss a claim
-  const displayedClaims = claims
+  const displayedClaims = statusFilter === 'missed' ? [] : claims
     .filter(c => {
       if (statusFilter !== 'all' && c.status !== statusFilter) return false
       if (searchQuery && !c.text.toLowerCase().includes(searchQuery.toLowerCase())) return false
@@ -2044,10 +2280,29 @@ export default function MKG2ClaimsDetector() {
       return true
     })
     .sort((a, b) => {
+      if (sortOrder === 'page') {
+        const pageA = Math.max(1, Number(a.page) || 1)
+        const pageB = Math.max(1, Number(b.page) || 1)
+        if (pageA !== pageB) return pageA - pageB
+        return (a.globalIndex ?? 0) - (b.globalIndex ?? 0)
+      }
       if (sortOrder === 'annotation' || sortOrder === 'no-matches') return (a.globalIndex ?? 0) - (b.globalIndex ?? 0)
       if (sortOrder === 'confidence-desc') return b.confidence - a.confidence
       return a.confidence - b.confidence
     })
+
+  const claimsByPage = useMemo(() => {
+    const grouped = new Map()
+    displayedClaims.forEach((claim) => {
+      const page = Math.max(1, Number(claim.page) || 1)
+      if (!grouped.has(page)) grouped.set(page, [])
+      grouped.get(page).push(claim)
+    })
+
+    return Array.from(grouped.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([page, pageClaims]) => ({ page, pageClaims }))
+  }, [displayedClaims])
 
   const canAnalyze = uploadedFile && !isAnalyzing && !isMatching
 
@@ -2286,6 +2541,15 @@ export default function MKG2ClaimsDetector() {
                             </div>
                           </>
                         )}
+                        {missedClaims.length > 0 && (
+                          <>
+                            <div className="divider" />
+                            <div className="resultRow missed">
+                              <span className="resultLabel">Missed Claims</span>
+                              <span className="resultValue">{missedClaims.length}</span>
+                            </div>
+                          </>
+                        )}
                       </div>
                     }
                   />
@@ -2340,6 +2604,52 @@ export default function MKG2ClaimsDetector() {
                       </div>
                     }
                   />
+                  {(validationMetrics.reviewedCount > 0 || validationMetrics.missed > 0) && (
+                    <AccordionItem
+                      title="Validation Scorecard"
+                      defaultOpen={true}
+                      size="small"
+                      content={
+                        <div className="validationScorecard">
+                          <div className="resultRow">
+                            <span className="resultLabel">Reviewed</span>
+                            <span className="resultValue">{validationMetrics.reviewedCount} of {validationMetrics.totalClaims} claims</span>
+                          </div>
+                          {validationMetrics.missed > 0 && (
+                            <div className="resultRow missed">
+                              <span className="resultLabel">Missed Claims</span>
+                              <span className="resultValue">{validationMetrics.missed}</span>
+                            </div>
+                          )}
+                          <div className="divider" />
+                          <div className="resultRow">
+                            <span className="resultLabel">Detection Precision</span>
+                            <span className={`resultValue ${validationMetrics.precision !== null && validationMetrics.precision >= 90 ? 'scoreGreen' : validationMetrics.precision !== null && validationMetrics.precision < 70 ? 'scoreRed' : 'scoreAmber'}`}>
+                              {validationMetrics.precision !== null ? `${validationMetrics.precision.toFixed(1)}%` : '--'}
+                            </span>
+                          </div>
+                          <div className="resultRow">
+                            <span className="resultLabel">Detection Recall</span>
+                            <span className={`resultValue ${validationMetrics.recall !== null && validationMetrics.recall >= 90 ? 'scoreGreen' : validationMetrics.recall !== null && validationMetrics.recall < 70 ? 'scoreRed' : 'scoreAmber'}`}>
+                              {validationMetrics.recall !== null ? `${validationMetrics.recall.toFixed(1)}%` : '--'}
+                            </span>
+                          </div>
+                          <div className="resultRow">
+                            <span className="resultLabel">Mapping Accuracy</span>
+                            <span className={`resultValue ${validationMetrics.mappingAccuracy !== null && validationMetrics.mappingAccuracy >= 70 ? 'scoreGreen' : validationMetrics.mappingAccuracy !== null && validationMetrics.mappingAccuracy < 50 ? 'scoreRed' : 'scoreAmber'}`}>
+                              {validationMetrics.mappingAccuracy !== null ? `${validationMetrics.mappingAccuracy.toFixed(1)}%` : '--'}
+                            </span>
+                          </div>
+                          <div className="divider" />
+                          <div className="scorecardLegend">
+                            <span className="legendItem"><span className="legendDot scoreGreen" /> On target</span>
+                            <span className="legendItem"><span className="legendDot scoreAmber" /> Below target</span>
+                            <span className="legendItem"><span className="legendDot scoreRed" /> Needs work</span>
+                          </div>
+                        </div>
+                      }
+                    />
+                  )}
                 </>
               )}
             </div>
@@ -2365,6 +2675,7 @@ export default function MKG2ClaimsDetector() {
               elapsedSeconds={elapsedSeconds}
               onScanComplete={() => {}}
               claims={claims}
+              missedClaims={displayMissedClaims}
               activeClaimId={activeClaimId}
               onClaimSelect={handleClaimSelect}
               onTextExtracted={handleTextExtracted}
@@ -2372,7 +2683,32 @@ export default function MKG2ClaimsDetector() {
               showPins={showClaimPins}
               onTogglePins={() => setShowClaimPins(prev => !prev)}
               onCancelAnalysis={handleCancelAnalysis}
+              selectionMode={selectionMode}
+              onSelectionModeToggle={setSelectionMode}
+              onPinPlace={analysisComplete ? handlePinPlace : undefined}
             />
+            {pendingPinPosition && (
+              <div className="missedClaimFormOverlay">
+                <MissedClaimForm
+                  position={pendingPinPosition}
+                  referenceDocuments={referenceDocuments}
+                  onSubmit={handleMissedClaimSubmit}
+                  onCancel={handleMissedClaimCancel}
+                />
+              </div>
+            )}
+            {missedClaimToast && (
+              <div className="missedClaimToast">
+                <Alert
+                  type="success"
+                  message="Missed Claim successfully added"
+                  layout="toast"
+                  size="small"
+                  dismissible
+                  onDismiss={() => setMissedClaimToast(false)}
+                />
+              </div>
+            )}
           </div>
 
           {/* ===== RIGHT: Claims + Library ===== */}
@@ -2387,7 +2723,7 @@ export default function MKG2ClaimsDetector() {
                   className={`segmentedBtn ${rightPanelTab === 0 ? 'active' : ''}`}
                   onClick={() => setRightPanelTab(0)}
                 >
-                  Claims{claims.length > 0 ? ` (${claims.length})` : ''}
+                  Claims{claims.length > 0 ? ` (${claims.length}${missedCount > 0 ? `+${missedCount}` : ''})` : ''}
                 </button>
                 <button
                   className={`segmentedBtn ${rightPanelTab === 1 ? 'active' : ''}`}
@@ -2432,9 +2768,33 @@ export default function MKG2ClaimsDetector() {
                         {matchingStats && (
                           <button className="matchingResetBtn" onClick={handleResetMatching}>Re-match</button>
                         )}
+                        {analysisComplete && trainingExamples.length > 0 && !isRunningBaseline && (
+                          <button className="matchingResetBtn" onClick={handleCompareWithoutTraining}>Compare without training</button>
+                        )}
                       </div>
                     </div>
                   ) : null}
+
+                  {/* Training Status Banner */}
+                  {analysisComplete && (
+                    <TrainingStatusBanner
+                      trainingExamples={trainingExamples}
+                      ecosystemExampleCount={ecosystemTrainingExamples.length}
+                      ecosystemBrandCount={ecosystemTrainingBrandCount}
+                      trainingDocumentCount={trainingDocumentCount}
+                      analysisComplete={analysisComplete}
+                    />
+                  )}
+
+                  {/* Comparison Summary */}
+                  {showComparison && (
+                    <ComparisonSummary
+                      baselineClaimCount={baselineClaimCount}
+                      trainedClaimCount={claims.length}
+                      isLoading={isRunningBaseline}
+                      onDismiss={() => { setShowComparison(false); setBaselineClaimCount(null) }}
+                    />
+                  )}
 
                   {analysisComplete && (
                     <div className="claimsFilterBar">
@@ -2463,6 +2823,14 @@ export default function MKG2ClaimsDetector() {
                         >
                           Rejected ({rejectedCount})
                         </button>
+                        {missedClaims.length > 0 && (
+                          <button
+                            className={`statusToggleBtn missed ${statusFilter === 'missed' ? 'active' : ''}`}
+                            onClick={() => setStatusFilter(statusFilter === 'missed' ? 'all' : 'missed')}
+                          >
+                            Missed ({missedClaims.length})
+                          </button>
+                        )}
                       </div>
                       <div className="claimsSearchSort">
                         <Input
@@ -2477,6 +2845,7 @@ export default function MKG2ClaimsDetector() {
                           onChange={(e) => setSortOrder(e.target.value)}
                         >
                           <option value="annotation">Annotation #</option>
+                          <option value="page">Page</option>
                           <option value="confidence-desc">Confidence ↓</option>
                           <option value="confidence-asc">Confidence ↑</option>
                           <option value="no-matches">No matches</option>
@@ -2501,7 +2870,7 @@ export default function MKG2ClaimsDetector() {
                       </div>
                     )}
 
-                    {analysisComplete && displayedClaims.length === 0 && (
+                    {analysisComplete && displayedClaims.length === 0 && !(statusFilter === 'missed' && missedClaims.length > 0) && (
                       <div className="claimsEmptyState">
                         <Icon name="search" size={48} />
                         <p>
@@ -2513,7 +2882,46 @@ export default function MKG2ClaimsDetector() {
                       </div>
                     )}
 
-                    {analysisComplete && displayedClaims.map(claim => (
+                    {analysisComplete && sortOrder === 'page' && claimsByPage.map(({ page, pageClaims }) => {
+                      const isCollapsed = !!collapsedPages[page]
+                      return (
+                        <div key={`page-${page}`} className="claimsPageGroup">
+                          <button
+                            type="button"
+                            className="claimsPageGroupHeader"
+                            aria-expanded={!isCollapsed}
+                            onClick={() => setCollapsedPages(prev => ({ ...prev, [page]: !prev[page] }))}
+                          >
+                            <span className="claimsPageGroupTitle">
+                              <Icon name={isCollapsed ? 'chevronRight' : 'chevronDown'} size={14} />
+                              Page {page}
+                            </span>
+                            <Badge variant="neutral" size="small">{pageClaims.length}</Badge>
+                          </button>
+
+                          {!isCollapsed && (
+                            <div className="claimsPageGroupBody">
+                              {pageClaims.map(claim => (
+                                <div key={claim.id} data-claim-id={claim.id}>
+                                  <MKGClaimCard
+                                    claim={claim}
+                                    isActive={activeClaimId === claim.id}
+                                    onApprove={handleClaimApprove}
+                                    onReject={handleClaimReject}
+                                    onSelect={() => handleClaimSelect(claim.id)}
+                                    onViewSource={() => handleViewSource(claim)}
+                                    brandReferences={referenceDocuments}
+                                    trainingExamples={trainingExamples}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+
+                    {analysisComplete && sortOrder !== 'page' && displayedClaims.map(claim => (
                       <div key={claim.id} data-claim-id={claim.id}>
                         <MKGClaimCard
                           claim={claim}
@@ -2523,9 +2931,45 @@ export default function MKG2ClaimsDetector() {
                           onSelect={() => handleClaimSelect(claim.id)}
                           onViewSource={() => handleViewSource(claim)}
                           brandReferences={referenceDocuments}
+                          trainingExamples={trainingExamples}
                         />
                       </div>
                     ))}
+
+                    {/* Missed claim cards */}
+                    {missedClaims.length > 0 && (statusFilter === 'all' || statusFilter === 'missed') && (() => {
+                      const filteredMissed = missedClaims.filter(mc =>
+                        !searchQuery || mc.text?.toLowerCase().includes(searchQuery.toLowerCase())
+                      )
+                      if (filteredMissed.length === 0) return null
+                      return (
+                        <div className="missedClaimsSection">
+                          <div className="missedClaimsSectionHeader">
+                            <Icon name="alertCircle" size={14} />
+                            <span>Missed Claims ({filteredMissed.length})</span>
+                          </div>
+                          {filteredMissed.map((mc, idx) => (
+                            <div key={mc.id} data-claim-id={mc.id}>
+                              <MKGClaimCard
+                                claim={{
+                                  ...mc,
+                                  status: 'missed',
+                                  confidence: 1.0,
+                                  matched: !!mc.referenceName,
+                                  missedIndex: idx + 1,
+                                  reference: mc.referenceName ? { name: mc.referenceName } : null
+                                }}
+                                isActive={activeClaimId === mc.id}
+                                onSelect={() => handleClaimSelect(mc.id)}
+                                onRemove={handleRemoveMissedClaim}
+                                brandReferences={referenceDocuments}
+                                trainingExamples={trainingExamples}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    })()}
                   </div>
                 </>
               ) : (
@@ -2589,6 +3033,7 @@ export default function MKG2ClaimsDetector() {
         hasActiveBrand={!!selectedBrandId}
         ecosystemBrandCount={ecosystemTrainingBrandCount}
         ecosystemExampleCount={ecosystemTrainingExamples.length}
+        promptInjectionText={promptInjectionText}
       />
 
       {/* New Brand Modal */}

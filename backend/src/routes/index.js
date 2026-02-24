@@ -8,6 +8,7 @@ import passageRoutes from './passages.js'
 import trainingRoutes from './training.js'
 import analysisCacheRoutes from './analysis-cache.js'
 import { brandMatchingJobRoutes, matchingJobRoutes } from './matching-jobs.js'
+import analysisRunRoutes from './analysis-runs.js'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -26,6 +27,7 @@ export function registerRoutes(app) {
   app.use('/api/folders', folderRoutes)
   app.use('/api/training-sessions', trainingRoutes)
   app.use('/api/analysis-cache', analysisCacheRoutes)
+  app.use('/api/analysis-runs', analysisRunRoutes)
   app.use('/api/brands/:brandId', brandMatchingJobRoutes)
   app.use('/api/matching-jobs', matchingJobRoutes)
 

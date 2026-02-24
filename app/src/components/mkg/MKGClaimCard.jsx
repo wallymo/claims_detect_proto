@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import styles from './MKGClaimCard.module.css'
 import ProgressBar from '@/components/atoms/ProgressBar/ProgressBar'
 import Button from '@/components/atoms/Button/Button'
@@ -10,9 +10,11 @@ export default function MKGClaimCard({
   isActive = false,
   onApprove,
   onReject,
+  onRemove,
   onSelect,
   onViewSource,
-  brandReferences = []
+  brandReferences = [],
+  trainingExamples = []
 }) {
   const [showFeedback, setShowFeedback] = useState(false)
   const [showReferencePreview, setShowReferencePreview] = useState(false)
@@ -31,6 +33,40 @@ export default function MKGClaimCard({
     if (confidence >= 0.5) return '#F57C00'
     return '#D32F2F'
   }
+
+  const learnedPatternMatch = useMemo(() => {
+    const normalize = (text) => String(text || '').replace(/\s+/g, ' ').trim().toLowerCase()
+    const normalizedClaimText = normalize(claim?.text)
+
+    if (!normalizedClaimText || trainingExamples.length === 0) {
+      return { hasSameBrandMatch: false, hasCrossBrandMatch: false }
+    }
+
+    let hasSameBrandMatch = false
+    let hasCrossBrandMatch = false
+
+    for (const example of trainingExamples) {
+      const normalizedExampleText = normalize(example?.text)
+      if (!normalizedExampleText) continue
+
+      const isMatch = (
+        normalizedClaimText === normalizedExampleText ||
+        normalizedClaimText.includes(normalizedExampleText) ||
+        normalizedExampleText.includes(normalizedClaimText)
+      )
+
+      if (!isMatch) continue
+
+      if (example?.source_brand_id) {
+        hasCrossBrandMatch = true
+        break
+      }
+
+      hasSameBrandMatch = true
+    }
+
+    return { hasSameBrandMatch, hasCrossBrandMatch }
+  }, [claim?.text, trainingExamples])
 
   const handleApprove = (e) => {
     e.stopPropagation()
@@ -75,11 +111,13 @@ export default function MKGClaimCard({
     setShowReferencePreview(!showReferencePreview)
   }
 
+  const isMissed = claim.status === 'missed'
+
   const cardClassName = [
     styles.claimCard,
     styles[claim.status],
     isActive ? styles.active : '',
-    claim.matched ? styles.matched : styles.unmatched
+    isMissed ? styles.missedClaim : (claim.matched ? styles.matched : styles.unmatched)
   ].filter(Boolean).join(' ')
 
   const needsRefPicker = rejectionType === 'wrong_reference' || rejectionType === 'missing_reference'
@@ -98,35 +136,56 @@ export default function MKGClaimCard({
     <div className={cardClassName} onClick={handleCardClick}>
       {/* Header with confidence */}
       <div className={styles.header}>
-        <div className={styles.confidenceSection}>
-          <div className={styles.progressWrapper}>
-            <ProgressBar
-              value={claim.confidence * 100}
-              max={100}
-              size="small"
-              variant={getConfidenceVariant(claim.confidence)}
-            />
+        {isMissed ? (
+          <div className={styles.missedLabel}>
+            <Icon name="alertCircle" size={14} />
+            <span>Manually Reported</span>
           </div>
-          <span
-            className={styles.confidenceValue}
-            style={{ color: getConfidenceColor(claim.confidence) }}
-          >
-            {Math.round(claim.confidence * 100)}%
-          </span>
-        </div>
+        ) : (
+          <div className={styles.confidenceSection}>
+            <div className={styles.progressWrapper}>
+              <ProgressBar
+                value={claim.confidence * 100}
+                max={100}
+                size="small"
+                variant={getConfidenceVariant(claim.confidence)}
+              />
+            </div>
+            <span
+              className={styles.confidenceValue}
+              style={{ color: getConfidenceColor(claim.confidence) }}
+            >
+              {Math.round(claim.confidence * 100)}%
+            </span>
+          </div>
+        )}
 
         <div className={styles.badges}>
           {claim.page && (
             <span className={styles.pageBadge}>
               <Icon name="fileText" size={12} />
-              {(claim.globalIndex ?? parseInt(claim.id?.replace(/\D/g, ''), 10)) ? `#${claim.globalIndex ?? parseInt(claim.id?.replace(/\D/g, ''), 10)} · ` : ''}Pg {claim.page}
+              {isMissed
+                ? `${claim.missedIndex ? `M${claim.missedIndex} · ` : ''}Pg ${claim.page}`
+                : `${(claim.globalIndex ?? parseInt(claim.id?.replace(/\D/g, ''), 10)) ? `#${claim.globalIndex ?? parseInt(claim.id?.replace(/\D/g, ''), 10)} · ` : ''}Pg ${claim.page}`
+              }
             </span>
           )}
-          {claim.status !== 'pending' && (
+          {learnedPatternMatch.hasCrossBrandMatch ? (
+            <span className={`${styles.learnedBadge} ${styles.crossBrand}`}>
+              Cross-brand learned
+            </span>
+          ) : learnedPatternMatch.hasSameBrandMatch ? (
+            <span className={styles.learnedBadge}>
+              Learned pattern
+            </span>
+          ) : null}
+          {isMissed ? (
+            <span className={styles.missedBadge}>Missed</span>
+          ) : claim.status !== 'pending' ? (
             <Badge variant={claim.status === 'approved' ? 'success' : 'error'} size="small">
               {claim.status}
             </Badge>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -195,7 +254,18 @@ export default function MKGClaimCard({
       )}
 
       {/* Actions */}
-      {claim.status === 'pending' && !showFeedback && (
+      {isMissed ? (
+        <div className={styles.actions}>
+          <Button
+            variant="ghost"
+            size="small"
+            onClick={(e) => { e.stopPropagation(); onRemove?.(claim.id) }}
+          >
+            <Icon name="trash" size={14} />
+            Remove
+          </Button>
+        </div>
+      ) : claim.status === 'pending' && !showFeedback ? (
         <div className={styles.actions}>
           <Button
             variant="ghost"
@@ -214,7 +284,7 @@ export default function MKGClaimCard({
             Reject
           </Button>
         </div>
-      )}
+      ) : null}
 
       {/* Rejection form */}
       {showFeedback && (

@@ -100,8 +100,11 @@ const resolveOverlaps = (dots, canvasDimensions) => {
   return adjusted
 }
 
+const MISSED_CLAIM_COLOR = '#F59E0B'  // Amber for missed claims
+
 export default function ClaimPinsOverlay({
   claims = [],
+  missedClaims = [],
   activeClaimId = null,
   currentPage = 1,
   canvasDimensions = { width: 0, height: 0 },
@@ -145,6 +148,18 @@ export default function ClaimPinsOverlay({
     })
 
   const displayDots = resolveOverlaps(dots, canvasDimensions)
+
+  // Missed claim pins — simple x/y % placement, amber color
+  const missedDots = missedClaims
+    .filter(mc => Number(mc.page) === currentPage && mc.position)
+    .map((mc, idx) => ({
+      id: mc.id,
+      x: clamp((mc.position.x / 100) * canvasDimensions.width, DOT_RADIUS_ACTIVE, canvasDimensions.width - DOT_RADIUS_ACTIVE),
+      y: clamp((mc.position.y / 100) * canvasDimensions.height, DOT_RADIUS_ACTIVE, canvasDimensions.height - DOT_RADIUS_ACTIVE),
+      label: `M${idx + 1}`,
+      isMissed: true
+    }))
+
   const activeDot = displayDots.find(d => d.id === activeClaimId)
   const activeBox = activeDot && activeDot.boxWidthPct > 0 && activeDot.boxHeightPct > 0
     ? {
@@ -231,7 +246,45 @@ export default function ClaimPinsOverlay({
       ctx.fillText(String(dot.label), dot.x, dot.y)
       ctx.restore()
     })
-  }, [displayDots, activeClaimId, hoveredDot, canvasDimensions])
+
+    // Draw missed claim dots (amber)
+    missedDots.forEach((dot) => {
+      const isActive = activeClaimId === dot.id
+      const radius = isActive ? DOT_RADIUS_ACTIVE : DOT_RADIUS
+
+      ctx.save()
+
+      if (isActive) {
+        ctx.shadowColor = 'rgba(245, 158, 11, 0.8)'
+        ctx.shadowBlur = 20
+      }
+
+      // Draw dashed circle border
+      ctx.beginPath()
+      ctx.arc(dot.x, dot.y, radius, 0, Math.PI * 2)
+      ctx.fillStyle = MISSED_CLAIM_COLOR
+      ctx.fill()
+
+      ctx.lineWidth = 2
+      ctx.strokeStyle = isActive ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.3)'
+      ctx.setLineDash([3, 2])
+      ctx.stroke()
+      ctx.setLineDash([])
+
+      ctx.restore()
+
+      // Draw label ("M1", "M2", etc.)
+      ctx.save()
+      ctx.font = `bold ${isActive ? 11 : 9}px system-ui, sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillStyle = 'white'
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.5)'
+      ctx.shadowBlur = 2
+      ctx.fillText(dot.label, dot.x, dot.y)
+      ctx.restore()
+    })
+  }, [displayDots, missedDots, activeClaimId, hoveredDot, canvasDimensions])
 
   // Draw connector SVG
   useEffect(() => {
@@ -309,7 +362,8 @@ export default function ClaimPinsOverlay({
     let closest = null
     let closestDist = Infinity
 
-    for (const dot of displayDots) {
+    const allDots = [...displayDots, ...missedDots]
+    for (const dot of allDots) {
       const dist = Math.hypot(dot.x - x, dot.y - y)
       if (dist < closestDist) {
         closest = dot
@@ -319,7 +373,7 @@ export default function ClaimPinsOverlay({
 
     // Check if within hit radius (dot radius + tolerance)
     return closestDist <= DOT_RADIUS + 8 ? closest : null
-  }, [displayDots])
+  }, [displayDots, missedDots])
 
   const handleCanvasClick = useCallback((e) => {
     const dot = findDotAt(e.clientX, e.clientY)

@@ -413,7 +413,15 @@ async function factAnchoredSearch(claim, brandId, telemetry) {
     if (results.length === 0) return null
 
     const top = results[0]
-    if (!Number.isFinite(top.similarity) || top.similarity < FACT_ANCHOR_MIN_SIMILARITY) return null
+    const originalSimilarity = top.similarity
+    let adjustedSimilarity = originalSimilarity
+    if (top.confirmed_count > 0) {
+      adjustedSimilarity += Math.min(0.05, top.confirmed_count * 0.01)
+    }
+    if (top.rejected_count > (top.confirmed_count || 0)) {
+      adjustedSimilarity -= Math.min(0.10, (top.rejected_count - (top.confirmed_count || 0)) * 0.02)
+    }
+    if (!Number.isFinite(adjustedSimilarity) || adjustedSimilarity < FACT_ANCHOR_MIN_SIMILARITY) return null
 
     // Check keyword overlap — need at least 2 shared keywords or 1 shared numeric
     const claimKeywords = extractKeywords(claim.text)
@@ -437,7 +445,7 @@ async function factAnchoredSearch(claim, brandId, telemetry) {
     telemetry.fact_anchored_count = (telemetry.fact_anchored_count || 0) + 1
     return {
       matched: true,
-      matchConfidence: top.similarity,
+      matchConfidence: adjustedSimilarity,
       matchTier: 'fact-anchored',
       reference: {
         id: top.reference_id,
@@ -448,6 +456,8 @@ async function factAnchoredSearch(claim, brandId, telemetry) {
       matchReasoning: `Fact-anchored match (similarity ${(top.similarity * 100).toFixed(0)}%, ${keywordMatches.length} keywords, ${numericMatches.length} numerics)`,
       _diag: {
         similarity: Number(top.similarity?.toFixed(3)),
+        originalSimilarity: Number(originalSimilarity?.toFixed(3)),
+        adjustedSimilarity: Number(adjustedSimilarity?.toFixed(3)),
         keywordMatches: keywordMatches.length,
         numericMatches: numericMatches.length,
         refName: top.display_alias

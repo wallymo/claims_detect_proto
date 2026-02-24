@@ -135,6 +135,11 @@
   font-weight: 600;
 }
 
+.resultRow.missed .resultValue {
+  color: var(--amber-7);
+  font-weight: 600;
+}
+
 .resultRow.highConf .resultLabel { color: var(--green-7, #388E3C); }
 .resultRow.medConf .resultLabel { color: var(--amber-7, #F57C00); }
 .resultRow.lowConf .resultLabel { color: var(--red-7, #D32F2F); }
@@ -321,6 +326,12 @@
   color: var(--red-7, #D32F2F);
 }
 
+.statusToggleBtn.missed.active {
+  background: var(--amber-1);
+  border-color: var(--amber-5);
+  color: var(--amber-8);
+}
+
 /* Override filter bar for MKG layout */
 .claimsFilterBar {
   display: flex;
@@ -475,6 +486,71 @@
   white-space: nowrap;
 }
 
+.claimsPageGroup {
+  border: 1px solid var(--gray-3, #e0e0e0);
+  border-radius: 8px;
+  background: var(--color-background-secondary, #fafafa);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.claimsPageGroupHeader {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: none;
+  border-bottom: 1px solid var(--gray-3, #e0e0e0);
+  background: var(--gray-1, #f8fafc);
+  color: var(--color-text-primary, #1f2937);
+  color-scheme: normal;
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.claimsPageGroupHeader:hover {
+  background: var(--gray-2, #f1f5f9);
+}
+
+[data-theme="dark"] .claimsPageGroupHeader {
+  background: var(--gray-3, #404040);
+  color: #F5F5F5;
+}
+
+[data-theme="dark"] .claimsPageGroupHeader:hover {
+  background: var(--gray-4, #555555);
+  color: #FFFFFF;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .claimsPageGroupHeader {
+    background: var(--gray-3, #404040);
+    color: #F5F5F5;
+  }
+  :root:not([data-theme="light"]) .claimsPageGroupHeader:hover {
+    background: var(--gray-4, #555555);
+    color: #FFFFFF;
+  }
+}
+
+.claimsPageGroupTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.claimsPageGroupBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--color-background-primary, #ffffff);
+}
+
 .reanalyzeLink {
   background: none;
   border: none;
@@ -490,3 +566,195 @@
 .reanalyzeLink:hover {
   color: var(--color-text-secondary, #6b7280);
 }
+
+/* ===== Missed Claim Form Overlay ===== */
+.missedClaimFormOverlay {
+  position: absolute;
+  bottom: 48px;
+  right: 16px;
+  z-index: 30;
+}
+
+.missedClaimToast {
+  position: absolute;
+  bottom: 48px;
+  right: 16px;
+  z-index: 35;
+  animation: toastSlideIn 0.25s ease-out;
+}
+
+@keyframes toastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ===== Missed Claims Section ===== */
+.missedClaimsSection {
+  border-top: 1px dashed #F59E0B;
+  margin-top: var(--spacing-3);
+  padding-top: var(--spacing-3);
+}
+
+.missedClaimsSectionHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-3);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: #D97706;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.missedClaimCard {
+  border: 1px dashed #F59E0B;
+  border-left: 3px solid #F59E0B;
+  border-radius: var(--border-radius-base);
+  padding: var(--spacing-3);
+  margin: var(--spacing-2) var(--spacing-2);
+  background: #FFFBEB;
+}
+
+[data-theme="dark"] .missedClaimCard {
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.missedClaimCardHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-bottom: var(--spacing-2);
+}
+
+.missedClaimBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #F59E0B;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.missedClaimLabel {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: #D97706;
+  background: #FEF3C7;
+  padding: 1px 6px;
+  border-radius: var(--border-radius-sm);
+}
+
+[data-theme="dark"] .missedClaimLabel {
+  background: rgba(245, 158, 11, 0.15);
+}
+
+.missedClaimPage {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  margin-left: auto;
+}
+
+.missedClaimRemoveBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  border-radius: var(--border-radius-sm);
+  padding: 0;
+}
+
+.missedClaimRemoveBtn:hover {
+  background: var(--color-background-tertiary);
+  color: var(--color-text-primary);
+}
+
+.missedClaimText {
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-2);
+}
+
+.missedClaimRef,
+.missedClaimSupporting {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-1);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  margin-top: var(--spacing-1);
+}
+
+.missedClaimSupporting span {
+  font-style: italic;
+}
+
+/* ===== Validation Scorecard ===== */
+.validationScorecard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+}
+
+.validationScorecard .resultRow.missed .resultValue {
+  color: #D97706;
+  font-weight: var(--font-weight-semibold);
+}
+
+.scoreGreen {
+  color: #388E3C !important;
+  font-weight: var(--font-weight-semibold) !important;
+}
+
+.scoreAmber {
+  color: #F59E0B !important;
+  font-weight: var(--font-weight-semibold) !important;
+}
+
+.scoreRed {
+  color: #D32F2F !important;
+  font-weight: var(--font-weight-semibold) !important;
+}
+
+.scorecardLegend {
+  display: flex;
+  gap: var(--spacing-3);
+  padding-top: var(--spacing-1);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legendDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.legendDot.scoreGreen { color: #388E3C; }
+.legendDot.scoreAmber { color: #F59E0B; }
+.legendDot.scoreRed { color: #D32F2F; }

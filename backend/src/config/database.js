@@ -113,6 +113,11 @@ export function initDb() {
   const migration011 = fs.readFileSync(migration011Path, 'utf-8')
   db.exec(migration011)
 
+  // 012: analysis run history
+  const migration012Path = path.resolve(__dirname, '../../migrations/012_analysis_runs.sql')
+  const migration012 = fs.readFileSync(migration012Path, 'utf-8')
+  db.exec(migration012)
+
   console.log('Database initialized:', env.DB_PATH)
   return db
 }

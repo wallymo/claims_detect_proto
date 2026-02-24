@@ -221,6 +221,25 @@ export async function upsertAnalysisCache({ key, meta, payload }) {
   })
 }
 
+// ========== Analysis Runs ==========
+
+export async function createAnalysisRun(data) {
+  return request('/analysis-runs', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  })
+}
+
+export async function getAnalysisRunsByDocument(documentName, brandId) {
+  const params = new URLSearchParams({ document_name: documentName })
+  if (brandId) params.set('brand_id', brandId)
+  return request(`/analysis-runs/by-document?${params}`)
+}
+
+export async function getRecentAnalysisRuns(limit = 20) {
+  return request(`/analysis-runs?limit=${limit}`)
+}
+
 export async function deleteAnalysisCacheEntry(key) {
   return request(`/analysis-cache?key=${encodeURIComponent(key)}`, {
     method: 'DELETE'

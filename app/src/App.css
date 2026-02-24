@@ -285,6 +285,7 @@ html, body {
 
 /* Document Panel (Center) */
 .documentPanel {
+  position: relative;
   flex: 1;
   min-height: 0;
   min-width: 0;

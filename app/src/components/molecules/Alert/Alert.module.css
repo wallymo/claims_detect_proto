@@ -48,7 +48,7 @@
 }
 
 .success {
-  background-color: #f0fdf4;
+  background-color: var(--green-1);
   border-color: var(--color-state-success);
   color: var(--color-text-primary);
 }
@@ -58,7 +58,7 @@
 }
 
 .warning {
-  background-color: #fffbeb;
+  background-color: var(--amber-1);
   border-color: var(--color-state-warning);
   color: var(--color-text-primary);
 }
@@ -68,7 +68,7 @@
 }
 
 .error {
-  background-color: #fef2f2;
+  background-color: var(--red-1);
   border-color: var(--color-state-error);
   color: var(--color-text-primary);
 }

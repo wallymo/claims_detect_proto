@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import styles from './TrainingDataOverlay.module.css'
 import Icon from '@/components/atoms/Icon/Icon'
 import Button from '@/components/atoms/Button/Button'
@@ -11,11 +12,34 @@ export default function TrainingDataOverlay({
   onExport,
   hasActiveBrand,
   ecosystemBrandCount = 0,
-  ecosystemExampleCount = 0
+  ecosystemExampleCount = 0,
+  promptInjectionText = ''
 }) {
+  const [showPromptPreview, setShowPromptPreview] = useState(false)
+
   if (!isOpen) return null
 
-  const totalApproved = sessions.reduce((sum, s) => sum + (s.approved_claims?.length || 0), 0)
+  const countByType = (claims) => {
+    let approved = 0, rejected = 0, missed = 0
+    for (const c of (claims || [])) {
+      const type = c.type || 'Claim'
+      if (type === 'FalsePositive') rejected++
+      else if (type === 'MissedClaim') missed++
+      else approved++
+    }
+    return { approved, rejected, missed }
+  }
+
+  const totals = sessions.reduce(
+    (acc, s) => {
+      const counts = countByType(s.approved_claims)
+      acc.approved += counts.approved
+      acc.rejected += counts.rejected
+      acc.missed += counts.missed
+      return acc
+    },
+    { approved: 0, rejected: 0, missed: 0 }
+  )
 
   return (
     <>
@@ -25,6 +49,7 @@ export default function TrainingDataOverlay({
           <div className={styles.headerLeft}>
             <Icon name="flask" size={18} />
             <span className={styles.title}>Training Data</span>
+            <span className={styles.versionBadge}>model 0.1</span>
             {sessions.length > 0 && (
               <span className={styles.badge}>{sessions.length} document{sessions.length !== 1 ? 's' : ''}</span>
             )}
@@ -60,13 +85,40 @@ export default function TrainingDataOverlay({
           {hasActiveBrand && sessions.length > 0 && (
             <>
               <div className={styles.summary}>
-                <span>{totalApproved} approved claim{totalApproved !== 1 ? 's' : ''} across {sessions.length} document{sessions.length !== 1 ? 's' : ''}</span>
+                <span>
+                  <span className={styles.countApproved}>{totals.approved} approved</span>
+                  {' · '}
+                  <span className={styles.countRejected}>{totals.rejected} rejected</span>
+                  {' · '}
+                  <span className={styles.countMissed}>{totals.missed} missed</span>
+                  {' across '}
+                  {sessions.length} document{sessions.length !== 1 ? 's' : ''}
+                </span>
               </div>
               {ecosystemExampleCount > 0 && (
-                <div className={styles.ecosystemSummary}>
-                  <Icon name="globe" size={12} />
-                  <span>{ecosystemExampleCount} ecosystem example{ecosystemExampleCount !== 1 ? 's' : ''} from {ecosystemBrandCount} other brand{ecosystemBrandCount !== 1 ? 's' : ''}</span>
+                <div className={styles.ecosystemSummary} title="Contributing to cross-brand learning">
+                  <Icon name="gitCompare" size={12} />
+                  <span>
+                    <strong>{ecosystemBrandCount} contributing brand{ecosystemBrandCount !== 1 ? 's' : ''}</strong>
+                    {' · '}
+                    {ecosystemExampleCount} ecosystem example{ecosystemExampleCount !== 1 ? 's' : ''}
+                  </span>
                 </div>
+              )}
+              {promptInjectionText && (
+                <>
+                  <button
+                    type="button"
+                    className={styles.promptPreviewToggle}
+                    onClick={() => setShowPromptPreview(prev => !prev)}
+                  >
+                    <Icon name={showPromptPreview ? 'chevronUp' : 'chevronDown'} size={12} />
+                    <span>What the AI sees</span>
+                  </button>
+                  {showPromptPreview && (
+                    <pre className={styles.promptPreviewContent}>{promptInjectionText}</pre>
+                  )}
+                </>
               )}
 
               <div className={styles.sessionList}>
@@ -78,7 +130,16 @@ export default function TrainingDataOverlay({
                         <span>{session.label || session.document_name}</span>
                       </div>
                       <div className={styles.sessionMeta}>
-                        <span>{session.approved_claims?.length || 0} approved</span>
+                        {(() => {
+                          const c = countByType(session.approved_claims)
+                          return (
+                            <>
+                              <span>{c.approved} approved</span>
+                              {c.rejected > 0 && <><span>·</span><span>{c.rejected} rejected</span></>}
+                              {c.missed > 0 && <><span>·</span><span>{c.missed} missed</span></>}
+                            </>
+                          )
+                        })()}
                         <span>·</span>
                         <span>{new Date(session.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
                       </div>

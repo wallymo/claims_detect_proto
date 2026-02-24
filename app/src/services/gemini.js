@@ -37,7 +37,7 @@ const getGeminiClient = () => {
 
 // Model configuration - SSOT for model selection
 const GEMINI_MODEL_FROM_ENV = String(import.meta.env.VITE_GEMINI_MODEL || '').trim()
-export const GEMINI_MODEL = GEMINI_MODEL_FROM_ENV || 'gemini-3-pro-preview'
+export const GEMINI_MODEL = GEMINI_MODEL_FROM_ENV || 'gemini-2.5-pro'
 
 // Friendly display names for models
 export const MODEL_DISPLAY_NAMES = {
@@ -63,8 +63,8 @@ const PRICING = {
 }
 
 const GEMINI_MODEL_FALLBACK_ORDER = [
-  'gemini-3-pro-preview',
-  'gemini-2.5-pro'
+  'gemini-2.5-pro',
+  'gemini-3-pro-preview'
 ]
 
 const resolvedGeminiModelCache = new Map()
@@ -898,9 +898,56 @@ Analyze now. Find all medication claims.`
  */
 function buildTrainingExamplesBlock(trainingExamples) {
   if (!Array.isArray(trainingExamples) || trainingExamples.length === 0) return ''
-  const capped = trainingExamples.slice(0, 20)
-  const lines = capped.map(c => `- "${c.text}" (${c.type || 'Claim'})`).join('\n')
-  return `\n\nPRIOR APPROVED EXAMPLES (BRAND + ECOSYSTEM):\nThe following claims were previously reviewed and confirmed as valid examples:\n${lines}\n\nUse these as calibration examples. Detect claims of similar type, language pattern, and specificity.\n`
+
+  // Categorize into 3 groups
+  const approved = []
+  const missed = []
+  const falsePositives = []
+
+  for (const c of trainingExamples) {
+    if (!c || !c.text) continue
+    if (c.type === 'MissedClaim') {
+      missed.push(c)
+    } else if (c.type === 'FalsePositive') {
+      falsePositives.push(c)
+    } else {
+      approved.push(c)
+    }
+  }
+
+  // Budget: 20 examples total, prioritize missed > approved > false positives
+  const maxTotal = 20
+  const missedCapped = missed.slice(0, Math.min(missed.length, 8))
+  const remainingBudget = maxTotal - missedCapped.length
+  const approvedCapped = approved.slice(0, Math.min(approved.length, Math.max(8, remainingBudget - 4)))
+  const fpBudget = maxTotal - missedCapped.length - approvedCapped.length
+  const fpCapped = falsePositives.slice(0, Math.max(0, fpBudget))
+
+  const blocks = []
+
+  if (approvedCapped.length > 0) {
+    const lines = approvedCapped.map(c => {
+      const ref = c.reference?.name ? ` [ref: ${c.reference.name}]` : ''
+      return `- "${c.text}"${ref}`
+    }).join('\n')
+    blocks.push(`PRIOR APPROVED EXAMPLES (detect claims like these):\n${lines}`)
+  }
+
+  if (missedCapped.length > 0) {
+    const lines = missedCapped.map(c => {
+      const ref = c.supportingText ? ` [supported by: ${c.supportingText.slice(0, 100)}]` : c.reference?.name ? ` [ref: ${c.reference.name}]` : ''
+      return `- "${c.text}"${ref}`
+    }).join('\n')
+    blocks.push(`PREVIOUSLY MISSED CLAIMS (you MUST detect these patterns):\n${lines}`)
+  }
+
+  if (fpCapped.length > 0) {
+    const lines = fpCapped.map(c => `- "${c.text}"`).join('\n')
+    blocks.push(`FALSE POSITIVE PATTERNS (do NOT flag these):\n${lines}`)
+  }
+
+  if (blocks.length === 0) return ''
+  return `\n\n${blocks.join('\n\n')}\n\nUse these as calibration: detect patterns like approved and missed examples, avoid false positive patterns.\n`
 }
 
 export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', customPrompt = null, _pageImages = null, docType = 'speaker-notes', factInventory = '', trainingExamples = [], { modelOverride } = {}) {
@@ -1480,8 +1527,8 @@ export async function debugGeminiAPI() {
     // Try different model name formats
     logger.info('Testing different model name formats...')
     const modelFormats = [
-      'gemini-3-pro-preview',
       'gemini-2.5-pro',
+      'gemini-3-pro-preview',
       'gemini-3-flash-preview',
       'gemini-2.5-flash',
       'gemini-2.0-flash',

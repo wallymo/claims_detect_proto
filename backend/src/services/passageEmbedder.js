@@ -129,9 +129,18 @@ export function resolvePageFromBoundaries(charOffset, pageBoundaries) {
   return pageBoundaries[0].page
 }
 
+const EMBED_MAX_RETRIES = 3
+
+function isRetryableError(error) {
+  const msg = String(error?.message || '').toLowerCase()
+  return msg.includes('429') || msg.includes('quota') || msg.includes('rate limit') ||
+    msg.includes('resource_exhausted') || msg.includes('503') || msg.includes('unavailable')
+}
+
 /**
  * Generate embedding for a single text using Gemini embedding API.
  * Returns a Buffer containing the Float32Array data.
+ * Retries with exponential backoff on 429/503 errors.
  */
 export async function embedText(text, options = {}) {
   const apiKey = process.env.VITE_GEMINI_API_KEY
@@ -139,18 +148,34 @@ export async function embedText(text, options = {}) {
 
   const ai = new GoogleGenAI({ apiKey })
   const model = options.model || EMBEDDING_MODEL
+  let lastError = null
 
-  const response = await ai.models.embedContent({
-    model,
-    contents: text,
-    config: {
-      outputDimensionality: options.dimensions || EMBEDDING_DIMS
+  for (let attempt = 0; attempt <= EMBED_MAX_RETRIES; attempt++) {
+    try {
+      const response = await ai.models.embedContent({
+        model,
+        contents: text,
+        config: {
+          outputDimensionality: options.dimensions || EMBEDDING_DIMS
+        }
+      })
+
+      const values = response.embeddings[0].values
+      const float32 = new Float32Array(values)
+      return Buffer.from(float32.buffer)
+    } catch (error) {
+      lastError = error
+      if (attempt < EMBED_MAX_RETRIES && isRetryableError(error)) {
+        const delay = 1000 * Math.pow(2, attempt) + Math.random() * 500
+        console.warn(`[embedText] Attempt ${attempt + 1}/${EMBED_MAX_RETRIES + 1} failed (${error.message}). Retrying in ${Math.round(delay)}ms...`)
+        await new Promise(resolve => setTimeout(resolve, delay))
+      } else {
+        throw error
+      }
     }
-  })
+  }
 
-  const values = response.embeddings[0].values
-  const float32 = new Float32Array(values)
-  return Buffer.from(float32.buffer)
+  throw lastError
 }
 
 /**

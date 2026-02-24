@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
+import pdfjsWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import styles from './PDFViewer.module.css'
 import Icon from '@/components/atoms/Icon/Icon'
 import Button from '@/components/atoms/Button/Button'
@@ -9,8 +10,8 @@ import ClaimPinsOverlay from './ClaimPinsOverlay'
 import { extractTextWithPositions } from '@/utils/pdfTextExtractor'
 import { logger } from '@/utils/logger'
 
-// Use unpkg CDN for worker (cdnjs doesn't have v5)
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.min.mjs`
+// Serve worker locally via Vite instead of external CDN
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl
 logger.debug('PDF.js legacy build, version:', pdfjsLib.version)
 
 export default function PDFViewer({
@@ -22,6 +23,7 @@ export default function PDFViewer({
   elapsedSeconds = 0,
   onScanComplete,
   claims = [],
+  missedClaims = [],
   activeClaimId = null,
   onClaimSelect,
   claimsPanelRef,
@@ -31,6 +33,9 @@ export default function PDFViewer({
   showBoxes = false,
   onToggleBoxes,
   onCancelAnalysis,
+  selectionMode = false,
+  onSelectionModeToggle,
+  onPinPlace,
 }) {
   const [pdf, setPdf] = useState(null)
   const [currentPage, setCurrentPage] = useState(1)
@@ -46,6 +51,7 @@ export default function PDFViewer({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [canvasDimensions, setCanvasDimensions] = useState({ width: 0, height: 0 })
   const [extractedPages, setExtractedPages] = useState([])
+  const [crosshairPos, setCrosshairPos] = useState(null) // { x, y } relative to content area
 
   const canvasRef = useRef(null)
   const containerRef = useRef(null)
@@ -216,13 +222,18 @@ export default function PDFViewer({
 
   // Drag handlers for panning
   const handleMouseDown = (e) => {
-    if (!canPan) return
+    if (!canPan || selectionMode) return
     e.preventDefault()
     setIsDragging(true)
     setDragStart({ x: e.clientX - panX, y: e.clientY - panY })
   }
 
   const handleMouseMove = (e) => {
+    // Track crosshair position in selection mode
+    if (selectionMode && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect()
+      setCrosshairPos({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+    }
     if (!isDragging) return
     const newPanX = e.clientX - dragStart.x
     const newPanY = e.clientY - dragStart.y
@@ -236,9 +247,24 @@ export default function PDFViewer({
 
   const handleMouseLeave = () => {
     setIsDragging(false)
+    setCrosshairPos(null)
   }
 
   const handleCanvasClick = (e) => {
+    // In selection mode, capture click position as % of canvas for pin placement
+    if (selectionMode && canvasRef.current) {
+      const canvasRect = canvasRef.current.getBoundingClientRect()
+      // Only accept clicks within the canvas bounds
+      if (
+        e.clientX < canvasRect.left || e.clientX > canvasRect.right ||
+        e.clientY < canvasRect.top || e.clientY > canvasRect.bottom
+      ) return
+      const x = Math.max(0, Math.min(100, ((e.clientX - canvasRect.left) / canvasRect.width) * 100))
+      const y = Math.max(0, Math.min(100, ((e.clientY - canvasRect.top) / canvasRect.height) * 100))
+      setCrosshairPos(null)
+      onPinPlace?.({ x, y, page: currentPage })
+      return
+    }
     // Clear selection when clicking canvas (not a marker)
     if (e.target === canvasRef.current || e.target.classList.contains(styles.content)) {
       onClaimSelect?.(null)
@@ -285,7 +311,7 @@ export default function PDFViewer({
       {/* Content wrapper - matches DocumentViewer */}
       <div className={styles.contentWrapper}>
         <div
-          className={`${styles.content} ${canPan ? styles.canPan : ''} ${isDragging ? styles.dragging : ''}`}
+          className={`${styles.content} ${selectionMode ? styles.selectionMode : ''} ${canPan && !selectionMode ? styles.canPan : ''} ${isDragging ? styles.dragging : ''}`}
           ref={containerRef}
           onClick={handleCanvasClick}
           onMouseDown={handleMouseDown}
@@ -323,6 +349,7 @@ export default function PDFViewer({
               {showPins && (
                 <ClaimPinsOverlay
                   claims={claims}
+                  missedClaims={missedClaims}
                   activeClaimId={activeClaimId}
                   currentPage={currentPage}
                   canvasDimensions={canvasDimensions}
@@ -336,6 +363,24 @@ export default function PDFViewer({
             </div>
           )}
         </div>
+
+        {/* Live crosshair guide in selection mode */}
+        {selectionMode && crosshairPos && (
+          <>
+            <div className={styles.crosshairH} style={{ top: crosshairPos.y }} />
+            <div className={styles.crosshairV} style={{ left: crosshairPos.x }} />
+          </>
+        )}
+
+        {/* Selection mode banner */}
+        {selectionMode && (
+          <div className={styles.selectionBanner}>
+            <span>Click on the document to mark the missed claim location</span>
+            <Button variant="ghost" size="small" onClick={() => onSelectionModeToggle?.(false)}>
+              Cancel
+            </Button>
+          </div>
+        )}
 
         {/* Scanner overlay */}
         <ScannerOverlay
@@ -362,13 +407,24 @@ export default function PDFViewer({
               <Icon name="chevronRight" size={14} />
             </Button>
           </div>
-          {claims.length > 0 && (
-            <div className={styles.pageNav}>
+          <div className={styles.pageNav}>
+            {claims.length > 0 && (
               <Button variant="ghost" size="small" onClick={() => onTogglePins?.()}>
                 {showPins ? 'Hide numerals' : 'Show numerals'}
               </Button>
-            </div>
-          )}
+            )}
+            {onPinPlace && !selectionMode && (
+              <Button
+                variant="ghost"
+                size="small"
+                className={styles.reportMissedBtn}
+                onClick={() => onSelectionModeToggle?.(true)}
+              >
+                <Icon name="plus" size={12} />
+                Report Missed Claim
+              </Button>
+            )}
+          </div>
         </div>
       )}
     </div>

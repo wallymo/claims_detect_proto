@@ -4,10 +4,11 @@
  */
 
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
+import pdfjsWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { logger } from './logger.js'
 
-// Use same worker setup as PDFViewer
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.min.mjs`
+// Serve worker locally via Vite instead of external CDN
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl
 
 // Max pages to convert (set high - let API token limits be the constraint)
 const MAX_PAGES = 100
