@@ -113,21 +113,15 @@
   color: var(--gray-7);
 }
 
-.learnedBadge {
+.trainingIcon {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 1px 6px;
-  font-size: 10px;
-  font-weight: 500;
-  border-radius: 4px;
-  background: var(--green-2);
+  justify-content: center;
   color: var(--green-7);
-  white-space: nowrap;
+  flex-shrink: 0;
 }
 
-.learnedBadge.crossBrand {
-  background: var(--blue-2);
+.trainingIcon.crossBrand {
   color: var(--blue-7);
 }
 

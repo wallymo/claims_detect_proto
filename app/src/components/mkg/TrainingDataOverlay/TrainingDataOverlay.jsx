@@ -8,6 +8,7 @@ export default function TrainingDataOverlay({
   onClose,
   sessions = [],
   onDeleteSession,
+  onDeleteClaim,
   onClearAll,
   onExport,
   hasActiveBrand,
@@ -16,6 +17,7 @@ export default function TrainingDataOverlay({
   promptInjectionText = ''
 }) {
   const [showPromptPreview, setShowPromptPreview] = useState(false)
+  const [expandedSessionId, setExpandedSessionId] = useState(null)
 
   if (!isOpen) return null
 
@@ -40,6 +42,15 @@ export default function TrainingDataOverlay({
     },
     { approved: 0, rejected: 0, missed: 0 }
   )
+
+  const normalizeClaimType = (type) => {
+    if (type === 'MissedClaim' || type === 'FalsePositive') return type
+    return 'Claim'
+  }
+
+  const toggleSessionExpanded = (sessionId) => {
+    setExpandedSessionId(prev => (prev === sessionId ? null : sessionId))
+  }
 
   return (
     <>
@@ -122,37 +133,106 @@ export default function TrainingDataOverlay({
               )}
 
               <div className={styles.sessionList}>
-                {sessions.map(session => (
-                  <div key={session.id} className={styles.sessionCard}>
-                    <div className={styles.sessionInfo}>
-                      <div className={styles.sessionName} title={session.document_name}>
-                        <Icon name="fileText" size={13} />
-                        <span>{session.label || session.document_name}</span>
+                {sessions.map(session => {
+                  const sessionCardId = session.id || session.document_key
+                  const isExpanded = expandedSessionId === sessionCardId
+                  const claims = Array.isArray(session.approved_claims) ? session.approved_claims : []
+                  const sessionCounts = countByType(claims)
+                  return (
+                    <div key={sessionCardId} className={styles.sessionCard}>
+                      <div
+                        className={styles.sessionCardHeader}
+                        onClick={() => toggleSessionExpanded(sessionCardId)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            toggleSessionExpanded(sessionCardId)
+                          }
+                        }}
+                        role="button"
+                        tabIndex={0}
+                      >
+                        <div className={styles.sessionInfo}>
+                          <div className={styles.sessionName} title={session.document_name}>
+                            <Icon name="fileText" size={13} />
+                            <span className={styles.sessionLabel}>{session.label || session.document_name}</span>
+                            {session.label?.startsWith('Seeded:') && (
+                              <span className={styles.seededBadge}>Seeded</span>
+                            )}
+                          </div>
+                          <div className={styles.sessionMeta}>
+                            <span>{sessionCounts.approved} approved</span>
+                            {sessionCounts.rejected > 0 && <><span>·</span><span>{sessionCounts.rejected} rejected</span></>}
+                            {sessionCounts.missed > 0 && <><span>·</span><span>{sessionCounts.missed} missed</span></>}
+                            <span>·</span>
+                            <span>{new Date(session.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                          </div>
+                        </div>
+                        <div className={styles.sessionActions}>
+                          <button
+                            className={styles.chevronBtn}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              toggleSessionExpanded(sessionCardId)
+                            }}
+                            title={isExpanded ? 'Collapse claims' : 'Expand claims'}
+                          >
+                            <Icon name={isExpanded ? 'chevronUp' : 'chevronDown'} size={14} />
+                          </button>
+                          <button
+                            className={styles.deleteBtn}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              onDeleteSession(sessionCardId)
+                            }}
+                            title="Delete document training"
+                          >
+                            <Icon name="trash" size={14} />
+                          </button>
+                        </div>
                       </div>
-                      <div className={styles.sessionMeta}>
-                        {(() => {
-                          const c = countByType(session.approved_claims)
-                          return (
-                            <>
-                              <span>{c.approved} approved</span>
-                              {c.rejected > 0 && <><span>·</span><span>{c.rejected} rejected</span></>}
-                              {c.missed > 0 && <><span>·</span><span>{c.missed} missed</span></>}
-                            </>
-                          )
-                        })()}
-                        <span>·</span>
-                        <span>{new Date(session.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                      </div>
+                      {isExpanded && claims.length > 0 && (
+                        <div className={styles.claimDetailList}>
+                          {claims.map((claim, claimIndex) => {
+                            const claimType = normalizeClaimType(claim?.type)
+                            return (
+                              <div key={`${sessionCardId}-claim-${claimIndex}`} className={styles.claimDetailRow}>
+                                <span className={styles.claimTypeBadge} data-type={claimType}>{claimType}</span>
+                                <div className={styles.claimDetailBody}>
+                                  <div className={styles.claimDetailText} title={claim?.text || ''}>
+                                    {claim?.text || ''}
+                                  </div>
+                                  {claim?.reference?.name && (
+                                    <div className={styles.claimDetailRef} title={claim.reference.name}>
+                                      {claim.reference.name}
+                                    </div>
+                                  )}
+                                  {claim?.annotation && (
+                                    <div className={styles.claimDetailAnnotation} title={claim.annotation}>
+                                      {claim.annotation}
+                                    </div>
+                                  )}
+                                </div>
+                                {onDeleteClaim && (
+                                  <button
+                                    className={styles.claimDeleteBtn}
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      onDeleteClaim(sessionCardId, claimIndex)
+                                    }}
+                                    title="Delete claim"
+                                  >
+                                    <Icon name="trash" size={12} />
+                                  </button>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
-                    <button
-                      className={styles.deleteBtn}
-                      onClick={() => onDeleteSession(session.id)}
-                      title="Delete document training"
-                    >
-                      <Icon name="trash" size={14} />
-                    </button>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </>
           )}

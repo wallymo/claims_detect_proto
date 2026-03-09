@@ -121,9 +121,9 @@ export default function MKGClaimCard({
   ].filter(Boolean).join(' ')
 
   const needsRefPicker = rejectionType === 'wrong_reference' || rejectionType === 'missing_reference'
-  const filteredRefs = brandReferences.filter(r =>
-    !refSearch || r.name?.toLowerCase().includes(refSearch.toLowerCase())
-  )
+  const filteredRefs = brandReferences
+    .filter(r => !refSearch || r.name?.toLowerCase().includes(refSearch.toLowerCase()))
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
 
   const rejectionTypeLabels = {
     false_positive: { label: 'False positive', desc: "This isn't actually a claim" },
@@ -171,12 +171,15 @@ export default function MKGClaimCard({
             </span>
           )}
           {learnedPatternMatch.hasCrossBrandMatch ? (
-            <span className={`${styles.learnedBadge} ${styles.crossBrand}`}>
-              Cross-brand learned
+            <span
+              className={`${styles.trainingIcon} ${styles.crossBrand}`}
+              title="Cross-brand training match"
+            >
+              <Icon name="fileCheck" size={14} />
             </span>
           ) : learnedPatternMatch.hasSameBrandMatch ? (
-            <span className={styles.learnedBadge}>
-              Learned pattern
+            <span className={styles.trainingIcon} title="Training-verified claim">
+              <Icon name="fileCheck" size={14} />
             </span>
           ) : null}
           {isMissed ? (

@@ -55,8 +55,7 @@
 }
 
 /* Inputs */
-.textarea,
-.select {
+.textarea {
   width: 100%;
   padding: var(--spacing-2);
   font-size: var(--font-size-sm);
@@ -70,8 +69,7 @@
   box-sizing: border-box;
 }
 
-.textarea:focus,
-.select:focus {
+.textarea:focus {
   outline: none;
   border-color: #F59E0B;
 }
@@ -81,9 +79,108 @@
   min-height: 0;
 }
 
-.select {
-  appearance: auto;
+.refSearchWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.refSearchInput {
+  width: 100%;
+  padding: var(--spacing-2);
+  padding-right: 28px;
+  font-size: var(--font-size-sm);
+  font-family: var(--font-family-primary);
+  color: var(--color-text-primary);
+  background: var(--color-background-primary);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-base);
+  transition: border-color 0.15s ease;
+  box-sizing: border-box;
+}
+
+.refSearchInput:focus {
+  outline: none;
+  border-color: #F59E0B;
+}
+
+.refSearchClear {
+  position: absolute;
+  right: 6px;
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
   cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  line-height: 1;
+}
+
+.refSearchClear:hover {
+  color: var(--color-text-primary);
+}
+
+.refList {
+  max-height: 140px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-base);
+  background: var(--color-background-primary);
+}
+
+.refItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 8px;
+  font-size: var(--font-size-xs);
+  font-family: var(--font-family-primary);
+  color: var(--color-text-primary);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--gray-2);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s ease;
+}
+
+.refItem:last-child {
+  border-bottom: none;
+}
+
+.refItem:hover {
+  background: var(--gray-1);
+}
+
+.refItemSelected {
+  background: var(--amber-1);
+}
+
+.refItemSelected:hover {
+  background: var(--amber-1);
+}
+
+.refItemName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.refItemCheck {
+  color: #F59E0B;
+  font-weight: 600;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
+.refEmpty {
+  padding: 12px;
+  text-align: center;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
 }
 
 /* Actions */

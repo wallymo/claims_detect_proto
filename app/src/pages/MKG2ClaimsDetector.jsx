@@ -19,7 +19,6 @@ import DocumentTypeSelector from '@/components/claims-detector/DocumentTypeSelec
 import LibraryTab from '@/components/claims-detector/LibraryTab'
 import TrainingDataOverlay from '@/components/mkg/TrainingDataOverlay/TrainingDataOverlay'
 import TrainingStatusBanner from '@/components/mkg/TrainingStatusBanner/TrainingStatusBanner'
-import ComparisonSummary from '@/components/mkg/ComparisonSummary/ComparisonSummary'
 import MissedClaimForm from '@/components/mkg/MissedClaimForm/MissedClaimForm'
 import Alert from '@/components/molecules/Alert/Alert'
 
@@ -509,9 +508,6 @@ export default function MKG2ClaimsDetector() {
   const [trainingDocuments, setTrainingDocuments] = useState([])
   const [ecosystemTrainingExamples, setEcosystemTrainingExamples] = useState([])
   const [showTrainingOverlay, setShowTrainingOverlay] = useState(false)
-  const [baselineClaimCount, setBaselineClaimCount] = useState(null)
-  const [isRunningBaseline, setIsRunningBaseline] = useState(false)
-  const [showComparison, setShowComparison] = useState(false)
 
   const claimsListRef = useRef(null)
   const claimsPanelRef = useRef(null)
@@ -1277,6 +1273,7 @@ export default function MKG2ClaimsDetector() {
           usage: result.usage || null,
           matchingStats: null
         })
+        setHasCachedResult(true)
       }
     } catch (error) {
       logger.error('Analysis error:', error)
@@ -1307,27 +1304,6 @@ export default function MKG2ClaimsDetector() {
     setHasCachedResult(false)
     handleAnalyze()
   }
-
-  const handleCompareWithoutTraining = useCallback(async () => {
-    if (!uploadedFile || isRunningBaseline) return
-    if (!window.confirm('This will re-analyze the document without training data to compare. This costs API credits. Continue?')) return
-    setIsRunningBaseline(true)
-    setShowComparison(true)
-    setBaselineClaimCount(null)
-    try {
-      const progressCb = () => {}
-      const promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
-      const result = await analyzeWithGemini(uploadedFile, progressCb, promptKey, editablePrompt, null, selectedDocType || 'speaker-notes', '', [], { modelOverride: selectedModelOption?.modelId })
-      if (result.success) {
-        const rawClaims = Array.isArray(result.claims) ? result.claims : []
-        setBaselineClaimCount(rawClaims.length)
-      }
-    } catch (err) {
-      logger.error('Baseline comparison failed:', err)
-    } finally {
-      setIsRunningBaseline(false)
-    }
-  }, [uploadedFile, isRunningBaseline, selectedPrompt, editablePrompt, selectedDocType, selectedModelOption])
 
   const handleCancelAnalysis = () => {
     cancelAnalysisRef.current = true
@@ -1665,6 +1641,7 @@ export default function MKG2ClaimsDetector() {
           usage: analysisUsage,
           matchingStats: enrichedStats
         })
+        setHasCachedResult(true)
       }
       setMatchingStats(enrichedStats)
       setMatchingComplete(true)
@@ -2042,6 +2019,32 @@ export default function MKG2ClaimsDetector() {
     }
   }
 
+  const handleDeleteClaimFromSession = async (sessionId, claimIndex) => {
+    try {
+      const target = trainingDocuments.find(doc =>
+        doc.id === sessionId || doc.source_session_ids?.includes(sessionId)
+      )
+      if (!target) return
+
+      const nextClaims = target.approved_claims.filter((_, i) => i !== claimIndex)
+      const updateIds = target.source_session_ids?.length
+        ? target.source_session_ids
+        : [target.id]
+
+      if (nextClaims.length === 0) {
+        await Promise.allSettled(updateIds.map(id => api.deleteTrainingSession(id)))
+        setTrainingDocuments(prev => prev.filter(doc => doc.document_key !== target.document_key))
+      } else {
+        await Promise.allSettled(updateIds.map(id => api.updateTrainingSessionClaims(id, nextClaims)))
+        setTrainingDocuments(prev => prev.map(doc =>
+          doc.document_key === target.document_key ? { ...doc, approved_claims: nextClaims } : doc
+        ))
+      }
+    } catch (err) {
+      logger.error('Delete claim from session error:', err)
+    }
+  }
+
   const handleClearTrainingSessions = async () => {
     if (!selectedBrandId) return
     try {
@@ -2199,6 +2202,9 @@ export default function MKG2ClaimsDetector() {
   const pendingCount = claims.filter(c => c.status === 'pending').length
   const approvedCount = claims.filter(c => c.status === 'approved').length
   const rejectedCount = claims.filter(c => c.status === 'rejected').length
+  const highConfidenceClaims = claims.filter(c => c.confidence >= 0.9)
+  const mediumConfidenceClaims = claims.filter(c => c.confidence >= 0.7 && c.confidence < 0.9)
+  const lowConfidenceClaims = claims.filter(c => c.confidence < 0.7)
   const missedCount = missedClaims.length
 
   // ===== Validation Scorecard Metrics =====
@@ -2524,6 +2530,19 @@ export default function MKG2ClaimsDetector() {
                           <span className="resultLabel">Claims Detected</span>
                           <span className="resultValue">{claims.length}</span>
                         </div>
+                        <div className="divider" />
+                        <div className="resultRow highConf">
+                          <span className="resultLabel">High Confidence (90-100%)</span>
+                          <span className="resultValue">{highConfidenceClaims.length}</span>
+                        </div>
+                        <div className="resultRow medConf">
+                          <span className="resultLabel">Medium (70-89%)</span>
+                          <span className="resultValue">{mediumConfidenceClaims.length}</span>
+                        </div>
+                        <div className="resultRow lowConf">
+                          <span className="resultLabel">Low (&lt;70%)</span>
+                          <span className="resultValue">{lowConfidenceClaims.length}</span>
+                        </div>
                         {matchingStats && (
                           <>
                             <div className="divider" />
@@ -2768,9 +2787,6 @@ export default function MKG2ClaimsDetector() {
                         {matchingStats && (
                           <button className="matchingResetBtn" onClick={handleResetMatching}>Re-match</button>
                         )}
-                        {analysisComplete && trainingExamples.length > 0 && !isRunningBaseline && (
-                          <button className="matchingResetBtn" onClick={handleCompareWithoutTraining}>Compare without training</button>
-                        )}
                       </div>
                     </div>
                   ) : null}
@@ -2783,16 +2799,6 @@ export default function MKG2ClaimsDetector() {
                       ecosystemBrandCount={ecosystemTrainingBrandCount}
                       trainingDocumentCount={trainingDocumentCount}
                       analysisComplete={analysisComplete}
-                    />
-                  )}
-
-                  {/* Comparison Summary */}
-                  {showComparison && (
-                    <ComparisonSummary
-                      baselineClaimCount={baselineClaimCount}
-                      trainedClaimCount={claims.length}
-                      isLoading={isRunningBaseline}
-                      onDismiss={() => { setShowComparison(false); setBaselineClaimCount(null) }}
                     />
                   )}
 
@@ -3028,6 +3034,7 @@ export default function MKG2ClaimsDetector() {
         onClose={() => setShowTrainingOverlay(false)}
         sessions={trainingDocuments}
         onDeleteSession={handleDeleteTrainingSession}
+        onDeleteClaim={handleDeleteClaimFromSession}
         onClearAll={handleClearTrainingSessions}
         onExport={handleExportTrainingSessions}
         hasActiveBrand={!!selectedBrandId}

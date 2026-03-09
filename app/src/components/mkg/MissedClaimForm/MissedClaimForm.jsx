@@ -9,6 +9,7 @@ export default function MissedClaimForm({
 }) {
   const [claimText, setClaimText] = useState('')
   const [referenceId, setReferenceId] = useState('')
+  const [refSearch, setRefSearch] = useState('')
 
   const handleSubmit = (e) => {
     e.preventDefault()
@@ -23,6 +24,10 @@ export default function MissedClaimForm({
       supportingText: null
     })
   }
+
+  const filteredRefs = [...referenceDocuments]
+    .filter(r => !refSearch || r.name?.toLowerCase().includes(refSearch.toLowerCase()))
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
 
   return (
     <div className={styles.formContainer}>
@@ -47,20 +52,41 @@ export default function MissedClaimForm({
         </div>
 
         <div className={styles.field}>
-          <label className={styles.label} htmlFor="missedClaimRef">
-            Reference
-          </label>
-          <select
-            id="missedClaimRef"
-            className={styles.select}
-            value={referenceId}
-            onChange={(e) => setReferenceId(e.target.value)}
-          >
-            <option value="">Select reference...</option>
-            {referenceDocuments.map(ref => (
-              <option key={ref.id} value={ref.id}>{ref.name}</option>
+          <label className={styles.label}>Reference</label>
+          <div className={styles.refSearchWrapper}>
+            <input
+              className={styles.refSearchInput}
+              type="text"
+              placeholder="Search references..."
+              value={refSearch}
+              onChange={(e) => setRefSearch(e.target.value)}
+            />
+            {refSearch && (
+              <button
+                type="button"
+                className={styles.refSearchClear}
+                onClick={() => setRefSearch('')}
+              >
+                x
+              </button>
+            )}
+          </div>
+          <div className={styles.refList}>
+            {filteredRefs.length === 0 && (
+              <div className={styles.refEmpty}>No references found</div>
+            )}
+            {filteredRefs.map(ref => (
+              <button
+                key={ref.id}
+                type="button"
+                className={`${styles.refItem} ${referenceId === String(ref.id) ? styles.refItemSelected : ''}`}
+                onClick={() => setReferenceId(referenceId === String(ref.id) ? '' : String(ref.id))}
+              >
+                <span className={styles.refItemName}>{ref.name}</span>
+                {referenceId === String(ref.id) && <span className={styles.refItemCheck}>✓</span>}
+              </button>
             ))}
-          </select>
+          </div>
         </div>
 
         <div className={styles.actions}>
