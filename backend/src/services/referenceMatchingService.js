@@ -244,7 +244,10 @@ function buildSemanticDirectFallbackMatch(allReferences, topCandidate, leadMargi
       page: topCandidate.page_estimate ?? null,
       excerpt: typeof topCandidate.passage_text === 'string'
         ? topCandidate.passage_text.slice(0, 400)
-        : null
+        : null,
+      charStart: topCandidate.start_char ?? null,
+      charEnd: topCandidate.end_char ?? null,
+      verificationStatus: 'unverified'
     },
     matchReasoning: `No verified quote found; using high-confidence semantic fallback (hybrid ${(hybrid * 100).toFixed(0)}%, semantic ${(semantic * 100).toFixed(0)}%, lead +${(margin * 100).toFixed(0)}).`
   }
@@ -555,7 +558,10 @@ async function factAnchoredSearch(claim, brandId, telemetry, caches) {
         id: top.reference_id,
         name: top.display_alias,
         page: bestFact?.page || null,
-        excerpt: bestFact?.text || top.facts?.[0]?.text || null
+        excerpt: bestFact?.text || top.facts?.[0]?.text || null,
+        charStart: null,
+        charEnd: null,
+        verificationStatus: 'fact-anchored'
       },
       matchReasoning: `Fact-anchored match (similarity ${(top.similarity * 100).toFixed(0)}%, ${keywordMatches.length} keywords, ${numericMatches.length} numerics)`,
       _diag: {
@@ -651,9 +657,16 @@ async function fullReferenceExtraction(
         continue
       }
 
-      const pageEstimate = matchedVerification.charOffset != null && refRow.page_count
-        ? Math.floor(matchedVerification.charOffset / (refRow.content_text.length / refRow.page_count)) + 1
-        : matchedQuote.page_estimate
+      let pageEstimate = matchedQuote.page_estimate
+      if (matchedVerification.charOffset != null) {
+        const boundaries = refRow.page_boundaries
+        if (Array.isArray(boundaries) && boundaries.length > 0) {
+          const found = boundaries.find(b => matchedVerification.charOffset >= b.startChar && matchedVerification.charOffset < b.endChar)
+          pageEstimate = found ? found.page : Math.floor(matchedVerification.charOffset / (refRow.content_text.length / refRow.page_count)) + 1
+        } else if (refRow.page_count) {
+          pageEstimate = Math.floor(matchedVerification.charOffset / (refRow.content_text.length / refRow.page_count)) + 1
+        }
+      }
 
       telemetry.verified_quotes = (telemetry.verified_quotes || 0) + 1
       refDiag.result = 'matched'
@@ -670,7 +683,12 @@ async function fullReferenceExtraction(
           name: candidateRef.display_alias,
           page: pageEstimate,
           excerpt: matchedQuote.text,
-          evidenceType: matchedQuote.evidence_type
+          evidenceType: matchedQuote.evidence_type,
+          charStart: matchedVerification.charOffset ?? null,
+          charEnd: matchedVerification.charOffset != null
+            ? matchedVerification.charOffset + (matchedVerification.matchedText?.length || matchedQuote.text?.length || 0)
+            : null,
+          verificationStatus: matchedVerification.status
         },
         matchReasoning: result.reasoning
       }
@@ -745,7 +763,10 @@ async function keywordFallbackMatch(claim, getFallbackReferencesWithText, brandI
           id: matched.id,
           name: result.referenceName || matched.display_alias,
           page: result.pageInReference,
-          excerpt: result.supportingExcerpt || matched.content_text?.slice(0, 300)
+          excerpt: result.supportingExcerpt || matched.content_text?.slice(0, 300),
+          charStart: null,
+          charEnd: null,
+          verificationStatus: 'keyword-fallback'
         },
         matchReasoning: `${result.reasoning} (keyword fallback)`
       }

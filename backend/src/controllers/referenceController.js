@@ -48,7 +48,8 @@ export const referenceController = {
         content_text: text,
         notes: req.body.notes || '',
         page_count: pageCount,
-        file_size_bytes: file.size
+        file_size_bytes: file.size,
+        page_boundaries: pageBoundaries || null
       })
 
       // Auto-index: create pending facts row and kick off async extraction

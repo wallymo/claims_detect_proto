@@ -118,6 +118,13 @@ export function initDb() {
   const migration012 = fs.readFileSync(migration012Path, 'utf-8')
   db.exec(migration012)
 
+  // 013: page_boundaries for accurate page resolution
+  const migration013Path = path.resolve(__dirname, '../../migrations/013_page_boundaries.sql')
+  const migration013 = fs.readFileSync(migration013Path, 'utf-8')
+  for (const stmt of migration013.split(';').map(s => s.trim()).filter(Boolean)) {
+    try { db.exec(stmt) } catch (err) { if (!err.message.includes('duplicate column')) throw err }
+  }
+
   console.log('Database initialized:', env.DB_PATH)
   return db
 }

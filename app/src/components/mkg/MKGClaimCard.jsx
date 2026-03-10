@@ -112,6 +112,7 @@ export default function MKGClaimCard({
   }
 
   const isMissed = claim.status === 'missed'
+  const isApproximate = claim.reference?.verificationStatus === 'unverified' || claim.matchTier === 'semantic-direct-fallback'
 
   const cardClassName = [
     styles.claimCard,
@@ -213,10 +214,15 @@ export default function MKGClaimCard({
             </button>
           </div>
           <div className={styles.referenceLocation}>
-            {claim.reference.page && (
+            {isApproximate ? (
+              <>
+                <Icon name="alertCircle" size={12} />
+                <span>Approximate location</span>
+              </>
+            ) : (
               <>
                 <Icon name="mapPin" size={12} />
-                <span>Page {claim.reference.page}</span>
+                <span>Page {claim.reference.page || '?'}</span>
               </>
             )}
             {onViewSource && (

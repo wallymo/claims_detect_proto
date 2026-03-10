@@ -1,16 +1,17 @@
 import { getDb } from '../config/database.js'
 
 export const Reference = {
-  create({ brand_id, filename, display_alias, file_path, doc_type, content_text, notes = '', page_count, file_size_bytes }) {
+  create({ brand_id, filename, display_alias, file_path, doc_type, content_text, notes = '', page_count, file_size_bytes, page_boundaries }) {
     const db = getDb()
     const stmt = db.prepare(`
       INSERT INTO reference_documents
-        (brand_id, filename, display_alias, file_path, doc_type, content_text, notes, page_count, file_size_bytes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (brand_id, filename, display_alias, file_path, doc_type, content_text, notes, page_count, file_size_bytes, page_boundaries)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     const result = stmt.run(
       brand_id, filename, display_alias, file_path, doc_type,
-      content_text, notes, page_count, file_size_bytes
+      content_text, notes, page_count, file_size_bytes,
+      page_boundaries ? JSON.stringify(page_boundaries) : null
     )
     return this.findById(result.lastInsertRowid)
   },
@@ -61,9 +62,10 @@ export const Reference = {
     const db = getDb()
     const row = db.prepare(`
       SELECT id, brand_id, display_alias, doc_type, content_text, notes,
-             page_count, file_size_bytes, upload_date
+             page_count, file_size_bytes, upload_date, page_boundaries
       FROM reference_documents WHERE id = ?
     `).get(id)
+    if (row) row.page_boundaries = row.page_boundaries ? JSON.parse(row.page_boundaries) : null
     return row || null
   },
 

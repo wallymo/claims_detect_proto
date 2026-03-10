@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import '../App.css'
 import './MKGClaimsDetector.css'
+import 'pdfjs-dist/web/pdf_viewer.css'
 
 // Atoms/Molecules
 import Button from '@/components/atoms/Button/Button'
@@ -29,6 +30,7 @@ import * as api from '@/services/api'
 
 // Utils
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
+import { TextLayer } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import pdfjsWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl
 import { enrichClaimsWithPositions, addGlobalIndices } from '@/utils/textMatcher'
@@ -465,6 +467,8 @@ export default function MKG2ClaimsDetector() {
   const [selectionMode, setSelectionMode] = useState(false)
   const [pendingPinPosition, setPendingPinPosition] = useState(null) // { x, y, page }
   const [missedClaimToast, setMissedClaimToast] = useState(false)
+  const [textSelectionMode, setTextSelectionMode] = useState(false)
+  const [pendingSupportingText, setPendingSupportingText] = useState('')
 
   // Combine real missed claims with pending pin so ClaimPinsOverlay renders it immediately
   const displayMissedClaims = useMemo(() => {
@@ -1933,6 +1937,17 @@ export default function MKG2ClaimsDetector() {
   const handlePinPlace = (position) => {
     setPendingPinPosition(position)
     setSelectionMode(false)
+    setTextSelectionMode(true)
+  }
+
+  const handleTextSelected = (text) => {
+    setPendingSupportingText(text)
+    setTextSelectionMode(false)
+  }
+
+  const handleClearSupportingText = () => {
+    setPendingSupportingText('')
+    setTextSelectionMode(true)
   }
 
   const handleMissedClaimSubmit = (formData) => {
@@ -1951,6 +1966,8 @@ export default function MKG2ClaimsDetector() {
 
     setMissedClaims(prev => [...prev, missedClaim])
     setPendingPinPosition(null)
+    setPendingSupportingText('')
+    setTextSelectionMode(false)
 
     // Show success toast
     setMissedClaimToast(true)
@@ -1986,6 +2003,8 @@ export default function MKG2ClaimsDetector() {
 
   const handleMissedClaimCancel = () => {
     setPendingPinPosition(null)
+    setPendingSupportingText('')
+    setTextSelectionMode(false)
   }
 
   const handleRemoveMissedClaim = (missedClaimId) => {
@@ -2705,14 +2724,18 @@ export default function MKG2ClaimsDetector() {
               selectionMode={selectionMode}
               onSelectionModeToggle={setSelectionMode}
               onPinPlace={analysisComplete ? handlePinPlace : undefined}
+              textSelectionMode={textSelectionMode}
+              onTextSelected={handleTextSelected}
             />
-            {pendingPinPosition && (
+            {pendingPinPosition && !textSelectionMode && (
               <div className="missedClaimFormOverlay">
                 <MissedClaimForm
                   position={pendingPinPosition}
                   referenceDocuments={referenceDocuments}
                   onSubmit={handleMissedClaimSubmit}
                   onCancel={handleMissedClaimCancel}
+                  supportingText={pendingSupportingText}
+                  onClearSupportingText={handleClearSupportingText}
                 />
               </div>
             )}
@@ -3207,7 +3230,25 @@ function ReferenceViewerContent({ referenceId, page, excerpt }) {
   const [highlightRects, setHighlightRects] = useState([])
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
   const canvasRef = useRef(null)
+  const textLayerRef = useRef(null)
   const containerRef = useRef(null)
+
+  function normalizeForSearch(text) {
+    return String(text || '')
+      .replace(/\ufb01/g, 'fi')
+      .replace(/\ufb02/g, 'fl')
+      .replace(/\ufb00/g, 'ff')
+      .replace(/\ufb03/g, 'ffi')
+      .replace(/\ufb04/g, 'ffl')
+      .replace(/\u00AD/g, '')
+      .replace(/[\u200B-\u200D\uFEFF]/g, '')
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u201C\u201D]/g, '"')
+      .replace(/[\u2013\u2014]/g, '-')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase()
+  }
 
   useEffect(() => {
     if (Number.isFinite(page) && page > 0) {
@@ -3261,61 +3302,137 @@ function ReferenceViewerContent({ referenceId, page, excerpt }) {
         setCanvasSize({ width: viewport.width, height: viewport.height })
 
         await pdfPage.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
+        const textLayerDiv = textLayerRef.current
+
+        // Render pdf.js text layer for DOM-based highlighting
+        if (textLayerDiv) {
+          textLayerDiv.innerHTML = ''
+          textLayerDiv.style.width = `${viewport.width}px`
+          textLayerDiv.style.height = `${viewport.height}px`
+          const textLayer = new TextLayer({
+            textContentSource: pdfPage.streamTextContent(),
+            container: textLayerDiv,
+            viewport,
+          })
+          await textLayer.render()
+        }
+        if (cancelled) return
 
         // Find excerpt Y position in this page
         if (excerpt && !cancelled) {
-          const textContent = await pdfPage.getTextContent()
+          async function findExcerptOnPage(pageNum) {
+            const searchPage = await pdfDoc.getPage(pageNum)
+            const textContent = await searchPage.getTextContent()
+            const items = textContent.items.filter(i => i.str?.trim() && Array.isArray(i.transform))
+            const pageText = normalizeForSearch(items.map(i => i.str).join(' '))
+            const normalizedExcerpt = normalizeForSearch(excerpt)
+            const candidateNeedles = [
+              normalizedExcerpt.slice(0, 180),
+              normalizedExcerpt.slice(0, 140),
+              normalizedExcerpt.slice(0, 90),
+            ].filter((candidate, index, arr) => candidate.length >= 24 && arr.indexOf(candidate) === index)
+
+            let matchIdx = -1
+            let matchedNeedle = ''
+            for (const candidate of candidateNeedles) {
+              const idx = pageText.indexOf(candidate)
+              if (idx !== -1) {
+                matchIdx = idx
+                matchedNeedle = candidate
+                break
+              }
+            }
+
+            return { items, matchIdx, matchedNeedle, textContent, searchPage }
+          }
+
+          let searchResult = await findExcerptOnPage(currentPage)
           if (cancelled) return
 
-          const items = textContent.items.filter(i => i.str?.trim() && Array.isArray(i.transform))
-          const pageText = items.map(i => i.str).join(' ').toLowerCase()
-          const normalizedExcerpt = String(excerpt || '').toLowerCase().replace(/\s+/g, ' ').trim()
-          const candidateNeedles = [
-            normalizedExcerpt.slice(0, 180),
-            normalizedExcerpt.slice(0, 140),
-            normalizedExcerpt.slice(0, 90),
-          ].filter((candidate, index, arr) => candidate.length >= 24 && arr.indexOf(candidate) === index)
+          let actualPage = currentPage
+          if (searchResult.matchIdx === -1 && !cancelled) {
+            const pagesToTry = []
+            if (currentPage > 1) pagesToTry.push(currentPage - 1)
+            if (currentPage < totalPages) pagesToTry.push(currentPage + 1)
 
-          let matchIdx = -1
-          let matchedNeedle = ''
-          for (const candidate of candidateNeedles) {
-            const idx = pageText.indexOf(candidate)
-            if (idx !== -1) {
-              matchIdx = idx
-              matchedNeedle = candidate
-              break
+            for (const tryPage of pagesToTry) {
+              const result = await findExcerptOnPage(tryPage)
+              if (cancelled) return
+              if (result.matchIdx !== -1) {
+                searchResult = result
+                actualPage = tryPage
+                if (actualPage !== currentPage) {
+                  setPinY(null)
+                  setHighlightRects([])
+                  setCurrentPage(actualPage)
+                  return
+                }
+                break
+              }
             }
           }
 
+          const { items, matchIdx, matchedNeedle } = searchResult
+
           if (matchIdx !== -1) {
-            let charCount = 0
-            const matchEnd = matchIdx + matchedNeedle.length
-            const nextRects = []
+            // DOM-based highlighting via text layer spans
+            if (textLayerDiv) {
+              const spans = Array.from(textLayerDiv.querySelectorAll('span'))
+              let charCount = 0
+              const matchEnd = matchIdx + matchedNeedle.length
+              let firstHighlightTop = null
 
-            for (const item of items) {
-              const itemStart = charCount
-              const itemEnd = itemStart + item.str.length
-              const overlaps = itemEnd >= matchIdx && itemStart <= matchEnd
+              for (const span of spans) {
+                const spanNormalized = normalizeForSearch(span.textContent || '')
+                const itemStart = charCount
+                const itemEnd = charCount + spanNormalized.length
 
-              if (overlaps) {
-                const width = Math.max(6, (item.width || 0) * fitScale)
-                const height = Math.max(10, (item.height || 0) * fitScale)
-                const left = item.transform[4] * fitScale
-                const top = (baseViewport.height - item.transform[5]) * fitScale - height
-                nextRects.push({
-                  left: Math.max(0, left),
-                  top: Math.max(0, top),
-                  width,
-                  height
-                })
+                if (itemEnd > matchIdx && itemStart < matchEnd) {
+                  span.style.backgroundColor = 'rgba(255, 193, 7, 0.35)'
+                  span.style.borderRadius = '2px'
+                  if (firstHighlightTop === null) {
+                    firstHighlightTop = span.offsetTop
+                  }
+                }
+
+                charCount += spanNormalized.length + 1
               }
 
-              charCount += item.str.length + 1
-            }
+              if (!cancelled) {
+                setHighlightRects([])
+                setPinY(firstHighlightTop)
+              }
+            } else {
+              // Fallback: rect-based highlighting if text layer unavailable
+              let charCount = 0
+              const matchEnd = matchIdx + matchedNeedle.length
+              const nextRects = []
 
-            if (!cancelled) {
-              setHighlightRects(nextRects)
-              setPinY(nextRects.length > 0 ? nextRects[0].top : null)
+              for (const item of items) {
+                const itemStart = charCount
+                const itemEnd = itemStart + item.str.length
+                const overlaps = itemEnd >= matchIdx && itemStart <= matchEnd
+
+                if (overlaps) {
+                  const width = Math.max(6, (item.width || 0) * fitScale)
+                  const height = Math.max(10, (item.height || 0) * fitScale)
+                  const left = item.transform[4] * fitScale
+                  const top = (baseViewport.height - item.transform[5]) * fitScale - height
+                  nextRects.push({
+                    left: Math.max(0, left),
+                    top: Math.max(0, top),
+                    width,
+                    height
+                  })
+                }
+
+                charCount += item.str.length + 1
+              }
+
+              if (!cancelled) {
+                setHighlightRects(nextRects)
+                setPinY(nextRects.length > 0 ? nextRects[0].top : null)
+              }
             }
           } else {
             if (!cancelled) {
@@ -3334,7 +3451,7 @@ function ReferenceViewerContent({ referenceId, page, excerpt }) {
 
     renderPage()
     return () => { cancelled = true }
-  }, [pdfDoc, currentPage, excerpt])
+  }, [pdfDoc, currentPage, excerpt, totalPages])
 
   // Scroll pin into view when located
   useEffect(() => {
@@ -3388,6 +3505,17 @@ function ReferenceViewerContent({ referenceId, page, excerpt }) {
       >
         <div style={{ position: 'relative', width: canvasSize.width, margin: '0 auto' }}>
           <canvas ref={canvasRef} style={{ display: 'block', boxShadow: '0 2px 12px rgba(0,0,0,0.18)' }} />
+          <div
+            ref={textLayerRef}
+            className='textLayer'
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              opacity: 0.3,
+              lineHeight: 1,
+            }}
+          />
 
           {/* Text highlight overlay for matched supporting excerpt */}
           {highlightRects.length > 0 && (
