@@ -1021,21 +1021,16 @@ export default function MKG2ClaimsDetector() {
 
       // Match citation text to brand reference library
       const enrichedItems = allItems.map(item => {
-        const citationText = item.reference?.text || item.reference?.name || ''
-        const libraryMatch = matchCitationToLibrary(citationText, referenceDocuments)
-        if (libraryMatch) {
-          return {
-            ...item,
-            matched: true,
-            reference: {
-              ...item.reference,
-              id: libraryMatch.id,
-              name: libraryMatch.name,
-              page: 1
-            }
+        if (!Array.isArray(item.references) || item.references.length === 0) return item
+        // Try to match each reference's citation text to the library
+        const enrichedRefs = item.references.map(ref => {
+          const libraryMatch = matchCitationToLibrary(ref.text, referenceDocuments)
+          if (libraryMatch) {
+            return { ...ref, id: libraryMatch.id, name: libraryMatch.name, page: 1 }
           }
-        }
-        return item
+          return ref
+        })
+        return { ...item, references: enrichedRefs }
       })
 
       // Add global indices

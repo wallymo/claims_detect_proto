@@ -500,6 +500,35 @@
   color: var(--red-8);
 }
 
+/* Multi-ref callouts */
+.refCallouts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.refCallout {
+  display: flex;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--green-1);
+  border: 1px solid var(--green-6);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--green-11);
+}
+
+.refNumber {
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.refText {
+  word-break: break-word;
+}
+
 .sourceBadge {
   display: inline-flex;
   align-items: center;

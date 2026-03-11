@@ -17,7 +17,6 @@ export default function MKGClaimCard({
   trainingExamples = []
 }) {
   const [showFeedback, setShowFeedback] = useState(false)
-  const [showReferencePreview, setShowReferencePreview] = useState(false)
   const [rejectionType, setRejectionType] = useState('false_positive')
   const [refSearch, setRefSearch] = useState('')
   const [selectedRefId, setSelectedRefId] = useState(null)
@@ -106,13 +105,7 @@ export default function MKGClaimCard({
     onSelect?.()
   }
 
-  const toggleReferencePreview = (e) => {
-    e.stopPropagation()
-    setShowReferencePreview(!showReferencePreview)
-  }
-
   const isMissed = claim.status === 'missed'
-  const isApproximate = claim.reference?.verificationStatus === 'unverified' || claim.matchTier === 'semantic-direct-fallback'
 
   const cardClassName = [
     styles.claimCard,
@@ -204,59 +197,37 @@ export default function MKGClaimCard({
         "{claim.text}"
       </div>
 
-      {/* Reference section */}
-      {claim.matched && claim.reference && (
+      {/* Reference callouts */}
+      {Array.isArray(claim.references) && claim.references.length > 0 && (
+        <div className={styles.refCallouts}>
+          {claim.references.map((ref, i) => (
+            <div key={i} className={styles.refCallout}>
+              <span className={styles.refNumber}>{ref.number}.</span>
+              <span className={styles.refText}>{ref.text}</span>
+            </div>
+          ))}
+          {onViewSource && (
+            <button
+              className={styles.viewSourceBtn}
+              disabled
+              style={{ opacity: 0.4, cursor: 'not-allowed' }}
+              title="View source document (coming soon)"
+            >
+              <Icon name="fileSearch" size={12} />
+              View Source
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Legacy single reference fallback (MKG/MKG2) */}
+      {!Array.isArray(claim.references) && claim.matched && claim.reference && (
         <div className={styles.referenceSection}>
           <div className={styles.referenceHeader}>
             <Icon name="link" size={14} />
             <span className={styles.referenceLabel}>Reference:</span>
             <span className={styles.referenceName}>{claim.reference.name}</span>
-            <button
-              className={styles.infoButton}
-              onClick={toggleReferencePreview}
-              title="View supporting text"
-            >
-              <Icon name="info" size={14} />
-            </button>
           </div>
-          <div className={styles.referenceLocation}>
-            {isApproximate ? (
-              <>
-                <Icon name="alertCircle" size={12} />
-                <span>Approximate location</span>
-              </>
-            ) : (
-              <>
-                <Icon name="mapPin" size={12} />
-                <span>Page {claim.reference.page || '?'}</span>
-              </>
-            )}
-            {onViewSource && (
-              <button
-                className={styles.viewSourceBtn}
-                onClick={(e) => { e.stopPropagation(); onViewSource?.() }}
-                title="View source document"
-              >
-                <Icon name="fileSearch" size={12} />
-                View Source
-              </button>
-            )}
-          </div>
-
-          {/* Reference preview popup */}
-          {showReferencePreview && claim.reference.excerpt && (
-            <div className={styles.referencePreview}>
-              <div className={styles.previewHeader}>
-                <span>Supporting Text</span>
-                <button onClick={toggleReferencePreview}>
-                  <Icon name="x" size={14} />
-                </button>
-              </div>
-              <div className={styles.previewContent}>
-                "{claim.reference.excerpt}"
-              </div>
-            </div>
-          )}
         </div>
       )}
 

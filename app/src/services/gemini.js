@@ -334,10 +334,18 @@ const ANNOTATION_JSON_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          text: { type: 'string', description: 'Exact text containing the superscript or being annotated' },
+          text: { type: 'string', description: 'Exact text of the annotated statement (without superscripts)' },
           region: { type: 'string', enum: ['slide', 'notes'] },
-          refNumber: { type: 'integer', description: 'Reference number matched' },
-          reference: { type: 'string', description: 'Full reference citation text from the page' },
+          refNumbers: {
+            type: 'array',
+            items: { type: 'integer' },
+            description: 'All reference numbers from superscripts on this statement'
+          },
+          references: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Full citation text for each refNumber, in matching order'
+          },
           source: { type: 'string', enum: ['on-page'] },
           confidence: { type: 'integer', minimum: 0, maximum: 100 },
           page: { type: 'integer', minimum: 1 },
@@ -345,17 +353,11 @@ const ANNOTATION_JSON_SCHEMA = {
           y: { type: 'number', minimum: 0, maximum: 100 },
           contentType: { type: 'string', enum: ['title', 'bullet', 'sub-bullet', 'footnote', 'chart'], description: 'Type of content element for pin positioning' }
         },
-        required: ['text', 'region', 'refNumber', 'reference', 'source', 'confidence', 'page', 'x', 'y', 'contentType']
+        required: ['text', 'region', 'refNumbers', 'references', 'source', 'confidence', 'page', 'x', 'y', 'contentType']
       }
     },
-    slideFootnotes: {
-      type: 'object',
-      additionalProperties: { type: 'string' }
-    },
-    notesReferences: {
-      type: 'object',
-      additionalProperties: { type: 'string' }
-    }
+    slideFootnotes: { type: 'object', additionalProperties: { type: 'string' } },
+    notesReferences: { type: 'object', additionalProperties: { type: 'string' } }
   },
   required: ['annotations']
 }
@@ -1007,22 +1009,40 @@ ${VISUAL_CLAIMS_INSTRUCTIONS}
 Analyze now. Find all medication claims.`
 
 export const ANNOTATION_PROMPT_USER = `# Task
-Extract on-page references and map them to content.
+Extract on-page references and map them to content. One annotation per statement, multiple refs per annotation.
+
+# Reference Pools — STRICT SEPARATION
+- SLIDE content → refs come ONLY from the slide footnotes block (abbreviated citations at bottom of slide)
+- NOTES content → refs come ONLY from the "References:" numbered list (full citations)
+- NEVER cross-reference between pools
 
 # Slide Region (top ~50% of page)
 1. Find numbered footnotes at the bottom of the slide (e.g. "1. Smith et al. J Cardiol 2024;45:123-130")
 2. Find superscript numbers in slide content (e.g. "47% reduction¹²")
-3. Match: superscript ¹ → footnote 1. That is the reference. Done.
+3. Match ALL superscripts on a statement to their footnotes. Statement with ¹·² → refNumbers [1, 2]
 4. If a footnote exists but no content has its superscript, annotate the most relevant slide content.
 
 # Speaker Notes Region (bottom ~50% of page)
-1. Find the "References:" section (numbered references list)
-2. If notes content has superscript numbers, match them to the references list the same way.
-3. If NO superscripts exist in notes, annotate ALL notes content with the full references block.
+1. Find the "References:" section (numbered references list with full citations + DOIs)
+2. Match superscript numbers in notes bullets to the "References:" list
+3. Statement with ¹·² → refNumbers [1, 2], references from the "References:" list
+
+# Worked Example — Slide
+Content: "Most common cause of acute flaccid paralysis worldwide—sporadic and unpredictable¹·²"
+Slide footnotes: 1. Leonhard SE et al. Nat Rev Neurol. 2019;15(11):671-683. 2. van den Berg B et al. Nat Rev Neurol. 2014;10(8):469-482.
+→ annotation: { text: "Most common cause of acute flaccid paralysis worldwide—sporadic and unpredictable", region: "slide", refNumbers: [1, 2], references: ["1. Leonhard SE et al. Nat Rev Neurol. 2019;15(11):671-683", "2. van den Berg B et al. Nat Rev Neurol. 2014;10(8):469-482"] }
+
+# Worked Example — Notes
+Content: "Guillain-Barré syndrome (GBS) is the most common cause of acute flaccid paralysis globally, characterized by its sporadic and unpredictable nature¹·²"
+References list: 1. Leonhard SE, Mandarakas MR, Gondim FAA, et al. Diagnosis and management of Guillain–Barré syndrome in ten steps. Nat Rev Neurol. 2019;15(11):671-683. doi:10.1038/s41582-019-0250-9  2. van den Berg B, Walgaard C, Drenthen J, et al...
+→ annotation: { text: "Guillain-Barré syndrome (GBS) is the most common cause of acute flaccid paralysis globally, characterized by its sporadic and unpredictable nature", region: "notes", refNumbers: [1, 2], references: ["1. Leonhard SE, Mandarakas MR, Gondim FAA, et al. ...(full citation)", "2. van den Berg B, Walgaard C, Drenthen J, ...(full citation)"] }
 
 # Rules
 - ONLY use references that exist ON THIS PAGE — never invent references
 - Every footnote/reference on the page MUST be mapped to content
+- One annotation per statement — collect ALL superscript refs into refNumbers array
+- references array must have same length as refNumbers, in matching order
+- Number references with Arabic numerals (1. 2. 3.) — never roman numerals
 - Return source as "on-page" for all annotations
 
 # Position
@@ -1528,27 +1548,42 @@ export async function annotateDocument(pdfFile, onProgress, enableAiQa = false, 
     const { inputTokens, outputTokens } = extractUsageMetadata(response)
     const cost = calculateCost(usedModel, inputTokens, outputTokens)
 
-    const annotations = (Array.isArray(parsed.annotations) ? parsed.annotations : []).map((ann, idx) => ({
-      id: `ann-${idx + 1}`,
-      text: String(ann.text || '').trim(),
-      claim: String(ann.text || '').trim(),
-      region: ann.region || 'slide',
-      refNumber: ann.refNumber || null,
-      reference: {
-        name: String(ann.reference || '').trim(),
-        text: String(ann.reference || '').trim()
-      },
-      source: 'on-page',
-      matched: true,
-      matchTier: 'on-page',
-      contentType: ann.contentType || 'bullet',
-      confidence: clamp(Math.round(Number(ann.confidence) || 80), 0, 100),
-      page: Math.max(1, Number.parseInt(ann.page, 10) || 1),
-      position: {
-        x: clamp(Number(ann.x) || 0, 0, 100),
-        y: clamp(Number(ann.y) || 0, 0, 100)
+    const annotations = (Array.isArray(parsed.annotations) ? parsed.annotations : []).map((ann, idx) => {
+      const refNums = Array.isArray(ann.refNumbers) ? ann.refNumbers : (ann.refNumber ? [ann.refNumber] : [])
+      const refTexts = Array.isArray(ann.references) ? ann.references : (ann.reference ? [String(ann.reference)] : [])
+      const references = refTexts.map((r, i) => ({
+        number: refNums[i] || (i + 1),
+        text: String(r || '').trim()
+      }))
+
+      return {
+        id: `ann-${idx + 1}`,
+        text: String(ann.text || '').trim(),
+        claim: String(ann.text || '').trim(),
+        region: ann.region || 'slide',
+        refNumbers: refNums,
+        references,
+        source: 'on-page',
+        matched: true,
+        matchTier: 'on-page',
+        contentType: ann.contentType || 'bullet',
+        confidence: clamp(Math.round(Number(ann.confidence) || 80), 0, 100),
+        page: Math.max(1, Number.parseInt(ann.page, 10) || 1),
+        position: {
+          x: clamp(Number(ann.x) || 0, 0, 100),
+          y: clamp(Number(ann.y) || 0, 0, 100)
+        }
       }
-    }))
+    })
+
+    // Sort: slide region first (by y position), then notes region (by y position)
+    annotations.sort((a, b) => {
+      const regionOrder = { slide: 0, notes: 1 }
+      const rA = regionOrder[a.region] ?? 0
+      const rB = regionOrder[b.region] ?? 0
+      if (rA !== rB) return rA - rB
+      return (a.position?.y || 0) - (b.position?.y || 0)
+    })
 
     let usage = {
       inputTokens,
