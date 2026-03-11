@@ -67,7 +67,7 @@ async function fileToBase64(file) {
 const JSON_OUTPUT_INSTRUCTIONS = `
 
 Respond with this exact JSON structure (no other text):
-{"claims": [{"claim": "[Exact phrase]", "confidence": 85, "page": 1, "x": 25.0, "y": 14.5}]}`
+{"claims": [{"claim": "[Exact phrase]", "confidence": 85, "page": 1, "x": 25.0, "y": 14.5, "refNumbers": [1, 2], "region": "slide"}], "pageReferences": {"1": {"slide": {"1": "Full citation..."}, "notes": {"1": "Full citation..."}}}}`
 
 // Same claim detection prompt as Gemini for consistency
 const CLAIM_DETECTION_PROMPT = `OUTPUT FORMAT: You must respond with ONLY a JSON object. No markdown, no commentary, no explanation - just valid JSON starting with { and ending with }.
@@ -217,7 +217,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
           {
             // Assistant prefill to force JSON output
             role: 'assistant',
-            content: '{"claims": ['
+            content: '{'
           }
         ]
       })
@@ -237,8 +237,8 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
 
     logger.debug('Raw Claude response (first 500 chars):', text?.substring(0, 500))
 
-    // We used assistant prefill '{"claims": [' so prepend it to complete the JSON
-    const jsonText = '{"claims": [' + text
+    // We used assistant prefill '{' so prepend it to complete the JSON
+    const jsonText = '{' + text
 
     let result
     try {
@@ -258,7 +258,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
 
       logger.debug(`Claim ${index + 1}: x=${claim.x}, y=${claim.y}, text="${claim.claim?.slice(0, 50)}..."`)
 
-      return {
+      const transformed = {
         id: `claim_${String(index + 1).padStart(3, '0')}`,
         text: claim.claim,
         confidence: claim.confidence / 100,
@@ -266,6 +266,13 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
         page: pageNumber,
         position
       }
+      if (Array.isArray(claim.refNumbers) && claim.refNumbers.length > 0) {
+        transformed.refNumbers = claim.refNumbers
+      }
+      if (claim.region === 'slide' || claim.region === 'notes') {
+        transformed.region = claim.region
+      }
+      return transformed
     })
 
     onProgress?.(95, 'Finalizing...')
@@ -283,6 +290,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     return {
       success: true,
       claims,
+      pageReferences: result.pageReferences && Object.keys(result.pageReferences).length > 0 ? result.pageReferences : undefined,
       usage: {
         model: ANTHROPIC_MODEL,
         modelDisplayName: MODEL_DISPLAY_NAMES[ANTHROPIC_MODEL] || ANTHROPIC_MODEL,

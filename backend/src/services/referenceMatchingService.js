@@ -1,7 +1,7 @@
 import { Reference } from '../models/Reference.js'
 import { ReferencePassage } from '../models/ReferencePassage.js'
 import { ReferenceFact } from '../models/ReferenceFact.js'
-import { embedText } from './passageEmbedder.js'
+import { embedText, ACTIVE_EMBEDDING_MODEL } from './passageEmbedder.js'
 import { matchClaimToReferences, extractSupportingQuote } from './matchingAiService.js'
 import { verifyQuote } from './quoteVerifier.js'
 
@@ -68,6 +68,226 @@ const STOP_WORDS = new Set([
   'so', 'we', 'they', 'he', 'she', 'me', 'him', 'her', 'my', 'your',
   'our', 'their', 'us', 'them'
 ])
+
+// ===== Tier 0: Citation-Scoped Matching =====
+
+/**
+ * Parse a citation string into structured components.
+ * Handles formats like: "Leonhard SE et al. Nat Rev Neurol. 2019;15(11):671-683."
+ */
+function parseCitation(citationText) {
+  if (!citationText || typeof citationText !== 'string') return null
+  const text = citationText.trim()
+  if (text.length < 10) return null
+
+  // Extract first author surname (first word before comma, period, or "et al")
+  const authorMatch = text.match(/^([A-Z][a-z]+(?:\s[A-Z]{1,2})?)\b/)
+  const author = authorMatch ? authorMatch[1].replace(/\s+[A-Z]{1,2}$/, '') : null
+
+  // Extract year (4-digit number, typically 19xx or 20xx)
+  const yearMatch = text.match(/\b(19|20)\d{2}\b/)
+  const year = yearMatch ? yearMatch[0] : null
+
+  // Extract journal name — typically after author block, before year
+  let journal = null
+  if (author && year) {
+    const afterAuthor = text.slice(text.indexOf(author) + author.length)
+    const journalMatch = afterAuthor.match(/(?:et\s+al\.?\s*[,.]?\s*|[A-Z]{1,2}[,.]?\s*)([A-Z][a-zA-Z\s&]+?)\.?\s*(?:\d{4}|;)/)
+    if (journalMatch) {
+      journal = journalMatch[1].trim().replace(/\.$/, '')
+    }
+  }
+
+  // Extract volume and pages
+  const volumeMatch = text.match(/;(\d+)/)
+  const volume = volumeMatch ? volumeMatch[1] : null
+
+  const pagesMatch = text.match(/:\s*(\d+)[-–](\d+)/)
+  const pages = pagesMatch ? `${pagesMatch[1]}-${pagesMatch[2]}` : null
+
+  return { author, year, journal, volume, pages, raw: text }
+}
+
+/**
+ * Score how well a citation matches a reference document.
+ * Returns 0-1 confidence score.
+ */
+function scoreCitationMatch(citation, reference) {
+  if (!citation || !reference) return 0
+
+  const refText = (
+    (reference.display_alias || '') + ' ' +
+    (reference.content_text || '').slice(0, 500)
+  ).toLowerCase()
+
+  let score = 0
+  let maxScore = 0
+
+  // Author match (weight: 0.4)
+  if (citation.author) {
+    maxScore += 0.4
+    const authorLower = citation.author.toLowerCase()
+    if (refText.includes(authorLower)) {
+      score += 0.4
+    }
+  }
+
+  // Year match (weight: 0.3)
+  if (citation.year) {
+    maxScore += 0.3
+    if (refText.includes(citation.year)) {
+      score += 0.3
+    }
+  }
+
+  // Journal match (weight: 0.2)
+  if (citation.journal) {
+    maxScore += 0.2
+    const journalLower = citation.journal.toLowerCase()
+    if (refText.includes(journalLower)) {
+      score += 0.2
+    } else {
+      const journalWords = journalLower.split(/\s+/).filter(w => w.length > 2)
+      const matchedWords = journalWords.filter(w => refText.includes(w))
+      if (matchedWords.length >= 2 || (journalWords.length === 1 && matchedWords.length === 1)) {
+        score += 0.12
+      }
+    }
+  }
+
+  // Volume/pages match (weight: 0.1)
+  if (citation.volume || citation.pages) {
+    maxScore += 0.1
+    if (citation.volume && refText.includes(citation.volume)) {
+      score += 0.05
+    }
+    if (citation.pages) {
+      const pageNum = citation.pages.split('-')[0]
+      if (pageNum && refText.includes(pageNum)) {
+        score += 0.05
+      }
+    }
+  }
+
+  // If we couldn't extract any structured fields, do a raw text comparison
+  if (maxScore === 0 && citation.raw) {
+    const rawWords = citation.raw.toLowerCase().split(/\s+/).filter(w => w.length > 3 && !STOP_WORDS.has(w))
+    const matchedCount = rawWords.filter(w => refText.includes(w)).length
+    return rawWords.length > 0 ? Math.min(matchedCount / rawWords.length, 1) : 0
+  }
+
+  return maxScore > 0 ? score / maxScore : 0
+}
+
+/**
+ * Match a single citation string against all brand references.
+ * Returns { referenceId, confidence, referenceName } or null.
+ */
+function matchCitationToLibrary(citationText, allReferences) {
+  const citation = parseCitation(citationText)
+  if (!citation) return null
+
+  let bestMatch = null
+  let bestScore = 0
+
+  for (const ref of allReferences) {
+    const refObj = typeof ref === 'object' ? ref : { id: ref }
+    const score = scoreCitationMatch(citation, refObj)
+    if (score > bestScore) {
+      bestScore = score
+      bestMatch = {
+        referenceId: refObj.id,
+        confidence: score,
+        referenceName: refObj.display_alias || refObj.original_filename || `Reference ${refObj.id}`
+      }
+    }
+  }
+
+  return bestMatch
+}
+
+/**
+ * Tier 0: Citation-scoped matching.
+ * Uses document-embedded citation numbers to directly match claims to library references.
+ *
+ * Returns:
+ * - High confidence (>=0.85): Direct match result with matchTier 'citation-scoped'
+ * - Moderate (0.6-0.85): Returns { narrowedReferenceIds } to scope downstream tiers
+ * - Low/no match: Returns null (fall through to existing pipeline)
+ */
+function citationScopedMatch(claim, pageReferences, allReferences) {
+  // Check prerequisites
+  if (!Array.isArray(claim.refNumbers) || claim.refNumbers.length === 0) return null
+  if (!pageReferences || typeof pageReferences !== 'object') return null
+
+  const pageKey = String(claim.page)
+  const pageRefs = pageReferences[pageKey]
+  if (!pageRefs) return null
+
+  // Determine region from claim — use explicit region or infer from y position
+  let region = claim.region
+  if (!region) {
+    const yPos = claim.position?.y ?? claim.y ?? 50
+    region = yPos < 55 ? 'slide' : 'notes'
+  }
+
+  const sectionRefs = pageRefs[region]
+  if (!sectionRefs || typeof sectionRefs !== 'object') return null
+
+  // Look up each citation number in the section's reference list
+  const citationMatches = []
+  for (const refNum of claim.refNumbers) {
+    const citationText = sectionRefs[String(refNum)]
+    if (!citationText) continue
+
+    const match = matchCitationToLibrary(citationText, allReferences)
+    if (match && match.confidence >= 0.6) {
+      citationMatches.push({
+        ...match,
+        citationNumber: refNum,
+        citationText
+      })
+    }
+  }
+
+  if (citationMatches.length === 0) return null
+
+  // Sort by confidence, take best match
+  citationMatches.sort((a, b) => b.confidence - a.confidence)
+  const best = citationMatches[0]
+
+  if (best.confidence >= 0.85) {
+    // High confidence — return direct match
+    return {
+      matched: true,
+      matchConfidence: best.confidence,
+      matchTier: 'citation-scoped',
+      reference: {
+        id: best.referenceId,
+        name: best.referenceName,
+        page: null,
+        excerpt: `Citation [${best.citationNumber}]: ${best.citationText}`,
+        charStart: null,
+        charEnd: null,
+        verificationStatus: 'citation-scoped'
+      },
+      matchReasoning: `Matched via document citation #${best.citationNumber} in ${region} section (confidence: ${(best.confidence * 100).toFixed(0)}%)`
+    }
+  }
+
+  // Moderate confidence — narrow candidate pool for downstream tiers
+  const narrowedReferenceIds = [...new Set(citationMatches.map(m => m.referenceId))]
+  return {
+    narrowedReferenceIds,
+    bestCitationConfidence: best.confidence,
+    citationDiagnostics: citationMatches.map(m => ({
+      refNum: m.citationNumber,
+      refId: m.referenceId,
+      refName: m.referenceName,
+      confidence: m.confidence
+    }))
+  }
+}
 
 const FACT_ANCHOR_MIN_SIMILARITY = 0.90
 const FACT_ANCHOR_MIN_KEYWORD_OVERLAP = 2
@@ -400,14 +620,14 @@ async function getQueryEmbedding(claimText, caches) {
   const key = String(claimText || '').trim().toLowerCase().replace(/\s+/g, ' ')
   const cached = caches.queryEmbeddingByClaim.get(key)
   if (cached) return cached
-  const embedding = await embedText(String(claimText || '').trim())
+  const embedding = await embedText(String(claimText || '').trim(), { taskType: 'RETRIEVAL_QUERY' })
   caches.queryEmbeddingByClaim.set(key, embedding)
   return embedding
 }
 
-async function searchPassagesLocal(brandId, claimText, topK, candidatePool, caches) {
+async function searchPassagesLocal(brandId, claimText, topK, candidatePool, caches, referenceIds = null) {
   const queryEmbedding = await getQueryEmbedding(claimText, caches)
-  const results = ReferencePassage.searchByEmbedding(brandId, queryEmbedding, topK, candidatePool)
+  const results = ReferencePassage.searchByEmbedding(brandId, queryEmbedding, topK, candidatePool, referenceIds)
   return (results || []).slice(0, candidatePool)
 }
 
@@ -785,7 +1005,8 @@ async function matchSingleClaim(claim, brandId, allReferences, options = {}) {
     onStage,
     getFallbackReferencesWithText,
     caches,
-    isCancelled
+    isCancelled,
+    pageReferences
   } = options
 
   const claimStartedAt = Date.now()
@@ -793,6 +1014,34 @@ async function matchSingleClaim(claim, brandId, allReferences, options = {}) {
 
   try {
     if (isCancelled?.()) throw new Error('Cancelled by user')
+
+    // Tier 0: Citation-scoped matching
+    if (pageReferences) {
+      const citationResult = citationScopedMatch(claim, pageReferences, allReferences)
+      if (citationResult) {
+        if (citationResult.matched) {
+          // High confidence citation match — return directly
+          telemetry.citation_scoped_count = (telemetry.citation_scoped_count || 0) + 1
+          diagnostics.push({
+            tier: '0-citation',
+            result: 'matched',
+            confidence: citationResult.matchConfidence,
+            refName: citationResult.reference?.name
+          })
+          return { ...claim, ...citationResult, diagnostics }
+        }
+        if (citationResult.narrowedReferenceIds) {
+          // Moderate confidence — narrow downstream search
+          diagnostics.push({
+            tier: '0-citation',
+            result: 'narrowed',
+            narrowedIds: citationResult.narrowedReferenceIds,
+            bestConfidence: citationResult.bestCitationConfidence,
+            details: citationResult.citationDiagnostics
+          })
+        }
+      }
+    }
 
     onStage?.('facts')
     const factMatch = await factAnchoredSearch(claim, brandId, telemetry, caches)
@@ -813,7 +1062,13 @@ async function matchSingleClaim(claim, brandId, allReferences, options = {}) {
       telemetry.semantic_search_count += 1
       onStage?.('retrieve')
       const retrievalTopK = Math.max(topK, candidatePool)
-      searchResults = await searchPassagesLocal(brandId, claim.text, retrievalTopK, candidatePool, caches)
+      // If citation-scoped matching narrowed candidates, try scoped search first
+      const citationNarrowedIds = diagnostics.find(d => d.tier === '0-citation' && d.narrowedIds)?.narrowedIds || null
+      searchResults = await searchPassagesLocal(brandId, claim.text, retrievalTopK, candidatePool, caches, citationNarrowedIds)
+      // Fallback: if narrowed search returned nothing, retry with full library (over-flag principle)
+      if (searchResults.length === 0 && citationNarrowedIds) {
+        searchResults = await searchPassagesLocal(brandId, claim.text, retrievalTopK, candidatePool, caches, null)
+      }
     } catch (err) {
       telemetry.keyword_fallback_count += 1
       onStage?.('fallback')
@@ -913,6 +1168,7 @@ export async function matchAllClaimsToReferencesServer(claims, references, brand
   const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null
   const onClaimResult = typeof options.onClaimResult === 'function' ? options.onClaimResult : null
   const isCancelled = typeof options.isCancelled === 'function' ? options.isCancelled : null
+  const pageReferences = options.pageReferences || null
 
   const results = new Array(claims.length)
   const startedAt = Date.now()
@@ -931,6 +1187,7 @@ export async function matchAllClaimsToReferencesServer(claims, references, brand
     per_claim_durations_ms: [],
     per_claim_match_ms: { count: 0, min: 0, avg: 0, p95: 0, max: 0 },
     semantic_search_count: 0,
+    citation_scoped_count: 0,
     fact_anchored_count: 0,
     extraction_ai_calls: 0,
     verified_quotes: 0,
@@ -977,6 +1234,7 @@ export async function matchAllClaimsToReferencesServer(claims, references, brand
               getFallbackReferencesWithText,
               caches,
               isCancelled,
+              pageReferences,
               onStage: (stage) => {
                 onProgress?.({
                   current: completed,
@@ -1052,6 +1310,7 @@ export async function matchAllClaimsToReferencesServer(claims, references, brand
   delete telemetry.per_claim_durations_ms
 
   const pipelineSummary = {
+    citation_scoped_matched: 0,
     fact_anchored_matched: 0,
     semantic_no_passages: 0,
     semantic_direct_fallback_matched: 0,
@@ -1068,7 +1327,8 @@ export async function matchAllClaimsToReferencesServer(claims, references, brand
       pipelineSummary.errors += 1
       continue
     }
-    if (claim.matchTier === 'fact-anchored') pipelineSummary.fact_anchored_matched += 1
+    if (claim.matchTier === 'citation-scoped') pipelineSummary.citation_scoped_matched += 1
+    else if (claim.matchTier === 'fact-anchored') pipelineSummary.fact_anchored_matched += 1
     else if (claim.matchTier === 'verified-extraction' || claim.matchTier === 'partial-extraction') pipelineSummary.extraction_matched += 1
     else if (claim.matchTier === 'semantic-direct-fallback') pipelineSummary.semantic_direct_fallback_matched += 1
     else if (claim.matchTier === 'keyword-fallback') pipelineSummary.keyword_fallback_matched += 1

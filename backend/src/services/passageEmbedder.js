@@ -1,11 +1,11 @@
 import { GoogleGenAI } from '@google/genai'
 
-const EMBEDDING_MODEL = 'gemini-embedding-001'
-const CHUNK_SIZE = 2400    // ~500-600 words
-const CHUNK_OVERLAP = 400  // ~100 words
+export const ACTIVE_EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || 'gemini-embedding-2-preview'
+const CHUNK_SIZE = 4800    // ~1000-1200 words (2x for 4x token window)
+const CHUNK_OVERLAP = 800  // ~200 words
 const DENSE_DOC_THRESHOLD = 120000
-const DENSE_CHUNK_SIZE = 1800
-const DENSE_CHUNK_OVERLAP = 300
+const DENSE_CHUNK_SIZE = 3600
+const DENSE_CHUNK_OVERLAP = 600
 const EMBEDDING_DIMS = 768 // Trimmed via MRL from 3072 default
 const SENTENCE_LOOKBACK = 240
 
@@ -129,6 +129,19 @@ export function resolvePageFromBoundaries(charOffset, pageBoundaries) {
   return pageBoundaries[0].page
 }
 
+/**
+ * L2-normalize a Float32Array in place.
+ * Required when using reduced dimensions (<3072) with gemini-embedding-2-preview.
+ */
+function l2Normalize(float32Array) {
+  let sumSq = 0
+  for (let i = 0; i < float32Array.length; i++) sumSq += float32Array[i] * float32Array[i]
+  const norm = Math.sqrt(sumSq)
+  if (norm === 0) return float32Array
+  for (let i = 0; i < float32Array.length; i++) float32Array[i] /= norm
+  return float32Array
+}
+
 const EMBED_MAX_RETRIES = 3
 
 function isRetryableError(error) {
@@ -147,21 +160,26 @@ export async function embedText(text, options = {}) {
   if (!apiKey) throw new Error('VITE_GEMINI_API_KEY not set in environment')
 
   const ai = new GoogleGenAI({ apiKey })
-  const model = options.model || EMBEDDING_MODEL
+  const model = options.model || ACTIVE_EMBEDDING_MODEL
   let lastError = null
 
   for (let attempt = 0; attempt <= EMBED_MAX_RETRIES; attempt++) {
     try {
+      const config = {
+        outputDimensionality: options.dimensions || EMBEDDING_DIMS
+      }
+      if (options.taskType) {
+        config.taskType = options.taskType
+      }
+
       const response = await ai.models.embedContent({
         model,
         contents: text,
-        config: {
-          outputDimensionality: options.dimensions || EMBEDDING_DIMS
-        }
+        config
       })
 
       const values = response.embeddings[0].values
-      const float32 = new Float32Array(values)
+      const float32 = l2Normalize(new Float32Array(values))
       return Buffer.from(float32.buffer)
     } catch (error) {
       lastError = error
@@ -201,7 +219,7 @@ export async function embedReference(contentText, options = {}) {
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i]
 
-    const embedding = await embedText(chunk.text, options)
+    const embedding = await embedText(chunk.text, { ...options, taskType: 'RETRIEVAL_DOCUMENT' })
 
     // Resolve page: real boundaries > improved estimate > default estimate
     const pageEstimate = resolvePageFromBoundaries(chunk.startChar, pageBoundaries)
@@ -214,7 +232,7 @@ export async function embedReference(contentText, options = {}) {
       end_char: chunk.endChar,
       page_estimate: pageEstimate,
       embedding,
-      embedding_model: options.model || EMBEDDING_MODEL
+      embedding_model: options.model || ACTIVE_EMBEDDING_MODEL
     })
 
     // Brief delay between API calls to respect rate limits

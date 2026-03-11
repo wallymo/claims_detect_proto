@@ -87,6 +87,31 @@ function sanitizeOptions(inputOptions) {
   const candidatePool = parsePositiveInt(options.candidatePool)
   if (candidatePool) normalized.candidatePool = candidatePool
 
+  // Pass through pageReferences for citation-scoped matching (Tier 0)
+  // Limit: max 200 pages, max 50 refs per section, max 500 chars per citation
+  if (options.pageReferences && typeof options.pageReferences === 'object') {
+    const sanitized = {}
+    const pageKeys = Object.keys(options.pageReferences).slice(0, 200)
+    for (const pageKey of pageKeys) {
+      const sections = options.pageReferences[pageKey]
+      if (!sections || typeof sections !== 'object') continue
+      sanitized[pageKey] = {}
+      for (const region of ['slide', 'notes']) {
+        if (!sections[region] || typeof sections[region] !== 'object') continue
+        const refs = {}
+        const refKeys = Object.keys(sections[region]).slice(0, 50)
+        for (const refKey of refKeys) {
+          const val = sections[region][refKey]
+          if (typeof val === 'string') {
+            refs[refKey] = val.slice(0, 500)
+          }
+        }
+        if (Object.keys(refs).length > 0) sanitized[pageKey][region] = refs
+      }
+    }
+    if (Object.keys(sanitized).length > 0) normalized.pageReferences = sanitized
+  }
+
   return normalized
 }
 

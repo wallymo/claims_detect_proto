@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Claims Detector: React + Express POC for AI-powered detection of medical/regulatory claims in pharma documents. Built for MKG to streamline MLR (Medical, Legal, Regulatory) review.
+Claims Detector: React + Express POC for AI-powered annotation and claim detection in pharma documents. Built for MKG to streamline MLR (Medical, Legal, Regulatory) review. Primary goal: automate reference annotation (connecting on-page references to content). Secondary goal: AI-powered claim detection as QA.
 
 ## Design Principles (IMPORTANT)
 
@@ -14,19 +14,26 @@ Claims Detector: React + Express POC for AI-powered detection of medical/regulat
 - `/` — Home (mock demos). Redirects to `/mkg` on Vercel production.
 - `/mkg` — POC1: AI claim detection with PDF upload
 - `/demo` — Client-friendly `/mkg` (hides POC badge)
-- `/mkg2` — POC2: Full pipeline with brand reference library, claim-to-reference mapping, and feedback
+- `/mkg2` — POC2: Page-local annotation engine with optional AI QA claim detection
 
-## POC2 Success Criteria
+## POC2 — Annotation Engine (newworkflow branch)
 
-**Purpose:** Validate whether AI-detected claims can be accurately mapped to brand-specific reference content.
+**Purpose:** Automate reference annotation — the AI reads each page, extracts on-page references, and maps them to the content they support. Saves the manual annotation step.
 
-**KPIs:**
-- Claim detection accuracy consistently exceeds **90%**
-- Claim-to-reference mapping accuracy consistently exceeds **70%**
+**Primary flow (always runs):**
+1. AI model (Gemini multimodal) looks at each page in a single pass
+2. Extracts footnotes from slide region (numbered references at bottom of slide)
+3. Extracts references from speaker notes (after "References:" header)
+4. Maps references to content: superscript `¹` → slide footnote 1, notes references → notes bullets
+5. Slide footnotes not yet superscripted → model annotates where it sees fit
+6. Each annotation tagged `"source": "on-page"` (backed by page reference)
 
-**Capabilities:** Brand-based reference repository (PDF/Word upload), brand-aware claim detection, claim-to-reference mapping with click-through to source docs, feedback loop (approve/reject with reasons).
+**Secondary flow (AI QA toggle in settings, off by default):**
+- When ON, model does additional pass looking for potential claims with NO on-page reference
+- Tagged `"source": "ai-find"` — flagged for human review
+- When OFF, only reference-backed annotations are shown
 
-**Status:** All scope items implemented. Benchmark deliverable pending — see @docs/plans/2026-02-13-poc2-sow-alignment-assessment.md for full assessment.
+**Previous approach (deprecated on this branch):** Multi-tier backend matching pipeline (semantic search, AI confirmation, keyword fallback) against brand reference library. Replaced by single-pass page-local annotation.
 
 ## Commands
 
@@ -108,11 +115,7 @@ claims_detector/
 
 **OpenAI uses Responses API** — `client.responses.create()` with `input[]` array format, NOT `chat.completions.create()`.
 
-**POC2 matching pipeline** (see `referenceMatching.js`): Semantic search → hybrid rerank (semantic 75% + keyword 15% + numeric 10%) → diversity selection → AI confirmation → fallbacks. Match tiers: `hybrid-semantic`, `hybrid-autoconfirm`, `hybrid-direct`, `keyword-fallback`.
-
-**Fact indexing:** Auto-indexes new uploads via Gemini. Condensed fact inventory (max 14 refs, 5 facts/ref, 18K chars, 260 chars/fact) appended to detection prompts when brand has indexed refs.
-
-**Passage embeddings:** 768-dim Gemini vectors (`gemini-embedding-001`), JS cosine similarity, LRU-cached 5min. Auto-embeds on upload.
+**POC2 annotation pipeline:** Single-pass page-local. AI extracts on-page references (slide footnotes + notes references) and maps them to content in one multimodal call. No backend matching pipeline. Optional AI QA toggle for claim detection without on-page references.
 
 **Database:** SQLite + WAL + `better-sqlite3` + `sqlite-vec`. Soft delete via `deleted_at` timestamp. 5 migrations auto-run on startup.
 
@@ -139,9 +142,7 @@ claims_detector/
 | Results seem stale after code change | Restart Vite dev server to clear cache |
 | `/api` routes return 404 | Backend not running — `cd backend && npm run dev` |
 | Build warning >500KB chunk | Expected (pdf.js worker) |
-| Passage search returns 0 results | Run `cd backend && node scripts/embed-references.js` |
-| `response.embedding.values` undefined | Use `response.embeddings[0].values` (plural `embeddings`, array index) |
-| Reference matching returns few matches | Gemini sometimes returns array instead of object — `referenceMatching.js` normalizes this |
+| Annotations missing on-page references | Check AI prompt extracts footnotes from both slide and notes zones separately |
 
 ## Reference Docs
 

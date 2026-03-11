@@ -1,6 +1,6 @@
 import { ReferencePassage } from '../models/ReferencePassage.js'
 import { Brand } from '../models/Brand.js'
-import { embedText } from '../services/passageEmbedder.js'
+import { embedText, ACTIVE_EMBEDDING_MODEL } from '../services/passageEmbedder.js'
 import { AppError } from '../middleware/errorHandler.js'
 
 const DEFAULT_TOP_K = 5
@@ -81,10 +81,11 @@ export const passageController = {
       // Embed the claim text (with small TTL cache by normalized claim text)
       const embeddingStartedAt = Date.now()
       let cacheHit = false
-      let queryEmbedding = getCachedQueryEmbedding(normalizedClaimText)
+      const cacheKey = `${ACTIVE_EMBEDDING_MODEL}:${normalizedClaimText}`
+      let queryEmbedding = getCachedQueryEmbedding(cacheKey)
       if (!queryEmbedding) {
-        queryEmbedding = await embedText(claim_text.trim())
-        setCachedQueryEmbedding(normalizedClaimText, queryEmbedding)
+        queryEmbedding = await embedText(claim_text.trim(), { taskType: 'RETRIEVAL_QUERY' })
+        setCachedQueryEmbedding(cacheKey, queryEmbedding)
       } else {
         cacheHit = true
       }

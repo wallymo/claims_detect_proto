@@ -1,6 +1,6 @@
 import 'dotenv/config'
 import { initDb, getDb, closeDb } from '../src/config/database.js'
-import { embedText } from '../src/services/passageEmbedder.js'
+import { embedText, ACTIVE_EMBEDDING_MODEL } from '../src/services/passageEmbedder.js'
 import { ReferenceFact } from '../src/models/ReferenceFact.js'
 
 function parseArgs() {
@@ -38,6 +38,7 @@ async function main() {
   }
 
   const rows = db.prepare(query).all(...params)
+  console.log(`Embedding model: ${ACTIVE_EMBEDDING_MODEL}`)
   console.log(`Found ${rows.length} reference fact sets to embed`)
 
   let embedded = 0
@@ -58,8 +59,8 @@ async function main() {
         continue
       }
 
-      const embedding = await embedText(factText)
-      ReferenceFact.updateEmbedding(row.reference_id, embedding, 'gemini-embedding-001')
+      const embedding = await embedText(factText, { taskType: 'RETRIEVAL_DOCUMENT' })
+      ReferenceFact.updateEmbedding(row.reference_id, embedding, ACTIVE_EMBEDDING_MODEL)
       embedded++
       console.log(`  Embedded ref ${row.reference_id} (${row.display_alias}): ${facts.length} facts, ${factText.length} chars`)
 

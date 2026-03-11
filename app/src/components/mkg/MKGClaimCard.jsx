@@ -171,6 +171,12 @@ export default function MKGClaimCard({
               }
             </span>
           )}
+          {(claim.source === 'on-page' || claim.matchTier === 'on-page') && (
+            <span className={styles.sourceBadgeOnPage}>On-Page Ref</span>
+          )}
+          {(claim.source === 'ai-find' || claim.matchTier === 'ai-find') && (
+            <span className={styles.sourceBadgeAiFind}>AI Find</span>
+          )}
           {learnedPatternMatch.hasCrossBrandMatch ? (
             <span
               className={`${styles.trainingIcon} ${styles.crossBrand}`}
