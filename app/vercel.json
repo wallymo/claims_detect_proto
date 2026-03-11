@@ -16,6 +16,10 @@
       "destination": "/index.html"
     },
     {
+      "source": "/mkg3",
+      "destination": "/index.html"
+    },
+    {
       "source": "/demo",
       "destination": "/index.html"
     },

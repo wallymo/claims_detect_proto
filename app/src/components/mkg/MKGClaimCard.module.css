@@ -499,3 +499,27 @@
   font-size: 12px;
   color: var(--red-8);
 }
+
+.sourceBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.sourceBadgeOnPage {
+  composes: sourceBadge;
+  background: var(--green-1);
+  color: var(--green-11);
+}
+
+.sourceBadgeAiFind {
+  composes: sourceBadge;
+  background: var(--amber-1);
+  color: var(--amber-11);
+}

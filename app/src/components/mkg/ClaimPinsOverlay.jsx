@@ -6,6 +6,13 @@ const DOT_RADIUS = 14
 const DOT_RADIUS_ACTIVE = 18
 const OVERLAP_TOLERANCE = 10
 const OVERLAP_SEPARATION = 14
+const CONTENT_TYPE_X_PCT = {
+  title: 5,
+  bullet: 6,
+  'sub-bullet': 10,
+  footnote: 5,
+  chart: 5
+}
 
 /**
  * Get color based on confidence score
@@ -122,7 +129,9 @@ export default function ClaimPinsOverlay({
   const dots = claims
     .filter(claim => Number(claim.page) === currentPage && claim.position)
     .map(claim => {
-      const centerXPct = Number(claim.position.x) || 0
+      const centerXPct = claim.contentType && CONTENT_TYPE_X_PCT[claim.contentType] != null
+        ? CONTENT_TYPE_X_PCT[claim.contentType]
+        : (Number(claim.position?.x) || 0)
       const centerYPct = Number(claim.position.y) || 0
       const boxWidthPct = Number(claim.position.width) || 0
       const boxHeightPct = Number(claim.position.height) || 0

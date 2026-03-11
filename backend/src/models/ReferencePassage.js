@@ -66,7 +66,7 @@ export const ReferencePassage = {
    * @param {number} candidatePool - Internal ranking depth before response cut
    * @returns {Array} - Passages sorted by similarity (closest first)
    */
-  searchByEmbedding(brandId, queryEmbedding, topK = 5, candidatePool = 20) {
+  searchByEmbedding(brandId, queryEmbedding, topK = 5, candidatePool = 20, referenceIds = null) {
     const db = getDb()
 
     // Rank on minimal payload first to reduce memory and serialization overhead.
@@ -82,9 +82,18 @@ export const ReferencePassage = {
 
     if (brandPassages.length === 0) return []
 
+    // Optionally filter to specific reference IDs (citation-scoped narrowing)
+    let passages = brandPassages
+    if (Array.isArray(referenceIds) && referenceIds.length > 0) {
+      const refIdSet = new Set(referenceIds)
+      passages = brandPassages.filter(row => refIdSet.has(row.reference_id))
+    }
+
+    if (passages.length === 0) return []
+
     // Compute cosine similarity in JS (sqlite-vec KNN works on virtual tables;
     // for our non-virtual table approach, we use JS cosine similarity on each row)
-    const ranked = brandPassages.map(row => {
+    const ranked = passages.map(row => {
       const similarity = cosineSimilarity(queryEmbedding, row.embedding)
       return {
         passage_id: row.id,

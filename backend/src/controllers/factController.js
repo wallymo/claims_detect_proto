@@ -100,7 +100,7 @@ export const factController = {
 
       // Embed the claim
       const { embedText } = await import('../services/passageEmbedder.js')
-      const queryEmbedding = await embedText(claim_text.trim())
+      const queryEmbedding = await embedText(claim_text.trim(), { taskType: 'RETRIEVAL_QUERY' })
 
       // Cosine similarity search across fact embeddings
       const results = factSets

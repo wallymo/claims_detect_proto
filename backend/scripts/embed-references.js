@@ -2,7 +2,7 @@ import 'dotenv/config'
 import pLimit from 'p-limit'
 import { initDb, getDb, closeDb } from '../src/config/database.js'
 import { ReferencePassage } from '../src/models/ReferencePassage.js'
-import { embedReference, chunkText, resolveChunkingOptions } from '../src/services/passageEmbedder.js'
+import { embedReference, chunkText, resolveChunkingOptions, ACTIVE_EMBEDDING_MODEL } from '../src/services/passageEmbedder.js'
 import { extractTextByPage } from '../src/services/textExtractor.js'
 import fs from 'fs'
 import path from 'path'
@@ -67,6 +67,7 @@ async function main() {
   const flags = parseArgs()
   const startedAt = Date.now()
   console.log('=== Reference Passage Embedding ===\n')
+  console.log(`Embedding model: ${ACTIVE_EMBEDDING_MODEL}`)
   console.log(`Options: force=${flags.force}, dryRun=${flags.dryRun}, brand=${flags.brand || 'all'}, brandId=${flags.brandId || 'any'}, concurrency=${flags.concurrency}, chunkSize=${flags.chunkSize || 'auto'}, chunkOverlap=${flags.chunkOverlap || 'auto'}, limit=${flags.limit || 'none'}\n`)
 
   if (!flags.dryRun && !process.env.VITE_GEMINI_API_KEY) {

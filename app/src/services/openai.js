@@ -239,14 +239,43 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
                     confidence: { type: 'number' },
                     page: { type: 'number' },
                     x: { type: 'number' },
-                    y: { type: 'number' }
+                    y: { type: 'number' },
+                    refNumbers: {
+                      type: 'array',
+                      items: { type: 'integer' },
+                      default: []
+                    },
+                    region: {
+                      type: 'string',
+                      enum: ['slide', 'notes', ''],
+                      default: ''
+                    }
                   },
-                  required: ['claim', 'confidence', 'page', 'x', 'y'],
+                  required: ['claim', 'confidence', 'page', 'x', 'y', 'refNumbers', 'region'],
+                  additionalProperties: false
+                }
+              },
+              pageReferences: {
+                type: 'object',
+                description: 'Per-page reference lists keyed by page number',
+                additionalProperties: {
+                  type: 'object',
+                  properties: {
+                    slide: {
+                      type: 'object',
+                      additionalProperties: { type: 'string' }
+                    },
+                    notes: {
+                      type: 'object',
+                      additionalProperties: { type: 'string' }
+                    }
+                  },
+                  required: ['slide', 'notes'],
                   additionalProperties: false
                 }
               }
             },
-            required: ['claims'],
+            required: ['claims', 'pageReferences'],
             additionalProperties: false
           },
           strict: true
@@ -272,7 +301,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
 
       logger.debug(`Claim ${index + 1}: x=${claim.x}, y=${claim.y}, text="${claim.claim?.slice(0, 50)}..."`)
 
-      return {
+      const transformed = {
         id: `claim_${String(index + 1).padStart(3, '0')}`,
         text: claim.claim,
         confidence: claim.confidence / 100,
@@ -280,6 +309,13 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
         page: pageNumber,
         position
       }
+      if (Array.isArray(claim.refNumbers) && claim.refNumbers.length > 0) {
+        transformed.refNumbers = claim.refNumbers
+      }
+      if (claim.region === 'slide' || claim.region === 'notes') {
+        transformed.region = claim.region
+      }
+      return transformed
     })
 
     onProgress?.(95, 'Finalizing...')
@@ -298,6 +334,7 @@ export async function analyzeDocument(pdfFile, onProgress, promptKey = 'all', cu
     return {
       success: true,
       claims,
+      pageReferences: result.pageReferences && Object.keys(result.pageReferences).length > 0 ? result.pageReferences : undefined,
       usage: {
         model: OPENAI_MODEL,
         modelDisplayName: MODEL_DISPLAY_NAMES[OPENAI_MODEL] || OPENAI_MODEL,

@@ -37,10 +37,11 @@ const getGeminiClient = () => {
 
 // Model configuration - SSOT for model selection
 const GEMINI_MODEL_FROM_ENV = String(import.meta.env.VITE_GEMINI_MODEL || '').trim()
-export const GEMINI_MODEL = GEMINI_MODEL_FROM_ENV || 'gemini-2.5-pro'
+export const GEMINI_MODEL = GEMINI_MODEL_FROM_ENV || 'gemini-3.1-flash-lite-preview'
 
 // Friendly display names for models
 export const MODEL_DISPLAY_NAMES = {
+  'gemini-3.1-flash-lite-preview': 'Gemini 3.1 Flash Lite (Preview)',
   'gemini-3-pro-preview': 'Gemini 3 Pro (Preview)',
   'gemini-2.5-pro': 'Gemini 2.5 Pro',
   'gemini-2.5-flash': 'Gemini 2.5 Flash',
@@ -53,6 +54,7 @@ export const MODEL_DISPLAY_NAMES = {
 // Pricing per 1M tokens (USD) - approximate rates for Gemini Pro
 // Update these based on current Google AI pricing
 const PRICING = {
+  'gemini-3.1-flash-lite-preview': { input: 0.075, output: 0.30 },
   'gemini-3-pro-preview': { input: 1.25, output: 5.00 },  // $/1M tokens
   'gemini-2.5-pro': { input: 1.25, output: 5.00 }, // keep in sync with current Google pricing
   'gemini-2.5-flash': { input: 0.075, output: 0.30 },
@@ -63,8 +65,9 @@ const PRICING = {
 }
 
 const GEMINI_MODEL_FALLBACK_ORDER = [
-  'gemini-2.5-pro',
-  'gemini-3-pro-preview'
+  'gemini-3.1-flash-lite-preview',
+  'gemini-2.5-flash',
+  'gemini-2.5-pro'
 ]
 
 const resolvedGeminiModelCache = new Map()
@@ -247,6 +250,8 @@ const SYSTEM_INSTRUCTION = `You are a veteran MLR (Medical, Legal, Regulatory) r
 
 Pay close attention to the DOCUMENT FORMAT section in the prompt — it tells you the layout of this specific document and how to scan it.`
 
+const ANNOTATION_SYSTEM_INSTRUCTION = `You extract on-page references from pharmaceutical documents. Find superscript numbers, match them to footnotes, and return structured JSON. Be mechanical, not creative.`
+
 // JSON Schema for strict output validation
 const CLAIMS_JSON_SCHEMA = {
   type: 'object',
@@ -283,9 +288,97 @@ const CLAIMS_JSON_SCHEMA = {
             description: 'Y position as % from top (0-100)',
             minimum: 0,
             maximum: 100
+          },
+          refNumbers: {
+            type: 'array',
+            items: { type: 'integer' },
+            description: 'Superscript citation numbers attached to this claim (e.g., [1, 2])'
+          },
+          region: {
+            type: 'string',
+            enum: ['slide', 'notes'],
+            description: 'Which section the claim is in: slide (top ~50%) or notes (bottom ~50%)'
           }
         },
         required: ['claim', 'confidence', 'page', 'x', 'y']
+      }
+    },
+    pageReferences: {
+      type: 'object',
+      description: 'Per-page reference lists for slide and notes sections. Keys are page numbers as strings.',
+      additionalProperties: {
+        type: 'object',
+        properties: {
+          slide: {
+            type: 'object',
+            description: 'Slide footer reference list. Keys are reference numbers as strings.',
+            additionalProperties: { type: 'string' }
+          },
+          notes: {
+            type: 'object',
+            description: 'Speaker notes reference list. Keys are reference numbers as strings.',
+            additionalProperties: { type: 'string' }
+          }
+        }
+      }
+    }
+  },
+  required: ['claims']
+}
+
+const ANNOTATION_JSON_SCHEMA = {
+  type: 'object',
+  properties: {
+    annotations: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: 'Exact text containing the superscript or being annotated' },
+          region: { type: 'string', enum: ['slide', 'notes'] },
+          refNumber: { type: 'integer', description: 'Reference number matched' },
+          reference: { type: 'string', description: 'Full reference citation text from the page' },
+          source: { type: 'string', enum: ['on-page'] },
+          confidence: { type: 'integer', minimum: 0, maximum: 100 },
+          page: { type: 'integer', minimum: 1 },
+          x: { type: 'number', minimum: 0, maximum: 100 },
+          y: { type: 'number', minimum: 0, maximum: 100 },
+          contentType: { type: 'string', enum: ['title', 'bullet', 'sub-bullet', 'footnote', 'chart'], description: 'Type of content element for pin positioning' }
+        },
+        required: ['text', 'region', 'refNumber', 'reference', 'source', 'confidence', 'page', 'x', 'y', 'contentType']
+      }
+    },
+    slideFootnotes: {
+      type: 'object',
+      additionalProperties: { type: 'string' }
+    },
+    notesReferences: {
+      type: 'object',
+      additionalProperties: { type: 'string' }
+    }
+  },
+  required: ['annotations']
+}
+
+const AI_QA_JSON_SCHEMA = {
+  type: 'object',
+  properties: {
+    claims: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          text: { type: 'string' },
+          region: { type: 'string', enum: ['slide', 'notes'] },
+          confidence: { type: 'integer', minimum: 0, maximum: 100 },
+          rationale: { type: 'string' },
+          source: { type: 'string', enum: ['ai-find'] },
+          page: { type: 'integer', minimum: 1 },
+          x: { type: 'number', minimum: 0, maximum: 100 },
+          y: { type: 'number', minimum: 0, maximum: 100 },
+          contentType: { type: 'string', enum: ['title', 'bullet', 'sub-bullet', 'footnote', 'chart'], description: 'Type of content element for pin positioning' }
+        },
+        required: ['text', 'region', 'confidence', 'source', 'page', 'x', 'y', 'contentType']
       }
     }
   },
@@ -378,13 +471,20 @@ function sanitizeRawClaim(rawClaim) {
   const x = Number.isFinite(xRaw) ? clamp(xRaw, 0, 100) : 0
   const y = Number.isFinite(yRaw) ? clamp(yRaw, 0, 100) : 0
 
-  return {
+  const result = {
     claim: text,
     confidence,
     page,
     x,
     y
   }
+  if (Array.isArray(rawClaim.refNumbers)) {
+    result.refNumbers = rawClaim.refNumbers.filter(n => Number.isInteger(n) && n > 0)
+  }
+  if (rawClaim.region === 'slide' || rawClaim.region === 'notes') {
+    result.region = rawClaim.region
+  }
+  return result
 }
 
 function normalizeRawClaims(rawClaims) {
@@ -473,14 +573,23 @@ function mergeRawClaims(primaryClaims, visualClaims, dedupOptions) {
 }
 
 function rawClaimsToFrontendClaims(rawClaims) {
-  return rawClaims.map((claim, index) => ({
-    id: `claim_${String(index + 1).padStart(3, '0')}`,
-    text: claim.claim,
-    confidence: claim.confidence / 100,
-    status: 'pending',
-    page: claim.page,
-    position: { x: claim.x, y: claim.y }
-  }))
+  return rawClaims.map((claim, index) => {
+    const result = {
+      id: `claim_${String(index + 1).padStart(3, '0')}`,
+      text: claim.claim,
+      confidence: claim.confidence / 100,
+      status: 'pending',
+      page: claim.page,
+      position: { x: claim.x, y: claim.y }
+    }
+    if (Array.isArray(claim.refNumbers) && claim.refNumbers.length > 0) {
+      result.refNumbers = claim.refNumbers
+    }
+    if (claim.region === 'slide' || claim.region === 'notes') {
+      result.region = claim.region
+    }
+    return result
+  })
 }
 
 function buildVisualSweepPrompt(docType) {
@@ -595,6 +704,18 @@ Starts with header: "Speaker notes" or "Speaker note". Contains a NESTED bullet 
 - **Parenthetical data** — numbers in parentheses like (p<0.001) or (95% CI: 1.2-3.4) are claims requiring substantiation
 - **Annotation markers (†, ‡, §, *)** — dagger and double dagger symbols in text that reference footnotes with study limitations, populations, or statistical qualifiers. The annotated statement AND the footnote text are both claims.
 - **Transitional statements** — phrases like "importantly," "notably," "uniquely" often precede substantive claims
+
+**CITATION EXTRACTION (for reference matching):**
+For each claim, also extract:
+- **refNumbers**: If the claim text has superscript citation numbers (e.g., "...reduction in symptoms¹²" or "...as shown in studies [1,2]"), record those numbers as an array (e.g., [1, 2]). If no citation numbers, omit this field.
+- **region**: Set to "slide" if the claim is in the top slide region (y < 55%), or "notes" if in the speaker notes region (y >= 55%).
+
+**pageReferences**: At the TOP LEVEL of your JSON response (alongside "claims"), include a "pageReferences" object that transcribes the numbered reference lists from each section of each page:
+- Slide footer references: Small-print numbered citations at the bottom of the slide image (before speaker notes begin)
+- Speaker notes references: Numbered citations in a "References" section within speaker notes
+- Format: \`{ "pageNumber": { "slide": { "1": "Full citation text...", "2": "..." }, "notes": { "1": "Full citation text...", "2": "..." } } }\`
+- Only include pages/sections that have numbered reference lists
+- Transcribe each citation EXACTLY as written in the document
 
 🚨 FAILURE MODES TO AVOID:
 1. Do NOT only read top-level (•) bullets — sub-bullets (○) and sub-sub-bullets contain the most specific claims
@@ -885,6 +1006,108 @@ ${VISUAL_CLAIMS_INSTRUCTIONS}
 
 Analyze now. Find all medication claims.`
 
+export const ANNOTATION_PROMPT_USER = `# Task
+Extract on-page references and map them to content.
+
+# Slide Region (top ~50% of page)
+1. Find numbered footnotes at the bottom of the slide (e.g. "1. Smith et al. J Cardiol 2024;45:123-130")
+2. Find superscript numbers in slide content (e.g. "47% reduction¹²")
+3. Match: superscript ¹ → footnote 1. That is the reference. Done.
+4. If a footnote exists but no content has its superscript, annotate the most relevant slide content.
+
+# Speaker Notes Region (bottom ~50% of page)
+1. Find the "References:" section (numbered references list)
+2. If notes content has superscript numbers, match them to the references list the same way.
+3. If NO superscripts exist in notes, annotate ALL notes content with the full references block.
+
+# Rules
+- ONLY use references that exist ON THIS PAGE — never invent references
+- Every footnote/reference on the page MUST be mapped to content
+- Return source as "on-page" for all annotations
+
+# Position
+- x: Position at the BULLET SYMBOL (• or ○) for bulleted text, NOT at the page margin
+- y: vertical CENTER of claim as % (0=top, 100=bottom)
+- Slide region elements:
+  - Table claims: position at LEFT EDGE of the table cell containing the claim
+  - Chart/graph claims: position at the data label or axis label, not the chart center
+  - Footnote claims: position at the footnote text (typically y = 45-55%, near slide bottom)
+  - Title claims: typically y = 2-10%
+- Speaker notes region:
+  - y will typically be 55-90% (bottom half of page)
+  - Main bullets (•): x should be ~5-8%
+  - Sub-bullets (○ or ▪): x should be ~8-12%
+  - Sub-sub-bullets (– or -): x should be ~12-16%
+  - IMPORTANT: Each nesting level is INDENTED further right
+
+# Content Type
+For each annotation, set contentType to one of: "title", "bullet", "sub-bullet", "footnote", "chart"
+- "title" for slide titles, subtitles, headers
+- "bullet" for main bullets (•) in slide or notes
+- "sub-bullet" for sub-bullets (○, ▪, –) at any nesting depth
+- "footnote" for slide footnotes, small print, reference text
+- "chart" for chart titles, table cells, graph labels
+
+Annotate now.`
+
+export const AI_QA_PROMPT_USER = `# Task
+Quality check: scan this page for potential claims that have NO on-page reference supporting them.
+
+These are statements that might need substantiation but were NOT annotated with a superscript or linked to any footnote/reference on the page. They may represent human oversight or intentionally unsubstantiated content.
+
+# What to flag
+- Efficacy claims without a reference number (e.g., "significant improvement" with no superscript)
+- Statistical claims without citation (e.g., "47% of patients" with no footnote)
+- Comparative claims (e.g., "superior to", "better than") without substantiation
+- Safety/tolerability assertions without reference
+
+# What NOT to flag
+- Content that IS already annotated with a superscript/footnote — skip these
+- Generic descriptions (mechanism of action, dosing instructions)
+- Section headers, titles, or labels
+
+# Position
+- x: Position at the BULLET SYMBOL (• or ○) for bulleted text, NOT at the page margin
+- y: vertical CENTER of claim as % (0=top, 100=bottom)
+- Slide region elements:
+  - Table claims: position at LEFT EDGE of the table cell containing the claim
+  - Chart/graph claims: position at the data label or axis label, not the chart center
+  - Footnote claims: position at the footnote text (typically y = 45-55%, near slide bottom)
+  - Title claims: typically y = 2-10%
+- Speaker notes region:
+  - y will typically be 55-90% (bottom half of page)
+  - Main bullets (•): x should be ~5-8%
+  - Sub-bullets (○ or ▪): x should be ~8-12%
+  - Sub-sub-bullets (– or -): x should be ~12-16%
+  - IMPORTANT: Each nesting level is INDENTED further right
+
+# Content Type
+For each annotation, set contentType to one of: "title", "bullet", "sub-bullet", "footnote", "chart"
+- "title" for slide titles, subtitles, headers
+- "bullet" for main bullets (•) in slide or notes
+- "sub-bullet" for sub-bullets (○, ▪, –) at any nesting depth
+- "footnote" for slide footnotes, small print, reference text
+- "chart" for chart titles, table cells, graph labels
+
+# Output Format
+Return JSON:
+{
+  "claims": [
+    {
+      "text": "exact text of potential unsubstantiated claim",
+      "region": "slide" or "notes",
+      "confidence": 70,
+      "rationale": "Why this might need a reference",
+      "source": "ai-find",
+      "page": 1,
+      "x": 35,
+      "y": 28
+    }
+  ]
+}
+
+Flag potential unreferenced claims now.`
+
 /**
  * Analyze a PDF document and detect claims
  *
@@ -1095,12 +1318,30 @@ ${OUTPUT_DEDUP_RULES}
     const perPassCounts = []
     let parseFailures = 0
 
+    let accumulatedPageReferences = {}
+
     for (const { pass, response } of passOutcomes) {
       let passClaims = []
       try {
         const text = response.candidates?.[0]?.content?.parts?.[0]?.text || response.text
         const json = parseJsonResponse(text, `Gemini primary pass ${pass} response`)
         passClaims = normalizeRawClaims(json.claims)
+        // Accumulate pageReferences from each pass (later passes supplement earlier ones)
+        if (json.pageReferences && typeof json.pageReferences === 'object') {
+          for (const [pageNum, sections] of Object.entries(json.pageReferences)) {
+            if (!accumulatedPageReferences[pageNum]) {
+              accumulatedPageReferences[pageNum] = {}
+            }
+            for (const region of ['slide', 'notes']) {
+              if (sections[region] && typeof sections[region] === 'object') {
+                accumulatedPageReferences[pageNum][region] = {
+                  ...(accumulatedPageReferences[pageNum][region] || {}),
+                  ...sections[region]
+                }
+              }
+            }
+          }
+        }
       } catch (err) {
         parseFailures++
         logger.warn(`[Gemini] Pass ${pass} JSON parse failed, skipping: ${err.message}`)
@@ -1219,6 +1460,7 @@ ${OUTPUT_DEDUP_RULES}
     return {
       success: true,
       claims,
+      pageReferences: Object.keys(accumulatedPageReferences).length > 0 ? accumulatedPageReferences : undefined,
       usage: {
         model: modelVersion,
         modelDisplayName: MODEL_DISPLAY_NAMES[modelVersion] || modelVersion,
@@ -1236,6 +1478,163 @@ ${OUTPUT_DEDUP_RULES}
       error: toUserFacingGeminiError(error),
       claims: [],
       usage: null
+    }
+  }
+}
+
+/**
+ * Annotate a PDF document by mapping on-page references to content.
+ * Optionally runs AI QA pass to detect unreferenced claims.
+ */
+export async function annotateDocument(pdfFile, onProgress, enableAiQa = false, docType = 'speaker-notes', { modelOverride } = {}) {
+  const activeModel = modelOverride || GEMINI_MODEL
+  const client = getGeminiClient()
+
+  const { structure } = getDocTypeInstructions(docType)
+  const annotationPrompt = `${structure}${ANNOTATION_PROMPT_USER}`
+
+  const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+  const finalPrompt = `${annotationPrompt}\n\n<!-- run:${runId} -->`
+
+  onProgress?.(10, 'Reading document...')
+  const base64Data = await fileToBase64(pdfFile)
+  onProgress?.(25, 'Extracting references...')
+
+  try {
+    const { response, model: usedModel } = await generateContentWithModelFallback(client, {
+      preferredModel: activeModel,
+      purpose: 'annotation',
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { inlineData: { mimeType: 'application/pdf', data: base64Data } },
+            { text: finalPrompt }
+          ]
+        }
+      ],
+      config: {
+        systemInstruction: ANNOTATION_SYSTEM_INSTRUCTION,
+        responseMimeType: 'application/json',
+        responseSchema: ANNOTATION_JSON_SCHEMA,
+        temperature: 0
+      }
+    })
+
+    onProgress?.(70, 'Processing annotations...')
+
+    const rawText = response.text || ''
+    const parsed = parseJsonResponse(rawText, 'Annotation response')
+    const { inputTokens, outputTokens } = extractUsageMetadata(response)
+    const cost = calculateCost(usedModel, inputTokens, outputTokens)
+
+    const annotations = (Array.isArray(parsed.annotations) ? parsed.annotations : []).map((ann, idx) => ({
+      id: `ann-${idx + 1}`,
+      text: String(ann.text || '').trim(),
+      claim: String(ann.text || '').trim(),
+      region: ann.region || 'slide',
+      refNumber: ann.refNumber || null,
+      reference: {
+        name: String(ann.reference || '').trim(),
+        text: String(ann.reference || '').trim()
+      },
+      source: 'on-page',
+      matched: true,
+      matchTier: 'on-page',
+      contentType: ann.contentType || 'bullet',
+      confidence: clamp(Math.round(Number(ann.confidence) || 80), 0, 100),
+      page: Math.max(1, Number.parseInt(ann.page, 10) || 1),
+      position: {
+        x: clamp(Number(ann.x) || 0, 0, 100),
+        y: clamp(Number(ann.y) || 0, 0, 100)
+      }
+    }))
+
+    let usage = {
+      inputTokens,
+      outputTokens,
+      cost,
+      model: usedModel
+    }
+
+    let aiFinds = []
+    if (enableAiQa) {
+      onProgress?.(75, 'Running AI QA...')
+      try {
+        const qaRunId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+        const qaPrompt = `${structure}${AI_QA_PROMPT_USER}\n\n<!-- run:${qaRunId} -->`
+
+        const { response: qaResponse, model: qaModel } = await generateContentWithModelFallback(client, {
+          preferredModel: activeModel,
+          purpose: 'ai-qa',
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                { inlineData: { mimeType: 'application/pdf', data: base64Data } },
+                { text: qaPrompt }
+              ]
+            }
+          ],
+          config: {
+            systemInstruction: ANNOTATION_SYSTEM_INSTRUCTION,
+            responseMimeType: 'application/json',
+            responseSchema: AI_QA_JSON_SCHEMA,
+            temperature: 0
+          }
+        })
+
+        const qaRaw = qaResponse.text || ''
+        const qaParsed = parseJsonResponse(qaRaw, 'AI QA response')
+        const { inputTokens: qaIn, outputTokens: qaOut } = extractUsageMetadata(qaResponse)
+        const qaCost = calculateCost(qaModel, qaIn, qaOut)
+
+        aiFinds = (Array.isArray(qaParsed.claims) ? qaParsed.claims : []).map((c, idx) => ({
+          id: `ai-find-${idx + 1}`,
+          text: String(c.text || '').trim(),
+          claim: String(c.text || '').trim(),
+          region: c.region || 'slide',
+          source: 'ai-find',
+          matched: false,
+          matchTier: 'ai-find',
+          contentType: c.contentType || 'bullet',
+          confidence: clamp(Math.round(Number(c.confidence) || 60), 0, 100),
+          rationale: c.rationale || '',
+          page: Math.max(1, Number.parseInt(c.page, 10) || 1),
+          position: {
+            x: clamp(Number(c.x) || 0, 0, 100),
+            y: clamp(Number(c.y) || 0, 0, 100)
+          }
+        }))
+
+        usage = {
+          inputTokens: usage.inputTokens + qaIn,
+          outputTokens: usage.outputTokens + qaOut,
+          cost: usage.cost + qaCost,
+          model: usedModel
+        }
+      } catch (qaErr) {
+        logger.warn('AI QA pass failed (non-fatal):', qaErr.message)
+      }
+    }
+
+    onProgress?.(100, 'Annotations complete')
+
+    return {
+      success: true,
+      annotations,
+      aiFinds,
+      slideFootnotes: parsed.slideFootnotes || {},
+      notesReferences: parsed.notesReferences || {},
+      usage
+    }
+  } catch (error) {
+    logger.error('Annotation error:', error)
+    return {
+      success: false,
+      error: toUserFacingGeminiError(error),
+      annotations: [],
+      aiFinds: []
     }
   }
 }
