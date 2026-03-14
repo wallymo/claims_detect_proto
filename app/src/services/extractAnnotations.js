@@ -537,6 +537,11 @@ export function isSlideRegionEmpty(page) {
  * Find the best OCR line match for a pdf.js text line by text overlap + Y proximity.
  * hintY is the pdf.js Y coordinate to bias toward nearby OCR lines.
  * usedOcrIndices tracks already-matched OCR lines to avoid double-claiming.
+ *
+ * Strategy:
+ *  1. Try text matching (substring + token overlap) with Y-proximity bonus
+ *  2. If text matching fails (common for short infographic text like "AT 3 YEARS"),
+ *     fall back to closest OCR line by Y-proximity alone
  */
 function findBestOcrMatch(pdfText, ocrLines, hintY = null, usedOcrIndices = null) {
   if (!pdfText || !ocrLines?.length) return null
@@ -546,7 +551,6 @@ function findBestOcrMatch(pdfText, ocrLines, hintY = null, usedOcrIndices = null
   if (!pdfNorm || pdfNorm.length < 4) return null
 
   const pdfTokens = new Set(pdfNorm.split(' ').filter(t => t.length > 2))
-  if (pdfTokens.size === 0) return null
 
   let bestMatch = null
   let bestScore = 0
@@ -557,41 +561,68 @@ function findBestOcrMatch(pdfText, ocrLines, hintY = null, usedOcrIndices = null
 
     const ocrLine = ocrLines[idx]
     const ocrNorm = normalize(ocrLine.text)
-    if (!ocrNorm) continue
+    if (!ocrNorm || ocrNorm.length < 3) continue
 
     let textScore = 0
 
-    // Substring check
+    // Substring check — boost score for confirmed containment
     if (pdfNorm.includes(ocrNorm) || ocrNorm.includes(pdfNorm)) {
-      textScore = Math.min(pdfNorm.length, ocrNorm.length) / Math.max(pdfNorm.length, ocrNorm.length)
-    } else {
+      const ratio = Math.min(pdfNorm.length, ocrNorm.length) / Math.max(pdfNorm.length, ocrNorm.length)
+      // Short OCR text contained in long pdf.js text is still a valid match
+      textScore = Math.max(ratio, 0.5)
+    } else if (pdfTokens.size > 0) {
       // Token overlap
       const ocrTokens = ocrNorm.split(' ').filter(t => t.length > 2)
       const hits = ocrTokens.filter(t => pdfTokens.has(t)).length
-      textScore = pdfTokens.size > 0 ? hits / pdfTokens.size : 0
+      textScore = hits / pdfTokens.size
     }
-
-    if (textScore < 0.3) continue
 
     // Y proximity bonus: prefer OCR lines closer to the pdf.js Y position
     let yBonus = 0
     if (Number.isFinite(hintY) && Number.isFinite(ocrLine.y_pct)) {
       const yDist = Math.abs(hintY - ocrLine.y_pct)
-      yBonus = Math.max(0, 0.3 - (yDist / 100))  // up to 0.3 bonus for close Y
+      yBonus = Math.max(0, 0.3 - (yDist / 100))
     }
 
     const score = textScore + yBonus
-    if (score > bestScore) {
+    if (score > bestScore && textScore >= 0.15) {
       bestScore = score
       bestMatch = ocrLine
       bestIdx = idx
     }
   }
 
+  // Text match succeeded
   if (bestScore >= 0.4 && bestMatch) {
     if (usedOcrIndices && bestIdx >= 0) usedOcrIndices.add(bestIdx)
     return bestMatch
   }
+
+  // Fallback: closest OCR line by Y-proximity when text matching fails
+  // (common for short infographic text on stat-heavy slides)
+  if (Number.isFinite(hintY)) {
+    let closestLine = null
+    let closestDist = Infinity
+    let closestIdx = -1
+
+    for (let idx = 0; idx < ocrLines.length; idx++) {
+      if (usedOcrIndices?.has(idx)) continue
+      const ocrLine = ocrLines[idx]
+      if (!ocrLine.text || ocrLine.text.trim().length < 3) continue
+      const yDist = Math.abs(hintY - ocrLine.y_pct)
+      if (yDist < closestDist && yDist < 8) {  // within 8% Y distance
+        closestDist = yDist
+        closestLine = ocrLine
+        closestIdx = idx
+      }
+    }
+
+    if (closestLine) {
+      if (usedOcrIndices && closestIdx >= 0) usedOcrIndices.add(closestIdx)
+      return closestLine
+    }
+  }
+
   return null
 }
 
@@ -602,18 +633,25 @@ export async function extractAnnotations(pdfFile, onProgress) {
   const pages = await extractPageTextLines(pdfFile)
 
   // ── OCR for slide position refinement (pdf.js text + OCR visual positions) ──
-  const ocrAvailable = await isOcrServiceAvailable()
+  // Only OCR pages that have superscript-bearing slide lines (= annotation candidates).
+  // Pages with no refs in the slide region won't produce pins, so OCR is pointless.
+  const pagesNeedingOcr = pages.filter(p => {
+    const boundary = p.notesBoundaryY ?? 55
+    return p.lines.some(l => l.y < boundary && l.refs.length > 0)
+  })
+
+  const ocrAvailable = pagesNeedingOcr.length > 0 && await isOcrServiceAvailable()
   if (ocrAvailable) {
-    onProgress?.(15, `OCR positioning: scanning ${pages.length} slides...`)
+    onProgress?.(15, `OCR positioning: ${pagesNeedingOcr.length} of ${pages.length} slides...`)
     const arrayBuffer = await pdfFile.arrayBuffer()
     const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
 
-    for (let i = 0; i < pages.length; i++) {
-      const page = pages[i]
+    for (let i = 0; i < pagesNeedingOcr.length; i++) {
+      const page = pagesNeedingOcr[i]
       const pdfPage = await pdfDoc.getPage(page.pageNum)
 
-      onProgress?.(15 + (i / pages.length) * 25,
-        `OCR positioning: page ${page.pageNum} (${i + 1}/${pages.length})...`)
+      onProgress?.(15 + (i / pagesNeedingOcr.length) * 25,
+        `OCR positioning: page ${page.pageNum} (${i + 1}/${pagesNeedingOcr.length})...`)
 
       const rendered = await renderPageToBlob(pdfPage, 200)
       if (!rendered) { pdfPage.cleanup(); continue }
