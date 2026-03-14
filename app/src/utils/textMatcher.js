@@ -97,6 +97,11 @@ function findPrefixInLine(line, prefixTokens, requiredNumbers = []) {
 const extractNumbers = (text) => (text.match(/\d+(?:\.\d+)?/g) || []).map(Number)
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v))
+const clampPercent = (v) => Math.max(0, Math.min(100, v))
+const SLIDE_LANE_X_PCT = {
+  left: 9,
+  right: 91
+}
 
 function jaccard(tokensA, tokensB) {
   if (!tokensA.length || !tokensB.length) return 0
@@ -303,6 +308,134 @@ function matchedItems(windowItems, claimTokens, claimNumbers) {
   return hits.length ? hits : windowItems // fallback to full window if nothing matched
 }
 
+function getPageForClaim(extractedPages, pageNum) {
+  return extractedPages.find(page => page.pageNum === pageNum) || null
+}
+
+function lineCenterXPct(line, page) {
+  if (!page?.width) return 0
+  return ((line.x + (line.width / 2)) / page.width) * 100
+}
+
+function lineCenterYPct(line, page) {
+  if (!page?.height) return 0
+  return ((line.y - (line.height / 2)) / page.height) * 100
+}
+
+function getRegionBoundaryPct(page) {
+  if (Number.isFinite(page?.notesBoundaryY) && page.height > 0) {
+    return clampPercent((page.notesBoundaryY / page.height) * 100)
+  }
+  return 55
+}
+
+function isLineInRegion(line, page, region) {
+  const centerY = lineCenterYPct(line, page)
+  const boundaryPct = getRegionBoundaryPct(page)
+  return region === 'notes' ? centerY >= boundaryPct : centerY < boundaryPct
+}
+
+function inferLaneFromHint(hintXPct) {
+  return Number.isFinite(hintXPct) && hintXPct >= 55 ? 'right' : 'left'
+}
+
+function classifyLineLane(line, page) {
+  const centerXPct = lineCenterXPct(line, page)
+  if (centerXPct >= 60) return 'right'
+  if (centerXPct <= 40) return 'left'
+  return 'center'
+}
+
+function scoreSlideLine(line, page, claimTokens, hintYPct, hintXPct) {
+  const lineTextNorm = normalizeText(line.text)
+  if (!lineTextNorm) return -Infinity
+
+  const lineTokens = lineTextNorm.split(' ').filter(Boolean)
+  const meaningfulClaimTokens = claimTokens.filter(token => token.length > 2)
+  const tokenHits = meaningfulClaimTokens.filter(token => lineTokens.includes(token)).length
+  const tokenRatio = meaningfulClaimTokens.length > 0 ? tokenHits / meaningfulClaimTokens.length : 0
+  const prefix = claimTokens.slice(0, 3).join(' ')
+  const prefixHit = prefix && lineTextNorm.includes(prefix)
+  const overlap = jaccard(claimTokens, lineTokens)
+  const yPenalty = Number.isFinite(hintYPct)
+    ? Math.min(Math.abs(lineCenterYPct(line, page) - hintYPct) / 18, 2.4)
+    : 0
+  const xPenalty = Number.isFinite(hintXPct)
+    ? Math.min(Math.abs(lineCenterXPct(line, page) - hintXPct) / 35, 1.2)
+    : 0
+  const widePenalty = page?.width > 0 && ((line.width / page.width) * 100) > 60 ? 0.75 : 0
+
+  return (tokenRatio * 5) + (overlap * 3) + (prefixHit ? 1.5 : 0) - yPenalty - xPenalty - widePenalty
+}
+
+function chooseNearestLineByY(lines, page, hintYPct) {
+  if (!lines.length) return null
+  if (!Number.isFinite(hintYPct)) return lines[0]
+
+  return [...lines].sort((a, b) => (
+    Math.abs(lineCenterYPct(a, page) - hintYPct) - Math.abs(lineCenterYPct(b, page) - hintYPct)
+  ))[0]
+}
+
+function resolveLane(line, page, hintXPct) {
+  const lineLane = line ? classifyLineLane(line, page) : 'center'
+  if (lineLane === 'left' || lineLane === 'right') return lineLane
+  return inferLaneFromHint(hintXPct)
+}
+
+function findSlideLaneAnchor(claim, extractedPages) {
+  const pageNum = Number(claim?.page) || 1
+  const page = getPageForClaim(extractedPages, pageNum)
+  if (!page?.lines?.length) return null
+
+  const slideLines = page.lines.filter(line => isLineInRegion(line, page, 'slide'))
+  if (!slideLines.length) return null
+
+  const hintXPct = Number(claim?.position?.x)
+  const hintYPct = Number(claim?.position?.y)
+
+  const claimText = claim?.text || claim?.claim || ''
+  const claimTokens = normalizeText(claimText).split(' ').filter(Boolean)
+  let bestLine = null
+  let bestScore = -Infinity
+
+  if (claimTokens.length > 0) {
+    slideLines.forEach((line) => {
+      const score = scoreSlideLine(line, page, claimTokens, hintYPct, hintXPct)
+      if (score > bestScore) {
+        bestScore = score
+        bestLine = line
+      }
+    })
+  }
+
+  if (!bestLine || bestScore < 1.8) {
+    bestLine = chooseNearestLineByY(slideLines, page, hintYPct)
+  }
+
+  if (!bestLine) return null
+
+  const lane = resolveLane(bestLine, page, hintXPct)
+  const y = clampPercent(lineCenterYPct(bestLine, page))
+  const x = SLIDE_LANE_X_PCT[lane]
+  const score = Number.isFinite(bestScore) ? bestScore : 0
+  const confidence = bestScore >= 1.8 ? 0.64 : 0.5
+
+  return {
+    position: {
+      x,
+      y,
+      width: 0,
+      height: 0,
+      lane
+    },
+    pageNum,
+    score,
+    confidence,
+    source: 'coarse-slide-anchor'
+  }
+}
+
 /**
  * Find the best matching position, scanning all pages but biasing toward the hinted pageNum.
  * Uses prefix-anchor matching first for tight bounds, falls back to fuzzy matching.
@@ -405,6 +538,9 @@ export function findClaimPosition(claimText, pageNum, extractedPages) {
  */
 export function enrichClaimsWithPositions(claims, extractedPages) {
   return claims.map((claim, index) => {
+    // Skip OCR-sourced claims — their positions are already accurate from image coordinates
+    if (claim?.position?.source === 'ocr') return claim
+
     const pageNumber = Number(claim.page) || 1
     const match = findClaimPosition(claim.text, pageNumber, extractedPages)
 
@@ -434,6 +570,53 @@ export function enrichClaimsWithPositions(claims, extractedPages) {
           }
     }
   })
+}
+
+export function alignClaimsToSlideLayout(claims, extractedPages) {
+  if (!Array.isArray(claims) || claims.length === 0 || !Array.isArray(extractedPages) || extractedPages.length === 0) {
+    return claims
+  }
+
+  let changed = false
+
+  const nextClaims = claims.map((claim) => {
+    if (claim?.region !== 'slide' || claim?.globalSpot || claim?.contentType === 'global' || claim?.position?.source === 'manual' || claim?.position?.source === 'ocr') {
+      return claim
+    }
+
+    const anchor = findSlideLaneAnchor(claim, extractedPages)
+    if (!anchor?.position) return claim
+
+    const currentPosition = claim.position || {}
+    const nextPosition = {
+      ...currentPosition,
+      ...anchor.position,
+      source: anchor.source,
+      confidence: anchor.confidence,
+      score: anchor.score
+    }
+
+    const currentSource = currentPosition.source || ''
+    const currentX = Number(currentPosition.x)
+    const currentY = Number(currentPosition.y)
+    const nextX = Number(nextPosition.x)
+    const nextY = Number(nextPosition.y)
+
+    const shouldReplace = currentSource !== 'coarse-slide-anchor'
+      || Math.abs(currentX - nextX) > 0.25
+      || Math.abs(currentY - nextY) > 0.25
+
+    if (!shouldReplace) return claim
+
+    changed = true
+    return {
+      ...claim,
+      page: anchor.pageNum || claim.page,
+      position: nextPosition
+    }
+  })
+
+  return changed ? nextClaims : claims
 }
 
 /**
