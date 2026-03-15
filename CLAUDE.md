@@ -14,26 +14,35 @@ Claims Detector: React + Express POC for AI-powered annotation and claim detecti
 - `/` — Home (mock demos). Redirects to `/mkg` on Vercel production.
 - `/mkg` — POC1: AI claim detection with PDF upload
 - `/demo` — Client-friendly `/mkg` (hides POC badge)
-- `/mkg2` — POC2: Page-local annotation engine with optional AI QA claim detection
+- `/mkg2` — Earlier page-local annotation workflow
+- `/mkg3` — Current deterministic annotation workflow for this branch
 
-## POC2 — Annotation Engine (newworkflow branch)
+## MKG3 — Annotation Engine (newworkflow branch)
 
-**Purpose:** Automate reference annotation — the AI reads each page, extracts on-page references, and maps them to the content they support. Saves the manual annotation step.
+**Purpose:** Automate reference annotation from page-local evidence. `/mkg3` extracts page text and positions, detects superscript-backed statements, and maps them to the references on that same page. Saves the manual annotation step without making AI the primary engine.
 
 **Primary flow (always runs):**
-1. AI model (Gemini multimodal) looks at each page in a single pass
-2. Extracts footnotes from slide region (numbered references at bottom of slide)
-3. Extracts references from speaker notes (after "References:" header)
-4. Maps references to content: superscript `¹` → slide footnote 1, notes references → notes bullets
-5. Slide footnotes not yet superscripted → model annotates where it sees fit
-6. Each annotation tagged `"source": "on-page"` (backed by page reference)
+1. Extract text from each page with positions.
+2. Split each page into `slide` and `notes` regions by coordinates.
+3. Parse superscript-backed statements in each region.
+   - Numeric superscripts only for now. Ignore dagger, double-dagger, asterisk, and other symbol markers in `/mkg3`.
+4. Parse page-local reference pools:
+   - slide footnotes at the bottom of the slide
+   - notes references under the speaker notes `References` section
+5. Match superscript numbers directly to the local pool for that same page and region.
+6. Place pins from extracted text coordinates.
+7. If a reference pool exists but no clear superscript target exists, emit a global annotation for that page/region.
 
 **Secondary flow (AI QA toggle in settings, off by default):**
 - When ON, model does additional pass looking for potential claims with NO on-page reference
 - Tagged `"source": "ai-find"` — flagged for human review
-- When OFF, only reference-backed annotations are shown
+- When OFF, it must not interfere with deterministic extraction; only deterministic on-page annotations and required global annotations are shown
 
-**Previous approach (deprecated on this branch):** Multi-tier backend matching pipeline (semantic search, AI confirmation, keyword fallback) against brand reference library. Replaced by single-pass page-local annotation.
+**Reference scope rule:** Slide content may only resolve against that page's slide footnotes. Speaker notes bullets may only resolve against that page's notes references. Never cross-reference between the two pools.
+
+**See:** [PROCESS.md](./PROCESS.md)
+
+**Previous approach (deprecated on this branch):** Multi-tier backend matching pipeline (semantic search, AI confirmation, keyword fallback) against brand reference library. `/mkg3` should not use that as its primary path.
 
 ## Commands
 
@@ -115,13 +124,13 @@ claims_detector/
 
 **OpenAI uses Responses API** — `client.responses.create()` with `input[]` array format, NOT `chat.completions.create()`.
 
-**POC2 annotation pipeline:** Single-pass page-local. AI extracts on-page references (slide footnotes + notes references) and maps them to content in one multimodal call. No backend matching pipeline. Optional AI QA toggle for claim detection without on-page references.
+**MKG3 annotation pipeline:** Deterministic-first and page-local. Text extraction, superscript detection, slide/notes splitting, pin placement, and page-local reference matching should all be deterministic. AI is fallback-only for scanned or non-extractable pages. Optional AI QA remains separate and off by default.
 
 **Database:** SQLite + WAL + `better-sqlite3` + `sqlite-vec`. Soft delete via `deleted_at` timestamp. 5 migrations auto-run on startup.
 
 **Document structure:** "Notes page" PDFs: slide region (top ~50%, y < 55%) and speaker notes (bottom ~50%, y > 55%). Same stat in both regions = 1 pin (dedup by design, do not try to force duplicates).
 
-**Gemini is non-deterministic** even with `temperature: 0`. Expect ~10-15% variance in claim counts between runs. This is normal behavior.
+**Deterministic-first rule:** For `/mkg3`, do not introduce AI for tasks the text layer can already solve. If a PDF has a usable text layer, use deterministic extraction and placement.
 
 ## Coding Conventions
 
@@ -142,11 +151,12 @@ claims_detector/
 | Results seem stale after code change | Restart Vite dev server to clear cache |
 | `/api` routes return 404 | Backend not running — `cd backend && npm run dev` |
 | Build warning >500KB chunk | Expected (pdf.js worker) |
-| Annotations missing on-page references | Check AI prompt extracts footnotes from both slide and notes zones separately |
+| Annotations missing on-page references | Check page-local text extraction, slide/notes split, and superscript parsing before considering AI fallback |
 
 ## Reference Docs
 
 For detailed specs beyond this file:
+- Deterministic `/mkg3` workflow: [PROCESS.md](./PROCESS.md)
 - POC2 scope & validation: @docs/plans/2026-02-13-poc2-sow-alignment-assessment.md
 - Workflow diagram: @docs/workflow-infographic.jpg
 - Matching tuning vars: see `referenceMatching.js` header comments

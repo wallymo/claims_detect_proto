@@ -284,8 +284,11 @@ function claimQualityScore(claim) {
 
 function claimDedupKey(claim) {
   const page = Math.max(1, Number(claim?.page) || 1)
+  const region = claim?.region || ''
   const text = normalizeDedupText(claim?.text)
-  return `${page}|${text}`
+  // Include refNumbers so annotations with same text but different references are distinct
+  const refs = Array.isArray(claim?.refNumbers) ? [...claim.refNumbers].sort((a, b) => a - b).join(',') : ''
+  return `${page}|${region}|${text}|${refs}`
 }
 
 function choosePreferredClaim(existing, candidate) {
@@ -322,10 +325,25 @@ function areNearDuplicateClaims(claimA, claimB, options) {
   const pageB = Math.max(1, Number(claimB?.page) || 1)
   if (pageA !== pageB) return false
 
+  // Never near-dedup across regions — slide and notes legitimately repeat content
+  const regionA = claimA?.region || ''
+  const regionB = claimB?.region || ''
+  if (regionA && regionB && regionA !== regionB) return false
+
   const normalizedA = normalizeDedupText(claimA?.text)
   const normalizedB = normalizeDedupText(claimB?.text)
   if (!normalizedA || !normalizedB) return false
-  if (normalizedA === normalizedB) return true
+  if (normalizedA === normalizedB) {
+    // Same text but different refNumbers = distinct annotations (e.g. [5] vs [1,6])
+    const refsA = claimA?.refNumbers
+    const refsB = claimB?.refNumbers
+    if (refsA?.length || refsB?.length) {
+      if (!refsA?.length || !refsB?.length) return false
+      const setA = new Set(refsA)
+      if (!refsB.every(r => setA.has(r)) || refsA.length !== refsB.length) return false
+    }
+    return true
+  }
 
   if (hasConflictingNumericEvidence(claimA?.text, claimB?.text)) return false
 

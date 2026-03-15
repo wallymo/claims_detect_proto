@@ -1919,6 +1919,122 @@ export async function checkGeminiConnection(preferredModel = GEMINI_MODEL) {
   }
 }
 
+// ─── Gemini Vision: Slide Annotation Extraction ─────────────────────────────
+
+const SLIDE_ANNOTATION_SCHEMA = {
+  type: 'object',
+  properties: {
+    annotations: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          statement: { type: 'string', description: 'The complete statement or claim text that the superscript(s) are attached to. Read it naturally from the visual layout — do NOT concatenate text from different columns or sections.' },
+          refNumbers: {
+            type: 'array',
+            items: { type: 'integer' },
+            description: 'All superscript reference numbers attached to this statement (e.g. [1, 2])'
+          },
+          x: { type: 'number', description: 'Horizontal center of the statement as percentage of page width (0=left edge, 100=right edge)' },
+          y: { type: 'number', description: 'Vertical center of the statement as percentage of page height (0=top edge, 100=bottom edge)' }
+        },
+        required: ['statement', 'refNumbers', 'x', 'y']
+      }
+    }
+  },
+  required: ['annotations']
+}
+
+/**
+ * Extract annotated statements from a slide image using Gemini Vision.
+ * Returns array of { statement, refNumbers, x, y } — complete statements
+ * with their superscript refs and positions, read in proper visual order.
+ *
+ * @param {string} imageBase64 - Base64-encoded PNG of the full page
+ * @param {number} pageNum - Page number (for logging)
+ * @param {Object} slideFootnotes - The footnote pool for context
+ * @param {number} notesBoundaryY - Y% where speaker notes begin
+ * @returns {Promise<Array<{ statement: string, refNumbers: number[], x: number, y: number }>>}
+ */
+export async function detectSlideSuperscripts(imageBase64, pageNum, slideFootnotes = {}, notesBoundaryY = 50) {
+  const client = getGeminiClient()
+
+  const refKeys = Object.keys(slideFootnotes).sort((a, b) => Number(a) - Number(b))
+  const refList = refKeys.length > 0
+    ? `\n\nThese numbered references appear as footnotes at the bottom of this slide:\n${refKeys.map(k => `  ${k}. ${String(slideFootnotes[k] || '').slice(0, 100)}`).join('\n')}`
+    : ''
+
+  const prompt = `This is a pharma presentation slide with speaker notes below. The slide content is in the top ~${Math.round(notesBoundaryY)}% of the page.
+
+Your task: Find every statement in the SLIDE REGION (above ~${Math.round(notesBoundaryY)}% from top) that has a superscript reference number attached to it.${refList}
+
+IMPORTANT — Reading order:
+- This is an infographic/presentation slide. Text may be arranged in columns, cards, callout boxes, or visual sections.
+- Read each section or visual group INDEPENDENTLY. Do NOT concatenate text across columns.
+- A statement is the natural phrase or sentence that a superscript is attached to, as a human would read it.
+
+Examples of correct reading:
+- A box showing "71% experience neuropathic pain¹·²" → statement: "71% experience neuropathic pain"
+- A callout "AT 3 YEARS" with stats below → read each stat with its superscript separately
+- A bullet "Can cause serious consequences³·⁴" → statement: "Can cause serious consequences"
+
+For each annotated statement, return:
+- statement: The text as it appears visually (up to 150 chars). Read it naturally from the layout.
+- refNumbers: Array of superscript reference numbers attached to it (e.g. [1, 2])
+- x: Horizontal center of the statement as % of page width (0=left, 100=right)
+- y: Vertical center of the statement as % of page height (0=top, 100=bottom)
+
+Rules:
+- Only report statements in the slide region (y < ${Math.round(notesBoundaryY)})
+- Do NOT include footnote text from the bottom of the slide
+- Do NOT include speaker notes content
+- Do NOT include the slide title unless it has a superscript
+- Return an empty array if no superscripts are found in the slide content`
+
+  try {
+    const { response, model } = await generateContentWithModelFallback(client, {
+      preferredModel: GEMINI_MODEL,
+      contents: [{
+        role: 'user',
+        parts: [
+          { inlineData: { mimeType: 'image/png', data: imageBase64 } },
+          { text: prompt }
+        ]
+      }],
+      config: {
+        temperature: 0,
+        topP: 0.1,
+        topK: 1,
+        maxOutputTokens: 8192,
+        responseMimeType: 'application/json',
+        responseJsonSchema: SLIDE_ANNOTATION_SCHEMA
+      },
+      purpose: `slide-annotation-page-${pageNum}`
+    })
+
+    const rawText = response?.candidates?.[0]?.content?.parts?.[0]?.text
+      || response?.text?.()
+      || ''
+    const parsed = parseJsonResponse(rawText, `slide annotation page ${pageNum}`)
+    const annotations = Array.isArray(parsed?.annotations) ? parsed.annotations : []
+
+    // Filter and normalize
+    const filtered = annotations.filter(a =>
+      a.statement && a.statement.length >= 3 &&
+      Array.isArray(a.refNumbers) && a.refNumbers.length > 0 &&
+      a.refNumbers.every(n => Number.isFinite(n) && n > 0 && n <= 50) &&
+      Number.isFinite(a.x) && a.x >= 0 && a.x <= 100 &&
+      Number.isFinite(a.y) && a.y >= 0 && a.y < notesBoundaryY + 2
+    )
+
+    logger.info(`[Gemini Vision] Page ${pageNum}: found ${filtered.length} annotated statements (model: ${model})`)
+    return filtered
+  } catch (err) {
+    logger.warn(`[Gemini Vision] Page ${pageNum} annotation extraction failed: ${err.message}`)
+    return []
+  }
+}
+
 /**
  * Debug function - List available models and test API connection
  * Run this in browser console: import('/src/services/gemini.js').then(m => m.debugGeminiAPI())

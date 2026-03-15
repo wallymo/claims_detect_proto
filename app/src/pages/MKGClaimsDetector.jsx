@@ -20,7 +20,7 @@ import ClaimCard from '@/components/claims-detector/ClaimCard'
 import { analyzeDocument as analyzeWithGemini, checkGeminiConnection, ALL_CLAIMS_PROMPT_USER, MEDICATION_PROMPT_USER } from '@/services/gemini'
 
 // Utils
-import { enrichClaimsWithPositions, addGlobalIndices } from '@/utils/textMatcher'
+import { enrichClaimsWithPositions, alignClaimsToSlideLayout, addGlobalIndices } from '@/utils/textMatcher'
 import { dedupeClaimsByPageAndText, getClaimDedupOptions } from '@/utils/claimDedup'
 import { logger } from '@/utils/logger'
 
@@ -269,18 +269,27 @@ export default function MKGClaimsDetector({ demoMode = false }) {
     }
   }
 
-  // Fallback position enrichment
+  // Position refinement
   useEffect(() => {
     if (!analysisComplete || extractedPages.length === 0) return
 
     setClaims(prev => {
       if (!prev.length) return prev
-      const needsReposition = prev.some(c => !c.position || c.position?.source === 'fallback')
-      if (!needsReposition) return prev
+      const needsFallbackPosition = prev.some(c => !c.position || c.position?.source === 'fallback')
+      const hasSlideClaims = prev.some(c => c.region === 'slide' && !c.globalSpot)
+      if (!needsFallbackPosition && !hasSlideClaims) return prev
 
       logger.debug('Re-enriching claim positions from text extraction...')
 
-      const refreshed = enrichClaimsWithPositions(prev, extractedPages)
+      const withRecoveredPositions = needsFallbackPosition
+        ? enrichClaimsWithPositions(prev, extractedPages)
+        : prev
+      const refreshed = hasSlideClaims
+        ? alignClaimsToSlideLayout(withRecoveredPositions, extractedPages)
+        : withRecoveredPositions
+
+      if (refreshed === prev) return prev
+
       const withIndexes = refreshed.map(claim => {
         const existing = prev.find(c => c.id === claim.id)
         return { ...claim, globalIndex: existing?.globalIndex }

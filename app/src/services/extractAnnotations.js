@@ -2,9 +2,11 @@
  * Deterministic Annotation Pipeline for MKG3
  *
  * Extracts on-page references and maps them to content using pdf.js text layer.
- * No AI/Gemini — pure text extraction, superscript detection, and reference matching.
+ * Primary path is deterministic. Gemini Vision is used as a fallback for pages
+ * where the text layer has reference footnotes but no superscripts (image-only slides).
  *
- * Pipeline: extractPageTextLines() → parseTextAnnotations() → buildTextOnlyAnnotations()
+ * Pipeline: extractPageTextLines() → parseTextAnnotations()
+ *           → [Gemini Vision for orphan pages] → buildTextOnlyAnnotations()
  */
 
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
@@ -18,7 +20,7 @@ import {
 } from '@/utils/citationRefParsing'
 import { collectFullStatement, looksLikeShortHeading } from '@/utils/statementAssembly'
 import { buildTextOnlyAnnotations } from '@/utils/textOnlyAnnotations'
-import { isOcrServiceAvailable, renderPageToBlob, ocrSlideRegion, convertOcrLinesToPageLines } from '@/services/ocrClient'
+import { detectSlideSuperscripts } from '@/services/gemini'
 
 // Ensure pdf.js worker is configured (idempotent)
 if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
@@ -295,10 +297,20 @@ function parseTextAnnotations(pages) {
     const slideFootnoteLineYs = new Set()
 
     // Look for numbered references: "1. Author et al..."
+    // Guard: discard ref numbers > 30 — pharma slides rarely exceed 10-15 refs
+    // per page, and high numbers (79, 84, 93, 94) are typically page/volume
+    // numbers from continuation text that mimic the "N. " pattern.
+    const MAX_SLIDE_FOOTNOTE_REF = 30
     for (const line of slideLines) {
       if (line.y <= 30) continue
-      const inlineRefs = extractInlineNumberedReferences(line.text)
-      if (inlineRefs.length > 0 && inlineRefs[0].start === 0) {
+      const rawInlineRefs = extractInlineNumberedReferences(line.text)
+      const inlineRefs = rawInlineRefs
+        .filter(ref => Number(ref.number) <= MAX_SLIDE_FOOTNOTE_REF)
+      // Accept the line if the first valid ref starts at 0, OR if a filtered-out
+      // phantom ref occupied position 0 (text bleed from page/volume numbers).
+      const firstRawAtZero = rawInlineRefs.length > 0 && rawInlineRefs[0].start === 0
+      const firstFilteredAtZero = inlineRefs.length > 0 && inlineRefs[0].start === 0
+      if (inlineRefs.length > 0 && (firstFilteredAtZero || firstRawAtZero)) {
         for (const ref of inlineRefs) {
           slidePool[ref.number] = stripSuperscripts(ref.text).trim()
         }
@@ -316,11 +328,14 @@ function parseTextAnnotations(pages) {
         let closestRef = null
         for (let i = footnoteYs.length - 1; i >= 0; i--) {
           if (footnoteYs[i] < line.y && (line.y - footnoteYs[i]) < 3) {
-            // Match to the ref whose Y is closest
+            // Match to the last valid ref on the closest preceding footnote line
             for (const refLine of slideLines) {
               if (Math.abs(refLine.y - footnoteYs[i]) < 0.5) {
-                const refMatch = refLine.text.match(/^(\d+)[.)]\s+/)
-                if (refMatch) closestRef = refMatch[1]
+                const lineRefs = extractInlineNumberedReferences(refLine.text)
+                  .filter(ref => Number(ref.number) <= MAX_SLIDE_FOOTNOTE_REF)
+                if (lineRefs.length > 0) {
+                  closestRef = lineRefs[lineRefs.length - 1].number
+                }
               }
             }
             break
@@ -435,15 +450,17 @@ function parseTextAnnotations(pages) {
       // Expand to full statement context
       const { text, startY, startX } = collectFullStatement(slideLines, i)
       if (!text || text.length < 5) continue
+      // Skip pure-numeric/range text like "1 - 3" that has no meaningful alpha content
+      const slideAlpha = text.replace(/[^a-zA-Z]/g, '')
+      if (slideAlpha.length < 4) continue
 
       result.candidates.push({
         text: stripSuperscripts(text),
         region: 'slide',
         refNumbers: [...line.refs],
         page: pageNum,
-        pdfJsY: line.ocrSource ? line.ocrY : startY,
-        pdfJsX: line.ocrSource ? line.ocrX : startX,
-        ...(line.ocrSource ? { ocrSource: true } : {})
+        pdfJsY: startY,
+        pdfJsX: startX
       })
     }
 
@@ -458,9 +475,14 @@ function parseTextAnnotations(pages) {
       const line = notesContentLines[i]
       if (line.refs.length === 0) continue
       if (looksLikeShortHeading(line.text)) continue
+      if (/^speaker\s+notes?\s*$/i.test(line.text.trim())) continue
 
       const { text, startY, startX } = collectFullStatement(notesContentLines, i)
       if (!text || text.length < 5) continue
+      if (/^speaker\s+notes?\s*$/i.test(text.trim())) continue
+      // Skip pure-numeric/range text like "1 - 3" that has no meaningful alpha content
+      const notesAlpha = text.replace(/[^a-zA-Z]/g, '')
+      if (notesAlpha.length < 4) continue
 
       result.candidates.push({
         text: stripSuperscripts(text),
@@ -472,225 +494,222 @@ function parseTextAnnotations(pages) {
       })
     }
 
-    // ── Orphan reference detection ──
-    const slideRefNums = new Set(
-      result.candidates
-        .filter(c => c.page === pageNum && c.region === 'slide')
-        .flatMap(c => c.refNumbers.map(String))
-    )
-    const notesRefNums = new Set(
-      result.candidates
-        .filter(c => c.page === pageNum && c.region === 'notes')
-        .flatMap(c => c.refNumbers.map(String))
-    )
-
-    // Orphan slide refs → pin to the slide (title or first content line)
-    const orphanSlideRefs = Object.keys(slidePool).filter(r => !slideRefNums.has(r))
-    if (orphanSlideRefs.length > 0) {
-      // Find slide title (first line, usually largest font / lowest y)
-      const titleLine = slideLines.find(l => l.y < 25 && l.text.length > 10)
-      const anchorLine = titleLine || slideLines.find(l => l.y < 30 && l.text.length > 10) || slideLines[0]
-      const anchorText = anchorLine?.text || ''
-
-      result.candidates.push({
-        text: stripSuperscripts(anchorText),
-        region: 'slide',
-        refNumbers: orphanSlideRefs.map(r => Number(r) || r),
-        page: pageNum,
-        pdfJsY: anchorLine?.ocrSource ? anchorLine.ocrY : (anchorLine?.y || 10),
-        pdfJsX: anchorLine?.ocrSource ? anchorLine.ocrX : (anchorLine?.x || 5),
-        ...(anchorLine?.ocrSource ? { ocrSource: true } : {})
-      })
-    }
-
-    // Orphan notes refs → pin to the speaker notes (first content bullet)
-    const orphanNotesRefs = Object.keys(notesPool).filter(r => !notesRefNums.has(r))
-    if (orphanNotesRefs.length > 0) {
-      const firstBullet = notesContentLines.find(l => l.text.length > 10) || notesContentLines[0]
-      const anchorText = firstBullet?.text || ''
-
-      result.candidates.push({
-        text: stripSuperscripts(anchorText),
-        region: 'notes',
-        refNumbers: orphanNotesRefs.map(r => Number(r) || r),
-        page: pageNum,
-        pdfJsY: firstBullet?.y || 60,
-        pdfJsX: firstBullet?.x || 5
-      })
-    }
+    // Orphan slide/notes refs are NOT emitted as candidates here.
+    // buildTextOnlyAnnotations handles orphan pool entries with globalSpot positioning.
   }
 
   return result
 }
 
+// ─── Step 2b: Document AI slide-region extraction ───────────────────────────
+
+async function fetchDocumentAiPages(pdfFile) {
+  const formData = new FormData()
+  formData.append('file', pdfFile)
+
+  const response = await fetch('/api/document-ai/extract', {
+    method: 'POST',
+    body: formData
+  })
+
+  if (!response.ok) return null
+  const data = await response.json()
+  return data.pages
+}
+
+function mergeSlideRegion(pdfJsPages, docAiPages) {
+  return pdfJsPages.map(pdfJsPage => {
+    const docAiPage = docAiPages.find(p => p.pageNum === pdfJsPage.pageNum)
+    if (!docAiPage) return pdfJsPage
+
+    const boundary = pdfJsPage.notesBoundaryY
+
+    // Document AI lines for the slide region (above notes boundary)
+    const slideLines = docAiPage.lines.filter(l => !boundary || l.y < boundary)
+    // pdf.js lines for the notes region (at/below notes boundary)
+    const notesLines = pdfJsPage.lines.filter(l => boundary && l.y >= boundary)
+
+    return {
+      ...pdfJsPage,
+      lines: [...slideLines, ...notesLines].sort((a, b) => {
+        const yDiff = a.y - b.y
+        return Math.abs(yDiff) <= 1 ? a.x - b.x : yDiff
+      })
+    }
+  })
+}
+
+// ─── Step 2c: Gemini Vision superscript detection for orphan pages ──────────
+
 /**
- * Check if a page's slide region lacks meaningful text (pdf.js couldn't extract it).
- * Returns true if fewer than 3 lines with >10 chars exist above the notes boundary.
+ * Render a PDF page to a base64 PNG using pdf.js canvas rendering.
  */
-export function isSlideRegionEmpty(page) {
-  const boundary = page.notesBoundaryY ?? 55
-  const slideLines = page.lines.filter(l => l.y < boundary && l.text.length > 10)
-  return slideLines.length < 3
+async function renderPageToBase64(pdfFile, pageNum) {
+  const arrayBuffer = await pdfFile.arrayBuffer()
+  const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+  const page = await pdfDoc.getPage(pageNum)
+  const scale = 1.5 // Good balance of quality vs size
+  const viewport = page.getViewport({ scale })
+
+  const canvas = document.createElement('canvas')
+  canvas.width = viewport.width
+  canvas.height = viewport.height
+  const ctx = canvas.getContext('2d')
+
+  await page.render({ canvasContext: ctx, viewport }).promise
+  const dataUrl = canvas.toDataURL('image/png')
+  page.cleanup()
+  pdfDoc.destroy()
+
+  // Strip "data:image/png;base64," prefix
+  return dataUrl.split(',')[1]
 }
 
 /**
- * Find the best OCR line match for a pdf.js text line by text overlap + Y proximity.
- * hintY is the pdf.js Y coordinate to bias toward nearby OCR lines.
- * usedOcrIndices tracks already-matched OCR lines to avoid double-claiming.
+ * Identify pages that need Gemini Vision for the slide region.
+ * Two cases:
+ *   1. "Orphan" — slide footnotes exist but no text-layer superscript candidates
+ *   2. "Garbled" — text-layer candidates exist but look like infographic text
+ *      read left-to-right across columns (multiple candidates share identical text)
  *
- * Strategy:
- *  1. Try text matching (substring + token overlap) with Y-proximity bonus
- *  2. If text matching fails (common for short infographic text like "AT 3 YEARS"),
- *     fall back to closest OCR line by Y-proximity alone
+ * When Vision provides results for a garbled page, the old text-layer
+ * candidates for that page are replaced.
  */
-function findBestOcrMatch(pdfText, ocrLines, hintY = null, usedOcrIndices = null) {
-  if (!pdfText || !ocrLines?.length) return null
+function findPagesNeedingVision(textParsed) {
+  const pagesNeedingVision = new Set()
 
-  const normalize = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim()
-  const pdfNorm = normalize(pdfText)
-  if (!pdfNorm || pdfNorm.length < 4) return null
+  const footnotePages = Object.keys(textParsed.slideFootnotes).map(Number)
 
-  const pdfTokens = new Set(pdfNorm.split(' ').filter(t => t.length > 2))
+  // Group slide candidates by page
+  const slideCandidatesByPage = new Map()
+  for (const c of textParsed.candidates) {
+    if (c.region !== 'slide') continue
+    if (!slideCandidatesByPage.has(c.page)) slideCandidatesByPage.set(c.page, [])
+    slideCandidatesByPage.get(c.page).push(c)
+  }
 
-  let bestMatch = null
-  let bestScore = 0
-  let bestIdx = -1
+  for (const pageNum of footnotePages) {
+    const pageCandidates = slideCandidatesByPage.get(pageNum)
+    const poolRefs = new Set(Object.keys(textParsed.slideFootnotes[pageNum] || {}))
 
-  for (let idx = 0; idx < ocrLines.length; idx++) {
-    if (usedOcrIndices?.has(idx)) continue
-
-    const ocrLine = ocrLines[idx]
-    const ocrNorm = normalize(ocrLine.text)
-    if (!ocrNorm || ocrNorm.length < 3) continue
-
-    let textScore = 0
-
-    // Substring check — boost score for confirmed containment
-    if (pdfNorm.includes(ocrNorm) || ocrNorm.includes(pdfNorm)) {
-      const ratio = Math.min(pdfNorm.length, ocrNorm.length) / Math.max(pdfNorm.length, ocrNorm.length)
-      // Short OCR text contained in long pdf.js text is still a valid match
-      textScore = Math.max(ratio, 0.5)
-    } else if (pdfTokens.size > 0) {
-      // Token overlap
-      const ocrTokens = ocrNorm.split(' ').filter(t => t.length > 2)
-      const hits = ocrTokens.filter(t => pdfTokens.has(t)).length
-      textScore = hits / pdfTokens.size
+    // Case 1: No slide candidates at all → orphan
+    if (!pageCandidates || pageCandidates.length === 0) {
+      pagesNeedingVision.add(pageNum)
+      continue
     }
 
-    // Y proximity bonus: prefer OCR lines closer to the pdf.js Y position
-    let yBonus = 0
-    if (Number.isFinite(hintY) && Number.isFinite(ocrLine.y_pct)) {
-      const yDist = Math.abs(hintY - ocrLine.y_pct)
-      yBonus = Math.max(0, 0.3 - (yDist / 100))
+    // Case 2: Multiple candidates sharing identical text → garbled infographic
+    const textCounts = new Map()
+    for (const c of pageCandidates) {
+      const key = c.text.slice(0, 80)
+      textCounts.set(key, (textCounts.get(key) || 0) + 1)
+    }
+    const hasDuplicateText = [...textCounts.values()].some(count => count >= 2)
+    if (hasDuplicateText) {
+      pagesNeedingVision.add(pageNum)
+      continue
     }
 
-    const score = textScore + yBonus
-    if (score > bestScore && textScore >= 0.15) {
-      bestScore = score
-      bestMatch = ocrLine
-      bestIdx = idx
+    // Case 3: Footnote pool has refs that no candidate claims → partial orphan
+    const claimedRefs = new Set(
+      pageCandidates.flatMap(c => (c.refNumbers || []).map(String))
+    )
+    const unclaimedCount = [...poolRefs].filter(r => !claimedRefs.has(r)).length
+    if (unclaimedCount > 0 && poolRefs.size > 1) {
+      pagesNeedingVision.add(pageNum)
     }
   }
 
-  // Text match succeeded
-  if (bestScore >= 0.4 && bestMatch) {
-    if (usedOcrIndices && bestIdx >= 0) usedOcrIndices.add(bestIdx)
-    return bestMatch
-  }
+  return [...pagesNeedingVision].sort((a, b) => a - b)
+}
 
-  // Fallback: closest OCR line by Y-proximity when text matching fails
-  // (common for short infographic text on stat-heavy slides)
-  if (Number.isFinite(hintY)) {
-    let closestLine = null
-    let closestDist = Infinity
-    let closestIdx = -1
+/**
+ * For pages needing Vision, use Gemini to extract annotated statements from
+ * the slide image — complete text with superscripts and positions.
+ * For garbled pages, replaces the old text-layer candidates.
+ */
+async function enrichWithGeminiVision(pdfFile, pages, textParsed, onProgress) {
+  const visionPages = findPagesNeedingVision(textParsed)
+  if (visionPages.length === 0) return 0
 
-    for (let idx = 0; idx < ocrLines.length; idx++) {
-      if (usedOcrIndices?.has(idx)) continue
-      const ocrLine = ocrLines[idx]
-      if (!ocrLine.text || ocrLine.text.trim().length < 3) continue
-      const yDist = Math.abs(hintY - ocrLine.y_pct)
-      if (yDist < closestDist && yDist < 8) {  // within 8% Y distance
-        closestDist = yDist
-        closestLine = ocrLine
-        closestIdx = idx
+  logger.info(`Gemini Vision: ${visionPages.length} pages to scan`, { visionPages })
+  let added = 0
+
+  for (let i = 0; i < visionPages.length; i++) {
+    const pageNum = visionPages[i]
+    const pageData = pages.find(p => p.pageNum === pageNum)
+    const notesBoundaryY = pageData?.notesBoundaryY || 50
+    const slideFootnotes = textParsed.slideFootnotes[pageNum] || {}
+
+    const pct = 40 + Math.round((i / visionPages.length) * 25)
+    onProgress?.(pct, `Reading slide ${pageNum} with Gemini Vision...`)
+
+    try {
+      const imageBase64 = await renderPageToBase64(pdfFile, pageNum)
+      const annotations = await detectSlideSuperscripts(
+        imageBase64, pageNum, slideFootnotes, notesBoundaryY
+      )
+
+      if (annotations.length > 0) {
+        // Check if old candidates were garbled (duplicate text)
+        const oldSlideCandidates = textParsed.candidates.filter(
+          c => c.region === 'slide' && c.page === pageNum && c.source !== 'gemini-vision'
+        )
+        const oldTexts = oldSlideCandidates.map(c => c.text.slice(0, 80))
+        const hasGarbled = oldTexts.some((t, i) => oldTexts.indexOf(t) !== i)
+
+        if (hasGarbled) {
+          // Garbled page: remove all old slide candidates, Vision replaces them
+          textParsed.candidates = textParsed.candidates.filter(
+            c => !(c.region === 'slide' && c.page === pageNum && c.source !== 'gemini-vision')
+          )
+        }
+        // Partial orphan: keep existing good candidates, just add Vision ones
       }
-    }
 
-    if (closestLine) {
-      if (usedOcrIndices && closestIdx >= 0) usedOcrIndices.add(closestIdx)
-      return closestLine
+      for (const ann of annotations) {
+        textParsed.candidates.push({
+          text: String(ann.statement || '').slice(0, 150),
+          region: 'slide',
+          refNumbers: Array.isArray(ann.refNumbers) ? ann.refNumbers : [ann.refNumbers],
+          page: pageNum,
+          pdfJsY: ann.y,
+          pdfJsX: ann.x,
+          source: 'gemini-vision'
+        })
+        added++
+      }
+    } catch (err) {
+      logger.warn(`Gemini Vision failed for page ${pageNum}: ${err.message}`)
     }
   }
 
-  return null
+  return added
 }
 
 // ─── Step 3: Public Entry Point ───────────────────────────────────────────────
 
 export async function extractAnnotations(pdfFile, onProgress) {
   onProgress?.(10, 'Extracting text from PDF...')
-  const pages = await extractPageTextLines(pdfFile)
+  const pdfJsPages = await extractPageTextLines(pdfFile)
 
-  // ── OCR for slide position refinement (pdf.js text + OCR visual positions) ──
-  // Only OCR pages that have superscript-bearing slide lines (= annotation candidates).
-  // Pages with no refs in the slide region won't produce pins, so OCR is pointless.
-  const pagesNeedingOcr = pages.filter(p => {
-    const boundary = p.notesBoundaryY ?? 55
-    return p.lines.some(l => l.y < boundary && l.refs.length > 0)
-  })
-
-  const ocrAvailable = pagesNeedingOcr.length > 0 && await isOcrServiceAvailable()
-  if (ocrAvailable) {
-    onProgress?.(15, `OCR positioning: ${pagesNeedingOcr.length} of ${pages.length} slides...`)
-    const arrayBuffer = await pdfFile.arrayBuffer()
-    const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
-
-    for (let i = 0; i < pagesNeedingOcr.length; i++) {
-      const page = pagesNeedingOcr[i]
-      const pdfPage = await pdfDoc.getPage(page.pageNum)
-
-      onProgress?.(15 + (i / pagesNeedingOcr.length) * 25,
-        `OCR positioning: page ${page.pageNum} (${i + 1}/${pagesNeedingOcr.length})...`)
-
-      const rendered = await renderPageToBlob(pdfPage, 200)
-      if (!rendered) { pdfPage.cleanup(); continue }
-
-      const cropBottom = page.notesBoundaryY || 48
-      const ocrResult = await ocrSlideRegion(rendered.blob, cropBottom)
-      if (!ocrResult || !ocrResult.lines || ocrResult.lines.length === 0) { pdfPage.cleanup(); continue }
-
-      // Match pdf.js slide lines to OCR visual positions
-      const boundary = page.notesBoundaryY ?? 55
-      const usedOcrIndices = new Set()
-      let matched = 0
-      for (const line of page.lines) {
-        if (line.y >= boundary) continue // skip notes lines
-        const ocrMatch = findBestOcrMatch(line.text, ocrResult.lines, line.y, usedOcrIndices)
-        if (ocrMatch) {
-          line.ocrX = ocrMatch.x_pct
-          line.ocrY = ocrMatch.y_pct
-          line.ocrSource = true
-          matched++
-        }
-      }
-
-      logger.info('OCR position matching', {
-        page: page.pageNum,
-        slideLines: page.lines.filter(l => l.y < boundary).length,
-        ocrLines: ocrResult.lines.length,
-        matched,
-        elapsed: ocrResult.elapsed_ms
+  // Use Document AI OCR for the slide/image region; fall back to pdf.js-only on error
+  onProgress?.(20, 'Processing slide images with Document AI...')
+  let pages = pdfJsPages
+  try {
+    const docAiPages = await fetchDocumentAiPages(pdfFile)
+    if (docAiPages?.length) {
+      pages = mergeSlideRegion(pdfJsPages, docAiPages)
+      logger.info('Document AI slide merge complete', {
+        docAiPages: docAiPages.length,
+        totalPages: pages.length
       })
-
-      pdfPage.cleanup()
     }
-    pdfDoc.destroy()
-  } else {
-    logger.info('OCR service not available — using pdf.js positions for slides')
+  } catch (err) {
+    logger.warn('Document AI extraction failed, using pdf.js only', err.message)
   }
 
-  onProgress?.(40, 'Parsing references and candidates...')
+  onProgress?.(30, 'Parsing references and candidates...')
   const textParsed = parseTextAnnotations(pages)
 
   logger.info('extractAnnotations parsed', {
@@ -699,6 +718,12 @@ export async function extractAnnotations(pdfFile, onProgress) {
     slideFootnotePages: Object.keys(textParsed.slideFootnotes).length,
     notesReferencePages: Object.keys(textParsed.notesReferences).length
   })
+
+  // Gemini Vision fallback: scan orphan slide pages for superscripts
+  const visionAdded = await enrichWithGeminiVision(pdfFile, pages, textParsed, onProgress)
+  if (visionAdded > 0) {
+    logger.info(`Gemini Vision added ${visionAdded} superscript candidates`)
+  }
 
   onProgress?.(70, 'Building annotations...')
   const { annotations, annotationBindings, globalAnnotationCount } = buildTextOnlyAnnotations(textParsed)

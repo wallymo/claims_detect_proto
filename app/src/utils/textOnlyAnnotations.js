@@ -37,7 +37,6 @@ function inferTextOnlyContentType(candidate) {
   const pdfJsX = Number(candidate?.pdfJsX)
   const pdfJsY = Number(candidate?.pdfJsY)
 
-  if (candidate?.globalSpot) return 'global'
   if (region === 'slide' && Number.isFinite(pdfJsY) && pdfJsY < 12) return 'title'
   if (/^[\s]*[•\-○▪–]/.test(text)) return 'bullet'
   if (Number.isFinite(pdfJsX) && pdfJsX > 10) return 'sub-bullet'
@@ -216,19 +215,14 @@ export function buildTextOnlyAnnotations(textParsed) {
           }
         })
 
-        const globalSpot = references.some(ref => ref.missing)
-        if (globalSpot) globalAnnotationCount += 1
+        const hasMissingRef = references.some(ref => ref.missing)
+        if (hasMissingRef) globalAnnotationCount += 1
         const statement = String(candidate.text || '').trim() || createGlobalAnnotationText(region)
-        const position = globalSpot
-          ? {
-              x: GLOBAL_ANNOTATION_X,
-              y: GLOBAL_BASE_Y[region]
-            }
-          : {
-              x: Math.max(0, Math.min(100, Number(candidate.pdfJsX) || 5)),
-              y: Math.max(0, Math.min(100, Number(candidate.pdfJsY) || 10)),
-              ...(candidate.ocrSource ? { source: 'ocr' } : {})
-            }
+        // Always use the real OCR/pdf.js coordinates — never override to gutter
+        const position = {
+          x: Math.max(0, Math.min(100, Number(candidate.pdfJsX) || 5)),
+          y: Math.max(0, Math.min(100, Number(candidate.pdfJsY) || 10))
+        }
         const binding = createAnnotationBinding({
           statement,
           refNumbers,
@@ -236,8 +230,8 @@ export function buildTextOnlyAnnotations(textParsed) {
           region,
           page,
           position,
-          globalSpot,
-          globalReason: globalSpot ? 'missing-page-reference' : null
+          globalSpot: false,
+          globalReason: hasMissingRef ? 'missing-page-reference' : null
         })
 
         annotationIndex += 1
@@ -253,11 +247,11 @@ export function buildTextOnlyAnnotations(textParsed) {
           source: 'on-page',
           matched: true,
           matchTier: 'on-page',
-          contentType: globalSpot ? 'global' : inferTextOnlyContentType(candidate),
+          contentType: inferTextOnlyContentType(candidate),
           confidence: 95,
           page,
-          globalSpot,
-          globalReason: globalSpot ? 'missing-page-reference' : null,
+          globalSpot: false,
+          globalReason: hasMissingRef ? 'missing-page-reference' : null,
           position,
           annotationBinding: binding
         })

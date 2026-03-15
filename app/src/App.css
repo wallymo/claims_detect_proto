@@ -239,6 +239,11 @@ html, body {
   cursor: pointer;
 }
 
+.settingValue {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
+
 .toggleRow {
   display: flex;
   align-items: center;
@@ -254,6 +259,56 @@ html, body {
 .toggleStatus.active {
   color: var(--color-text-primary);
   font-weight: var(--font-weight-medium);
+}
+
+/* Toggle switch */
+.switchLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  cursor: pointer;
+}
+
+.switchInput {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switchTrack {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  background: var(--color-border);
+  border-radius: 10px;
+  transition: background 0.2s ease;
+  flex-shrink: 0;
+}
+
+.switchTrack::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: var(--color-bg-primary);
+  border-radius: 50%;
+  transition: transform 0.2s ease;
+}
+
+.switchInput:checked + .switchTrack {
+  background: var(--green-9, #16a34a);
+}
+
+.switchInput:checked + .switchTrack::after {
+  transform: translateX(16px);
+}
+
+.switchStatus {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
 }
 
 .statsGrid {

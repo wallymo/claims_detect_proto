@@ -1,5 +1,6 @@
 import { Reference } from '../models/Reference.js'
 import { AppError } from '../middleware/errorHandler.js'
+import { hydrateReferenceTextFromFile, shouldHydrateReferenceText } from '../services/referenceTextHydrator.js'
 import path from 'path'
 import fs from 'fs'
 
@@ -33,9 +34,31 @@ export const fileController = {
     }
   },
 
-  getText(req, res, next) {
+  async getText(req, res, next) {
     try {
-      const ref = Reference.findById(req.params.refId)
+      const fullRef = Reference._findByIdFull(req.params.refId)
+      if (!fullRef) throw new AppError('Reference not found', 404)
+
+      let ref = Reference.findById(req.params.refId)
+      if (shouldHydrateReferenceText(fullRef)) {
+        const hydrated = await hydrateReferenceTextFromFile(fullRef)
+        if (hydrated?.didHydrate) {
+          ref = Reference.updateExtractedContent(fullRef.id, {
+            content_text: hydrated.content_text,
+            page_count: hydrated.page_count,
+            page_boundaries: hydrated.page_boundaries,
+            citation_metadata: hydrated.citation_metadata
+          })
+        } else if (hydrated) {
+          ref = {
+            ...ref,
+            content_text: hydrated.content_text,
+            page_count: hydrated.page_count,
+            page_boundaries: hydrated.page_boundaries
+          }
+        }
+      }
+
       if (!ref) throw new AppError('Reference not found', 404)
       if (!ref.content_text) throw new AppError('No extracted text available', 404)
 
@@ -43,7 +66,8 @@ export const fileController = {
         id: ref.id,
         display_alias: ref.display_alias,
         content_text: ref.content_text,
-        page_count: ref.page_count
+        page_count: ref.page_count,
+        page_boundaries: ref.page_boundaries
       })
     } catch (err) {
       next(err)

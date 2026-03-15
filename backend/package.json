@@ -11,6 +11,8 @@
     "benchmark:passages": "node scripts/benchmark-passages-search.js"
   },
   "dependencies": {
+    "@aws-sdk/client-textract": "^3.1009.0",
+    "@google-cloud/documentai": "^9.5.0",
     "@google/genai": "^1.40.0",
     "better-sqlite3": "^11.0.0",
     "cors": "^2.8.5",

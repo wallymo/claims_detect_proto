@@ -7,8 +7,9 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { initDb, getDb, closeDb } from '../src/config/database.js'
-import { extractText } from '../src/services/textExtractor.js'
+import { extractText, extractTextByPage } from '../src/services/textExtractor.js'
 import { generateAlias } from '../src/services/aliasGenerator.js'
+import { extractCitationMetadata } from '../src/services/citationMetadataExtractor.js'
 import { env } from '../src/config/env.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -102,7 +103,21 @@ async function main() {
     const displayAlias = generateAlias(filename)
 
     // Extract text
-    const { text, pageCount } = await extractText(destPath, docType)
+    let text = null
+    let pageCount = null
+    let pageBoundaries = null
+
+    if (docType === 'pdf') {
+      const extracted = await extractTextByPage(destPath)
+      text = extracted.fullText
+      pageCount = extracted.pageCount
+      pageBoundaries = extracted.pageBoundaries
+    } else {
+      const extracted = await extractText(destPath, docType)
+      text = extracted.text
+      pageCount = extracted.pageCount
+    }
+
     if (text) {
       extractionSuccess++
     } else {
@@ -110,15 +125,21 @@ async function main() {
       console.log(`  ⚠ Text extraction failed`)
     }
 
+    const citationMetadata = text
+      ? extractCitationMetadata(filename, text, pageBoundaries, displayAlias)
+      : null
+
     // Insert into DB
     const relPath = path.relative(process.cwd(), destPath)
     db.prepare(`
       INSERT INTO reference_documents
-        (brand_id, filename, display_alias, file_path, doc_type, content_text, notes, page_count, file_size_bytes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (brand_id, filename, display_alias, file_path, doc_type, content_text, notes, page_count, file_size_bytes, page_boundaries, citation_metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       brandId, destFilename, displayAlias, relPath, docType,
-      text, '', pageCount, stats.size
+      text, '', pageCount, stats.size,
+      pageBoundaries ? JSON.stringify(pageBoundaries) : null,
+      citationMetadata ? JSON.stringify(citationMetadata) : null
     )
 
     loaded++

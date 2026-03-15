@@ -12,7 +12,7 @@ export default function MKGClaimCard({
   onReject,
   onRemove,
   onSelect,
-  onViewSource,
+  onViewRef,
   brandReferences = [],
   trainingExamples = []
 }) {
@@ -125,6 +125,8 @@ export default function MKGClaimCard({
     correct_reference_wrong_location: { label: 'Correct reference wrong location', desc: 'Reference is correct, but the page/location excerpt is wrong' },
     missing_reference: { label: 'Missing reference', desc: 'This claim needs a reference that was not matched' }
   }
+  const displayStatement = String(claim.statement || claim.text || claim.claim || '').trim()
+  const displaySuperscripts = Array.isArray(claim.superscripts) ? claim.superscripts : claim.refNumbers
 
   return (
     <div className={cardClassName} onClick={handleCardClick}>
@@ -135,7 +137,7 @@ export default function MKGClaimCard({
             <Icon name="alertCircle" size={14} />
             <span>Manually Reported</span>
           </div>
-        ) : (
+        ) : claim.source === 'ai-find' ? (
           <div className={styles.confidenceSection}>
             <div className={styles.progressWrapper}>
               <ProgressBar
@@ -152,7 +154,7 @@ export default function MKGClaimCard({
               {Math.round(claim.confidence * 100)}%
             </span>
           </div>
-        )}
+        ) : null}
 
         <div className={styles.badges}>
           {claim.page && (
@@ -164,11 +166,11 @@ export default function MKGClaimCard({
               }
             </span>
           )}
-          {(claim.source === 'on-page' || claim.matchTier === 'on-page') && (
-            <span className={styles.sourceBadgeOnPage}>On-Page Ref</span>
-          )}
           {(claim.source === 'ai-find' || claim.matchTier === 'ai-find') && (
-            <span className={styles.sourceBadgeAiFind}>AI Find</span>
+            <span className={styles.sourceBadgeAiFind}>AI Found</span>
+          )}
+          {claim.globalSpot && (
+            <span className={styles.sourceBadgeGlobal}>Global</span>
           )}
           {learnedPatternMatch.hasCrossBrandMatch ? (
             <span
@@ -184,7 +186,7 @@ export default function MKGClaimCard({
           ) : null}
           {isMissed ? (
             <span className={styles.missedBadge}>Missed</span>
-          ) : claim.status !== 'pending' ? (
+          ) : (claim.status === 'approved' || claim.status === 'rejected') ? (
             <Badge variant={claim.status === 'approved' ? 'success' : 'error'} size="small">
               {claim.status}
             </Badge>
@@ -194,29 +196,38 @@ export default function MKGClaimCard({
 
       {/* Claim text */}
       <div className={styles.claimText}>
-        "{claim.text}"
+        "{displayStatement}"
       </div>
+
+      {Array.isArray(displaySuperscripts) && displaySuperscripts.length > 0 && (
+        <div className={styles.referenceSection}>
+          <div className={styles.referenceHeader}>
+            <Icon name="fileText" size={14} />
+            <span className={styles.referenceLabel}>Superscripts:</span>
+            <span className={styles.referenceName}>{displaySuperscripts.join(', ')}</span>
+          </div>
+        </div>
+      )}
 
       {/* Reference callouts */}
       {Array.isArray(claim.references) && claim.references.length > 0 && (
         <div className={styles.refCallouts}>
-          {claim.references.map((ref, i) => (
-            <div key={i} className={styles.refCallout}>
-              <span className={styles.refNumber}>{ref.number}.</span>
-              <span className={styles.refText}>{ref.text}</span>
-            </div>
-          ))}
-          {onViewSource && (
-            <button
-              className={styles.viewSourceBtn}
-              disabled
-              style={{ opacity: 0.4, cursor: 'not-allowed' }}
-              title="View source document (coming soon)"
-            >
-              <Icon name="fileSearch" size={12} />
-              View Source
-            </button>
-          )}
+          {claim.references.map((ref, i) => {
+            const isLinked = !!ref.id
+            const refText = String(ref.text || '').trim() || `Reference ${ref.number} not found on page`
+            return (
+              <div
+                key={i}
+                className={`${styles.refCallout} ${isLinked ? styles.refCalloutClickable : styles.refCalloutDimmed}`}
+                onClick={isLinked ? (e) => { e.stopPropagation(); onViewRef?.(ref, displayStatement) } : undefined}
+                title={isLinked ? 'View source document' : 'Source document not in library'}
+              >
+                <span className={styles.refNumber}>{ref.number}.</span>
+                <span className={styles.refText}>{refText}</span>
+                {isLinked && <Icon name="fileSearch" size={12} className={styles.refViewIcon} />}
+              </div>
+            )
+          })}
         </div>
       )}
 

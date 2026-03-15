@@ -529,6 +529,32 @@
   word-break: break-word;
 }
 
+.refCalloutClickable {
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.refCalloutClickable:hover {
+  background: var(--green-2);
+  border-color: var(--green-7);
+}
+
+.refCalloutDimmed {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.refViewIcon {
+  margin-left: auto;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.refCalloutClickable:hover .refViewIcon {
+  opacity: 1;
+}
+
 .sourceBadge {
   display: inline-flex;
   align-items: center;
@@ -541,14 +567,14 @@
   letter-spacing: 0.02em;
 }
 
-.sourceBadgeOnPage {
-  composes: sourceBadge;
-  background: var(--green-1);
-  color: var(--green-11);
-}
-
 .sourceBadgeAiFind {
   composes: sourceBadge;
   background: var(--amber-1);
   color: var(--amber-11);
+}
+
+.sourceBadgeGlobal {
+  composes: sourceBadge;
+  background: var(--blue-1);
+  color: var(--blue-10);
 }

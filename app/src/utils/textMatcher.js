@@ -538,9 +538,6 @@ export function findClaimPosition(claimText, pageNum, extractedPages) {
  */
 export function enrichClaimsWithPositions(claims, extractedPages) {
   return claims.map((claim, index) => {
-    // Skip OCR-sourced claims — their positions are already accurate from image coordinates
-    if (claim?.position?.source === 'ocr') return claim
-
     const pageNumber = Number(claim.page) || 1
     const match = findClaimPosition(claim.text, pageNumber, extractedPages)
 
@@ -580,7 +577,7 @@ export function alignClaimsToSlideLayout(claims, extractedPages) {
   let changed = false
 
   const nextClaims = claims.map((claim) => {
-    if (claim?.region !== 'slide' || claim?.globalSpot || claim?.contentType === 'global' || claim?.position?.source === 'manual' || claim?.position?.source === 'ocr') {
+    if (claim?.region !== 'slide' || claim?.globalSpot || claim?.contentType === 'global' || claim?.position?.source === 'manual') {
       return claim
     }
 

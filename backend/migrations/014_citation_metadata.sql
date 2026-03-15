@@ -1,0 +1,1 @@
+ALTER TABLE reference_documents ADD COLUMN citation_metadata TEXT;

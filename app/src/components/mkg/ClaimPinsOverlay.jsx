@@ -58,14 +58,6 @@ const computeAnchor = (dot, canvasDimensions) => {
     }
   }
 
-  // OCR-sourced claims: pin at the actual text coordinate, no lateral offset
-  if (dot.isOcrSourced) {
-    return {
-      x: clamp(centerX, DOT_RADIUS_ACTIVE, canvasDimensions.width - DOT_RADIUS_ACTIVE),
-      y: clamp(centerY, DOT_RADIUS_ACTIVE, canvasDimensions.height - DOT_RADIUS_ACTIVE)
-    }
-  }
-
   // No bounding box (Gemini simple x/y) – push pin left of the point
   if (!widthPx || !heightPx) {
     const pctOffset = (FALLBACK_LATERAL_OFFSET_PCT / 100) * canvasDimensions.width
@@ -145,8 +137,7 @@ export default function ClaimPinsOverlay({
   const dots = claims
     .filter(claim => Number(claim.page) === currentPage && claim.position)
     .map(claim => {
-      const isOcrSourced = claim.position?.source === 'ocr'
-      const usePositionX = isOcrSourced || claim.position?.source === 'coarse-slide-anchor' || Boolean(claim.position?.lane)
+      const usePositionX = claim.position?.source === 'coarse-slide-anchor' || Boolean(claim.position?.lane)
       const centerXPct = usePositionX
         ? (Number(claim.position?.x) || 0)
         : (
@@ -159,7 +150,7 @@ export default function ClaimPinsOverlay({
       const boxHeightPct = Number(claim.position.height) || 0
 
       const anchor = computeAnchor(
-        { centerXPct, centerYPct, boxWidthPct, boxHeightPct, contentType: claim.contentType, isOcrSourced },
+        { centerXPct, centerYPct, boxWidthPct, boxHeightPct },
         canvasDimensions
       )
 

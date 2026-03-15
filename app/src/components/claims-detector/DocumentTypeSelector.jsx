@@ -2,9 +2,11 @@ import styles from './DocumentTypeSelector.module.css'
 import DropdownMenu from '@/components/molecules/DropdownMenu/DropdownMenu'
 
 const DOCUMENT_TYPES = [
-  { id: 'speaker-notes', label: 'Speaker Notes' },
-  { id: 'trifold', label: 'TriFold' },
-  { id: 'slides-only', label: 'Slides Only' }
+  { id: 'global', label: 'Global' },
+  { id: 'unmet-needs', label: 'Unmet Needs' },
+  { id: 'trifold', label: 'Trifold' },
+  { id: 'sales-deck', label: 'Sales Deck' },
+  { id: 'new-library', label: '+ New Library' }
 ]
 
 export default function DocumentTypeSelector({
@@ -16,7 +18,7 @@ export default function DocumentTypeSelector({
 
   return (
     <div className={styles.documentTypeSelector}>
-      <label className="settingLabel">Document Type</label>
+      <label className="settingLabel">Reference Library</label>
       <DropdownMenu
         trigger="button"
         triggerLabel={selectedLabel || 'Select type...'}

@@ -6,6 +6,7 @@ import { extractText, extractTextByPage } from '../services/textExtractor.js'
 import { extractFacts } from '../services/factExtractor.js'
 import { embedReference } from '../services/passageEmbedder.js'
 import { generateAlias } from '../services/aliasGenerator.js'
+import { extractCitationMetadata } from '../services/citationMetadataExtractor.js'
 import { AppError } from '../middleware/errorHandler.js'
 import path from 'path'
 import fs from 'fs'
@@ -39,6 +40,8 @@ export const referenceController = {
         pageBoundaries = null
       }
 
+      const citationMetadata = extractCitationMetadata(file.originalname, text, pageBoundaries, null)
+
       const ref = Reference.create({
         brand_id: brandId,
         filename: file.filename,
@@ -49,7 +52,8 @@ export const referenceController = {
         notes: req.body.notes || '',
         page_count: pageCount,
         file_size_bytes: file.size,
-        page_boundaries: pageBoundaries || null
+        page_boundaries: pageBoundaries || null,
+        citation_metadata: JSON.stringify(citationMetadata)
       })
 
       // Auto-index: create pending facts row and kick off async extraction

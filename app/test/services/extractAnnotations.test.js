@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseTextAnnotations, isSlideRegionEmpty } from '../../src/services/extractAnnotations.js'
+import { parseTextAnnotations } from '../../src/services/extractAnnotations.js'
 
 describe('extractAnnotations parser', () => {
   it('splits inline slide footer references that share the same rendered line', () => {
@@ -39,47 +39,5 @@ describe('extractAnnotations parser', () => {
 
     expect(parsed.notesReferences[2][2]).toContain('doi:10.1038/nrneurol.2014.121')
     expect(parsed.notesReferences[2][482]).toBeUndefined()
-  })
-})
-
-describe('isSlideRegionEmpty', () => {
-  it('returns true when slide region has fewer than 3 meaningful lines', () => {
-    const page = {
-      pageNum: 1,
-      notesBoundaryY: 48.5,
-      lines: [
-        // Only notes lines, nothing in slide region
-        { text: 'Speaker notes', y: 49.2, x: 13.2, maxX: 25, refs: [] },
-        { text: 'Some bullet point content here', y: 52.0, x: 15.0, maxX: 85, refs: [] }
-      ]
-    }
-    expect(isSlideRegionEmpty(page)).toBe(true)
-  })
-
-  it('returns false when slide region has 3+ meaningful lines', () => {
-    const page = {
-      pageNum: 1,
-      notesBoundaryY: 48.5,
-      lines: [
-        { text: 'Title of the slide with important content', y: 14.0, x: 10.0, maxX: 85, refs: [] },
-        { text: 'Subtitle explaining the context', y: 20.0, x: 15.0, maxX: 80, refs: [] },
-        { text: 'Key finding about treatment outcomes', y: 25.0, x: 15.0, maxX: 80, refs: [1] },
-        { text: 'Speaker notes', y: 49.2, x: 13.2, maxX: 25, refs: [] }
-      ]
-    }
-    expect(isSlideRegionEmpty(page)).toBe(false)
-  })
-
-  it('returns true when slide region has only short fragments', () => {
-    const page = {
-      pageNum: 1,
-      notesBoundaryY: 48.5,
-      lines: [
-        { text: 'Ab', y: 10.0, x: 5.0, maxX: 8, refs: [] },
-        { text: '5', y: 45.0, x: 80.0, maxX: 82, refs: [] },
-        { text: 'Speaker notes', y: 49.2, x: 13.2, maxX: 25, refs: [] }
-      ]
-    }
-    expect(isSlideRegionEmpty(page)).toBe(true)
   })
 })
