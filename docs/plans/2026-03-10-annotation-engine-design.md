@@ -38,30 +38,63 @@ Each "notes page" PDF has two regions:
 - Tagged `"source": "ai-find"` — flagged for human review
 - When OFF: only reference-backed annotations shown
 
+### Reference Pool Separation (STRICT)
+
+- **Slide content** → refs come from **slide footnotes block** (abbreviated citations at bottom of slide)
+- **Notes content** → refs come from **"References:" numbered list** (full citations with DOIs)
+- No crossover between pools
+
+### Worked Examples (pg1.pdf)
+
+**Slide zone:**
+- Statement: "Most common cause of acute flaccid paralysis worldwide—sporadic and unpredictable¹·²"
+- Pin on: "Most"
+- refNumbers: [1, 2]
+- references: ["1. Leonhard SE et al. Nat Rev Neurol. 2019;15(11):671-683", "2. van den Berg B et al. Nat Rev Neurol. 2014;10(8):469-482"]
+
+**Notes zone:**
+- Statement: "Guillain-Barré syndrome (GBS) is the most common cause of acute flaccid paralysis globally, characterized by its sporadic and unpredictable nature¹·²"
+- Pin on: "Guillain"
+- refNumbers: [1, 2]
+- references: ["1. Leonhard SE, Mandarakas MR, Gondim FAA, et al. Diagnosis and management of Guillain–Barré syndrome in ten steps. Nat Rev Neurol. 2019;15(11):671-683. doi:10.1038/s41582-019-0250-9", "2. van den Berg B, Walgaard C, Drenthen J, Fokke C, Jacobs BC, van Doorn PA. Guillain–Barré syndrome: pathogenesis, diagnosis, treatment and prognosis. Nat Rev Neurol. 2014;10(8):469-482. doi:10.1038/nrneurol.2014.121"]
+
 ### Response Format
 
 ```json
 {
-  "pageNumber": 1,
   "annotations": [
     {
-      "text": "47% reduction in LDL cholesterol",
+      "text": "Most common cause of acute flaccid paralysis worldwide—sporadic and unpredictable",
       "region": "slide",
-      "refNumber": 1,
-      "reference": "Smith et al. J Cardiol 2024;45:123-130",
+      "refNumbers": [1, 2],
+      "references": [
+        "1. Leonhard SE et al. Nat Rev Neurol. 2019;15(11):671-683",
+        "2. van den Berg B et al. Nat Rev Neurol. 2014;10(8):469-482"
+      ],
       "source": "on-page",
-      "position": { "x": 35, "y": 28 }
+      "confidence": 95,
+      "page": 1,
+      "x": 6,
+      "y": 18,
+      "contentType": "bullet"
     }
   ],
-  "slideFootnotes": { "1": "Smith et al...", "2": "Jones et al..." },
-  "notesReferences": { "1": "Williams et al..." },
-  "unmatchedFootnotes": []
+  "slideFootnotes": { "1": "Leonhard SE et al...", "2": "van den Berg B et al..." },
+  "notesReferences": { "1": "Leonhard SE, Mandarakas MR, Gondim FAA, et al. ..." }
 }
 ```
 
+- `refNumbers`: array of reference numbers from the page (Arabic: 1, 2, 3)
+- `references`: array of citation strings, one per refNumber
 - `source`: `"on-page"` (primary) or `"ai-find"` (QA toggle)
-- `unmatchedFootnotes`: footnotes the model couldn't connect to any content (QA signal)
 - `position`: x/y as % of page dimensions for pin placement
+
+### UI — Claim Card
+
+- One card per annotated statement
+- Multiple reference callouts inside each card, each as a **green badge/pill**
+- Numbered with Arabic numerals (1. 2. 3.)
+- "View Source" button stays but inactive (greyed out) until next phase
 
 ### What Changes
 

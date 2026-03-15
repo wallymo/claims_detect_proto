@@ -421,7 +421,7 @@ export default function PDFViewer({
                 onClick={() => onSelectionModeToggle?.(true)}
               >
                 <Icon name="plus" size={12} />
-                Report Missed Claim
+                Add Annotation
               </Button>
             )}
           </div>

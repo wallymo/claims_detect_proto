@@ -125,6 +125,13 @@ export function initDb() {
     try { db.exec(stmt) } catch (err) { if (!err.message.includes('duplicate column')) throw err }
   }
 
+  // 014: citation_metadata column on reference_documents
+  const migration014Path = path.resolve(__dirname, '../../migrations/014_citation_metadata.sql')
+  const migration014 = fs.readFileSync(migration014Path, 'utf-8')
+  for (const stmt of migration014.split(';').map(s => s.trim()).filter(Boolean)) {
+    try { db.exec(stmt) } catch (err) { if (!err.message.includes('duplicate column')) throw err }
+  }
+
   console.log('Database initialized:', env.DB_PATH)
   return db
 }

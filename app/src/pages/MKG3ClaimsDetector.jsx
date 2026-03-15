@@ -24,7 +24,8 @@ import MissedClaimForm from '@/components/mkg/MissedClaimForm/MissedClaimForm'
 import Alert from '@/components/molecules/Alert/Alert'
 
 // Services
-import { checkGeminiConnection, MEDICATION_PROMPT_USER, getDocTypeInstructions, GEMINI_MODEL, annotateDocument, ANNOTATION_PROMPT_USER } from '@/services/gemini'
+import { checkGeminiConnection, MEDICATION_PROMPT_USER, getDocTypeInstructions, GEMINI_MODEL, MODEL_DISPLAY_NAMES, annotateDocument, AI_QA_PROMPT_USER } from '@/services/gemini'
+import { extractAnnotations } from '@/services/extractAnnotations'
 import * as api from '@/services/api'
 
 // Utils
@@ -32,15 +33,14 @@ import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { TextLayer } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import pdfjsWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl
-import { enrichClaimsWithPositions, addGlobalIndices } from '@/utils/textMatcher'
-import { dedupeClaimsByPageAndText, getClaimDedupOptions } from '@/utils/claimDedup'
+import { enrichClaimsWithPositions, alignClaimsToSlideLayout, addGlobalIndices } from '@/utils/textMatcher'
+import { dedupeClaimsByPageAndText } from '@/utils/claimDedup'
+import { summarizeAnnotationClaims } from '@/utils/annotationSummary'
+import { matchCitationToLibrary } from '@/utils/citationLibraryMatcher'
 import { logger } from '@/utils/logger'
+import { charOffsetToPage, parseCitationPageRange, resolveCitationPdfPage } from '@/utils/referenceViewerHints'
 
-const MODEL_OPTIONS = [
-  { id: 'gemini', label: 'Gemini 2.5 Pro', modelId: GEMINI_MODEL },
-  { id: 'gemini-3-pro-preview', label: 'Gemini 3 Pro (Preview)', modelId: 'gemini-3-pro-preview' }
-]
-const CLAIM_DEDUP_OPTIONS = getClaimDedupOptions()
+const ACTIVE_MODEL_LABEL = MODEL_DISPLAY_NAMES[GEMINI_MODEL] || GEMINI_MODEL
 
 const PROMPT_OPTIONS = [
   { id: 'all-claims', label: 'All Claims', promptKey: 'all' },
@@ -48,9 +48,34 @@ const PROMPT_OPTIONS = [
   { id: 'medication', label: 'Medication', promptKey: 'drug' }
 ]
 
+const ANNOTATION_POSITIONING_DISPLAY = `--- TEXT-FIRST ANNOTATION ENGINE ---
+
+Step 1: pdf.js extracts all text from the PDF with positions (deterministic, no AI)
+Step 2: Parser identifies superscripted content and reference pools:
+  - Slide footnotes (numbered citations at bottom of slide, y 30-55%)
+  - Notes references (after "References:" header in speaker notes)
+  - Slide content with superscripts
+  - Notes content with superscripts
+Step 3: Direct pool lookup — each candidate's refNumbers matched to its region's pool
+  - Slide candidates → slideFootnotes[page]
+  - Notes candidates → notesReferences[page]
+Step 4: Positions from pdf.js text extraction (deterministic, no AI)
+Step 5: Sort (page → region → y → x), re-index, return
+
+No AI call for annotation positioning. Instant, free, deterministic.
+
+[Pre-identified annotations are inserted here dynamically from text extraction]
+[Reference pools are inserted here dynamically]
+
+CRITICAL: Include ALL annotations listed above. If you cannot locate one visually, use your best estimate for position. NEVER drop an annotation.
+
+--- AI QA PROMPT (optional, when enabled) ---
+
+${AI_QA_PROMPT_USER}`
+
 const PROMPT_DISPLAY_TEXT = {
-  'all': ANNOTATION_PROMPT_USER,
-  'disease': ANNOTATION_PROMPT_USER,
+  'all': ANNOTATION_POSITIONING_DISPLAY,
+  'disease': ANNOTATION_POSITIONING_DISPLAY,
   'drug': MEDICATION_PROMPT_USER
 }
 
@@ -76,6 +101,7 @@ const ANALYSIS_CACHE_STORE_DIAGNOSTICS = parseBooleanEnvFlag(
   import.meta.env.VITE_ANALYSIS_CACHE_STORE_DIAGNOSTICS,
   false
 )
+const ANALYSIS_CACHE_ENABLED = false
 
 const fileShaPromiseCache = new WeakMap()
 const analysisCacheMetaByKey = new Map()
@@ -127,6 +153,20 @@ function deleteBrowserAnalysisCache(key) {
   try { localStorage.removeItem(`${ANALYSIS_BROWSER_CACHE_NS}|${key}`) } catch { /* ignore */ }
 }
 
+function purgeBrowserAnalysisCacheNamespace() {
+  try {
+    const prefix = `${ANALYSIS_BROWSER_CACHE_NS}|`
+    const keysToDelete = []
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i)
+      if (key?.startsWith(prefix)) keysToDelete.push(key)
+    }
+    keysToDelete.forEach((key) => localStorage.removeItem(key))
+  } catch {
+    /* ignore */
+  }
+}
+
 function normalizePayloadClaims(claims) {
   const normalized = Array.isArray(claims) ? claims : []
   if (ANALYSIS_CACHE_STORE_DIAGNOSTICS) return normalized
@@ -136,6 +176,48 @@ function normalizePayloadClaims(claims) {
     delete next.diagnostics
     return next
   })
+}
+
+function normalizeAnnotationClaim(item) {
+  if (!item || typeof item !== 'object') return item
+
+  const statement = String(item.statement || item.text || item.claim || '').trim()
+  const superscripts = Array.isArray(item.superscripts)
+    ? [...item.superscripts]
+    : Array.isArray(item.refNumbers)
+      ? [...item.refNumbers]
+      : []
+  const references = Array.isArray(item.references)
+    ? item.references.map(ref => ({ ...ref }))
+    : []
+  const region = item.region === 'notes' ? 'notes' : 'slide'
+  const page = Math.max(1, Number.parseInt(item.page, 10) || 1)
+  const position = item.position ? { ...item.position } : null
+  const annotationBinding = {
+    ...(item.annotationBinding && typeof item.annotationBinding === 'object' ? item.annotationBinding : {}),
+    statement,
+    superscripts,
+    references,
+    region,
+    page,
+    position,
+    globalSpot: Boolean(item.globalSpot),
+    globalReason: item.globalReason || null
+  }
+
+  return {
+    ...item,
+    text: statement,
+    claim: statement,
+    statement,
+    refNumbers: superscripts,
+    superscripts,
+    references,
+    region,
+    page,
+    position,
+    annotationBinding
+  }
 }
 
 function buildAnalysisCachePayload(claims, extras = {}, existing = null) {
@@ -344,9 +426,7 @@ export default function MKG2ClaimsDetector() {
   const fileInputRef = useRef(null)
 
   // Settings state
-  const [selectedModelId, setSelectedModelId] = useState('gemini')
-  const selectedModelOption = MODEL_OPTIONS.find(m => m.id === selectedModelId) || MODEL_OPTIONS[0]
-  const selectedModel = selectedModelOption.modelId
+  const selectedModel = GEMINI_MODEL
   const [selectedPrompt, _setSelectedPrompt] = useState('all-claims')
   const [editablePrompt, setEditablePrompt] = useState('')
   const [isEditingPrompt, setIsEditingPrompt] = useState(false)
@@ -403,6 +483,12 @@ export default function MKG2ClaimsDetector() {
   const [missedClaimToast, setMissedClaimToast] = useState(false)
   const [textSelectionMode, setTextSelectionMode] = useState(false)
   const [pendingSupportingText, setPendingSupportingText] = useState('')
+
+  useEffect(() => {
+    if (ANALYSIS_CACHE_ENABLED) return
+    purgeBrowserAnalysisCacheNamespace()
+    analysisCacheMetaByKey.clear()
+  }, [])
 
   // Combine real missed claims with pending pin so ClaimPinsOverlay renders it immediately
   const displayMissedClaims = useMemo(() => {
@@ -577,12 +663,18 @@ export default function MKG2ClaimsDetector() {
     if (saved) setTotalCost(parseFloat(saved))
   }, [])
 
-  // Sync editable prompt — includes doc-type-specific structure + position rules
+  // Sync editable prompt — annotation prompts are self-contained (no doc-type scaffold needed)
   useEffect(() => {
     const promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
     const basePrompt = PROMPT_DISPLAY_TEXT[promptKey] || PROMPT_DISPLAY_TEXT['all']
-    const { structure, position } = getDocTypeInstructions(selectedDocType || 'speaker-notes')
-    setEditablePrompt(structure.trim() + '\n\n' + basePrompt + '\n' + position.trim())
+    if (promptKey === 'drug') {
+      // Claims detection mode — prepend doc-type structure + position rules
+      const { structure, position } = getDocTypeInstructions(selectedDocType || 'speaker-notes')
+      setEditablePrompt(structure.trim() + '\n\n' + basePrompt + '\n' + position.trim())
+    } else {
+      // Annotation mode — prompts are self-contained with region-specific instructions
+      setEditablePrompt(basePrompt)
+    }
     setIsEditingPrompt(false)
   }, [selectedPrompt, selectedDocType])
 
@@ -613,12 +705,12 @@ export default function MKG2ClaimsDetector() {
   useEffect(() => {
     if (!claims.length) return
 
-    const deduped = dedupeClaimsByPageAndText(claims, CLAIM_DEDUP_OPTIONS)
+    const deduped = dedupeClaimsByPageAndText(claims, { strategy: 'exact' })
     if (deduped.duplicateCount === 0) return
 
     const indexedClaims = addGlobalIndices(deduped.claims)
     logger.info({
-      event: 'mkg2_claim_dedupe_guard',
+      event: 'mkg3_claim_dedupe_guard',
       duplicates_removed: deduped.duplicateCount,
       exact_duplicates_removed: deduped.exactDuplicateCount,
       near_duplicates_removed: deduped.nearDuplicateCount,
@@ -630,7 +722,7 @@ export default function MKG2ClaimsDetector() {
       setActiveClaimId(indexedClaims[0]?.id || null)
     }
     setClaims(indexedClaims)
-    if (currentCacheKeyRef.current) {
+    if (ANALYSIS_CACHE_ENABLED && currentCacheKeyRef.current) {
       writeAnalysisCache(currentCacheKeyRef.current, indexedClaims)
     }
   }, [claims, activeClaimId])
@@ -685,7 +777,8 @@ export default function MKG2ClaimsDetector() {
         brand_id: ref.brand_id,
         folder_id: ref.folder_id || null,
         extraction_status: ref.extraction_status || null,
-        facts_count: ref.facts_count || 0
+        facts_count: ref.facts_count || 0,
+        citationMetadata: ref.citation_metadata ? (typeof ref.citation_metadata === 'string' ? JSON.parse(ref.citation_metadata) : ref.citation_metadata) : null
       })))
       // Also load trash for the badge count
       try {
@@ -901,8 +994,14 @@ export default function MKG2ClaimsDetector() {
 
   // ===== Analysis =====
 
-  // Proactively check if current file+settings combo has a cached result
   useEffect(() => {
+    if (!ANALYSIS_CACHE_ENABLED) {
+      setHasCachedResult(false)
+      setCacheHit(null)
+      currentCacheKeyRef.current = null
+      return
+    }
+
     let cancelled = false
 
     const checkCachedResult = async () => {
@@ -940,42 +1039,6 @@ export default function MKG2ClaimsDetector() {
     }
   }, [uploadedFile, selectedModel, selectedPrompt, editablePrompt, selectedDocType, selectedBrandId, referenceDocuments])
 
-  /**
-   * Match annotation citation text to brand reference library.
-   * Tries exact name match first, then fuzzy (citation contains ref name or vice versa).
-   */
-  function matchCitationToLibrary(citationText, referenceDocuments) {
-    if (!citationText || !referenceDocuments.length) return null
-
-    const normalized = citationText.toLowerCase().trim()
-
-    // Exact match on display name or original name
-    for (const ref of referenceDocuments) {
-      const refName = (ref.name || '').toLowerCase().trim()
-      const refOriginal = (ref.originalName || '').toLowerCase().trim()
-      if (normalized === refName || normalized === refOriginal) return ref
-    }
-
-    // Fuzzy: citation contains ref name or ref name contains citation
-    // Use longest match to avoid false positives on short names
-    let bestMatch = null
-    let bestLength = 0
-    for (const ref of referenceDocuments) {
-      const refName = (ref.name || '').toLowerCase().trim()
-      const refOriginal = (ref.originalName || '').toLowerCase().trim()
-      if (refName && (normalized.includes(refName) || refName.includes(normalized)) && refName.length > bestLength) {
-        bestMatch = ref
-        bestLength = refName.length
-      }
-      if (refOriginal && (normalized.includes(refOriginal) || refOriginal.includes(normalized)) && refOriginal.length > bestLength) {
-        bestMatch = ref
-        bestLength = refOriginal.length
-      }
-    }
-
-    return bestMatch
-  }
-
   const handleAnalyze = async () => {
     if (!uploadedFile) return
     cancelAnalysisRef.current = false
@@ -991,24 +1054,30 @@ export default function MKG2ClaimsDetector() {
     const analysisStartedAt = Date.now()
 
     try {
-      const connectionCheck = await checkGeminiConnection(selectedModelOption.modelId)
-      if (!connectionCheck.connected) {
-        throw new Error(`Gemini API not connected: ${connectionCheck.error}`)
+      const textOnly = true // Use deterministic text extraction (no AI)
+
+      if (!textOnly) {
+        const connectionCheck = await checkGeminiConnection(selectedModel)
+        if (!connectionCheck.connected) {
+          throw new Error(`Gemini API not connected: ${connectionCheck.error}`)
+        }
+        if (cancelAnalysisRef.current) return
       }
-      if (cancelAnalysisRef.current) return
 
       const progressCb = (progress, status) => {
         setAnalysisProgress(progress)
         setAnalysisStatus(status)
       }
 
-      const result = await annotateDocument(
-        uploadedFile,
-        progressCb,
-        enableAiQa,
-        selectedDocType || 'speaker-notes',
-        { modelOverride: selectedModelOption.modelId }
-      )
+      const result = textOnly
+        ? await extractAnnotations(uploadedFile, progressCb)
+        : await annotateDocument(
+            uploadedFile,
+            progressCb,
+            enableAiQa,
+            selectedDocType || 'speaker-notes',
+            { modelOverride: selectedModel }
+          )
 
       if (cancelAnalysisRef.current) return
       if (!result.success) throw new Error(result.error || 'Annotation failed')
@@ -1017,29 +1086,48 @@ export default function MKG2ClaimsDetector() {
       const allItems = [
         ...result.annotations,
         ...result.aiFinds
-      ]
+      ].map(normalizeAnnotationClaim)
 
       // Match citation text to brand reference library
       const enrichedItems = allItems.map(item => {
-        const citationText = item.reference?.text || item.reference?.name || ''
-        const libraryMatch = matchCitationToLibrary(citationText, referenceDocuments)
-        if (libraryMatch) {
-          return {
-            ...item,
-            matched: true,
-            reference: {
-              ...item.reference,
-              id: libraryMatch.id,
-              name: libraryMatch.name,
-              page: 1
-            }
+        if (!Array.isArray(item.references) || item.references.length === 0) return item
+        // Try to match each reference's citation text to the library
+        const enrichedRefs = item.references.map(ref => {
+          const citationPageRange = parseCitationPageRange(ref.text)
+          const refWithCitationPages = citationPageRange
+            ? {
+                ...ref,
+                citationPageStart: citationPageRange.start,
+                citationPageEnd: citationPageRange.end,
+                citationPageLabel: citationPageRange.label
+              }
+            : ref
+
+          if (ref.missing || !String(ref.text || '').trim()) {
+            return refWithCitationPages
           }
-        }
-        return item
+          const libraryMatch = matchCitationToLibrary(ref.text, referenceDocuments)
+          if (libraryMatch) {
+            return { ...refWithCitationPages, id: libraryMatch.id, name: libraryMatch.name, page: 1 }
+          }
+          return refWithCitationPages
+        })
+        return normalizeAnnotationClaim({ ...item, references: enrichedRefs })
       })
 
+      const dedupedClaims = dedupeClaimsByPageAndText(enrichedItems, { strategy: 'exact' })
+      if (dedupedClaims.duplicateCount > 0) {
+        logger.info({
+          event: 'mkg3_annotation_dedup',
+          duplicates_removed: dedupedClaims.duplicateCount,
+          exact_duplicates_removed: dedupedClaims.exactDuplicateCount,
+          original_claims: enrichedItems.length,
+          unique_claims: dedupedClaims.uniqueCount
+        })
+      }
+
       // Add global indices
-      const indexedClaims = addGlobalIndices(enrichedItems)
+      const indexedClaims = addGlobalIndices(dedupedClaims.claims)
       setClaims(indexedClaims)
 
       const analysisTotalMs = Date.now() - analysisStartedAt
@@ -1055,17 +1143,15 @@ export default function MKG2ClaimsDetector() {
         localStorage.setItem('gemini_total_cost', newTotal.toString())
       }
 
-      // Build annotation stats
-      const onPageCount = result.annotations.length
-      const aiQaCount = result.aiFinds.length
-      const unmatchedFootnotes = result.unmatchedFootnotes?.length || 0
+      // Build annotation stats from the rendered, post-dedupe claims list.
+      const summary = summarizeAnnotationClaims(indexedClaims)
       setMatchingStats({
-        total: indexedClaims.length,
-        matched: onPageCount,
-        unmatched: aiQaCount,
-        on_page_count: onPageCount,
-        ai_find_count: aiQaCount,
-        unmatched_footnotes: unmatchedFootnotes,
+        total: summary.total,
+        matched: summary.onPageCount,
+        unmatched: summary.aiFindCount,
+        on_page_count: summary.onPageCount,
+        ai_find_count: summary.aiFindCount,
+        global_annotation_count: summary.globalAnnotationCount,
         matching_total_ms: analysisTotalMs
       })
 
@@ -1076,12 +1162,12 @@ export default function MKG2ClaimsDetector() {
       setIsAnalyzing(false)
 
       logger.info({
-        event: 'mkg2_annotation_summary',
+        event: 'mkg3_annotation_summary',
         total_ms: analysisTotalMs,
-        on_page_annotations: onPageCount,
-        ai_finds: aiQaCount,
-        unmatched_footnotes: unmatchedFootnotes,
-        model: selectedModelOption.modelId
+        on_page_annotations: summary.onPageCount,
+        ai_finds: summary.aiFindCount,
+        global_annotations: summary.globalAnnotationCount,
+        model: selectedModel
       })
     } catch (error) {
       logger.error('Annotation error:', error)
@@ -1092,6 +1178,10 @@ export default function MKG2ClaimsDetector() {
 
   const handleConfirmReanalyze = async () => {
     if (!uploadedFile) return
+    if (!ANALYSIS_CACHE_ENABLED) {
+      handleAnalyze()
+      return
+    }
 
     // Compute the key fresh in case currentCacheKeyRef hasn't been set yet
     const _promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
@@ -1125,15 +1215,25 @@ export default function MKG2ClaimsDetector() {
     setCacheHit(null)
   }
 
-  // ===== Fallback position enrichment =====
+  // ===== Position refinement =====
 
   useEffect(() => {
     if (!analysisComplete || extractedPages.length === 0) return
     setClaims(prev => {
       if (!prev.length) return prev
-      const needsReposition = prev.some(c => !c.position || c.position?.source === 'fallback')
-      if (!needsReposition) return prev
-      const refreshed = enrichClaimsWithPositions(prev, extractedPages)
+      const needsFallbackPosition = prev.some(c => !c.position || c.position?.source === 'fallback')
+      const hasSlideClaims = prev.some(c => c.region === 'slide' && !c.globalSpot)
+      if (!needsFallbackPosition && !hasSlideClaims) return prev
+
+      const withRecoveredPositions = needsFallbackPosition
+        ? enrichClaimsWithPositions(prev, extractedPages)
+        : prev
+      const refreshed = hasSlideClaims
+        ? alignClaimsToSlideLayout(withRecoveredPositions, extractedPages)
+        : withRecoveredPositions
+
+      if (refreshed === prev) return prev
+
       const withIndexes = refreshed.map(claim => {
         const existing = prev.find(c => c.id === claim.id)
         return { ...claim, globalIndex: existing?.globalIndex, matched: existing?.matched, reference: existing?.reference }
@@ -1306,14 +1406,132 @@ export default function MKG2ClaimsDetector() {
     }
   }
 
-  const handleViewSource = (claim) => {
-    if (claim.reference?.id) {
-      setReferenceViewerData({
-        referenceId: claim.reference.id,
-        page: claim.reference.page,
-        excerpt: claim.reference.excerpt
-      })
+  const handleViewRef = async (ref, claimText) => {
+    if (!ref.id) return
+
+    let targetPage = 1
+    let excerpt = null
+    let resolvedPage = false
+    let resolutionReason = null
+
+    // Tier 0: If the slide citation names journal pages (e.g. 680-690), map that printed page to the PDF page.
+    try {
+      const textData = await api.fetchReferenceText(ref.id)
+      if (textData?.content_text) {
+        const citationPageHint = resolveCitationPdfPage({
+          citationText: ref.text,
+          contentText: textData.content_text,
+          pageBoundaries: textData.page_boundaries
+        })
+
+        if (citationPageHint?.pdfPage) {
+          targetPage = citationPageHint.pdfPage
+          resolvedPage = true
+          resolutionReason = `citation-page:${citationPageHint.citationPageLabel}`
+          logger.info('[ViewRef] Citation page mapped to PDF page', targetPage, 'for cited pages', citationPageHint.citationPageLabel)
+        }
+
+        // Tier 1: Content-text search — find the claim text in the reference PDF
+        const normalize = (t) => String(t || '').replace(/\s+/g, ' ').trim().toLowerCase()
+        const normalizedClaim = normalize(claimText)
+        const normalizedContent = normalize(textData.content_text)
+
+        if (!resolvedPage) {
+          const idx = normalizedContent.indexOf(normalizedClaim)
+          if (idx >= 0) {
+            targetPage = charOffsetToPage(idx, textData.page_boundaries) || 1
+            const rawContent = textData.content_text
+            const matchStart = rawContent.toLowerCase().indexOf(normalizedClaim)
+            if (matchStart >= 0) {
+              excerpt = rawContent.slice(matchStart, matchStart + claimText.length)
+            }
+            resolvedPage = true
+            resolutionReason = 'claim-text-exact'
+            logger.info('[ViewRef] Tier 1 exact match found on page', targetPage)
+          } else {
+            // Try keyword overlap: find the sentence with the most overlapping words
+            const claimWords = new Set(normalizedClaim.split(/\s+/).filter(w => w.length > 3))
+            if (claimWords.size > 0) {
+              const sentences = textData.content_text.split(/[.!?\n]+/).filter(s => s.trim().length > 20)
+              let bestSentence = null
+              let bestScore = 0
+              let bestSentenceIdx = -1
+
+              for (const sentence of sentences) {
+                const normalizedSentence = normalize(sentence)
+                const sentenceWords = normalizedSentence.split(/\s+/).filter(w => w.length > 3)
+                const overlap = sentenceWords.filter(w => claimWords.has(w)).length
+                const score = overlap / claimWords.size
+                if (score > bestScore) {
+                  bestScore = score
+                  bestSentence = sentence.trim()
+                  bestSentenceIdx = textData.content_text.toLowerCase().indexOf(normalizedSentence)
+                }
+              }
+
+              if (bestSentence && bestScore > 0.4 && bestSentenceIdx >= 0) {
+                targetPage = charOffsetToPage(bestSentenceIdx, textData.page_boundaries) || 1
+                excerpt = bestSentence
+                resolvedPage = true
+                resolutionReason = 'claim-text-keyword'
+                logger.info('[ViewRef] Tier 1 keyword match found on page', targetPage, 'score:', bestScore.toFixed(2))
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // Content search failed, continue to fact fallback
     }
+
+    // Tier 2: Fact lookup fallback (only if page resolution failed entirely)
+    const factBrandId = libraryBrandId || selectedBrandId || selectedBrand?.id || null
+    if (!resolvedPage && factBrandId) {
+      try {
+        const factData = await api.fetchFacts(factBrandId, ref.id)
+        if (factData?.facts?.length > 0) {
+          const normalize = (t) => String(t || '').replace(/\s+/g, ' ').trim().toLowerCase()
+          const normalizedClaim = normalize(claimText)
+          let bestFact = null
+          let bestScore = 0
+
+          for (const fact of factData.facts) {
+            const normalizedFact = normalize(fact.text)
+            let score = 0
+            if (normalizedFact.includes(normalizedClaim) || normalizedClaim.includes(normalizedFact)) {
+              score = Math.min(normalizedFact.length, normalizedClaim.length) / Math.max(normalizedFact.length, normalizedClaim.length)
+            } else {
+              const claimWords = new Set(normalizedClaim.split(/\s+/).filter(w => w.length > 3))
+              const factWords = normalizedFact.split(/\s+/).filter(w => w.length > 3)
+              const overlap = factWords.filter(w => claimWords.has(w)).length
+              score = claimWords.size > 0 ? overlap / claimWords.size : 0
+            }
+            if (score > bestScore) {
+              bestScore = score
+              bestFact = fact
+            }
+          }
+
+          if (bestFact && bestScore > 0.3 && bestFact.page) {
+            targetPage = bestFact.page
+            excerpt = bestFact.text
+            resolvedPage = true
+            resolutionReason = 'fact-fallback'
+            logger.info('[ViewRef] Tier 2 fact match found on page', targetPage, 'score:', bestScore.toFixed(2))
+          }
+        }
+      } catch (err) {
+        logger.warn('[ViewRef] Tier 2 fact lookup failed:', err.message)
+      }
+    }
+
+    setReferenceViewerData({
+      referenceId: ref.id,
+      page: targetPage,
+      excerpt: excerpt || (!resolvedPage ? claimText : null),
+      pageResolution: resolutionReason,
+      citationPageLabel: ref.citationPageLabel || null
+    })
   }
 
   // ===== Missed Claim Reporting =====
@@ -1605,9 +1823,6 @@ export default function MKG2ClaimsDetector() {
   const pendingCount = claims.filter(c => c.status === 'pending').length
   const approvedCount = claims.filter(c => c.status === 'approved').length
   const rejectedCount = claims.filter(c => c.status === 'rejected').length
-  const highConfidenceClaims = claims.filter(c => c.confidence >= 0.9)
-  const mediumConfidenceClaims = claims.filter(c => c.confidence >= 0.7 && c.confidence < 0.9)
-  const lowConfidenceClaims = claims.filter(c => c.confidence < 0.7)
   const missedCount = missedClaims.length
 
   // ===== Validation Scorecard Metrics =====
@@ -1647,7 +1862,8 @@ export default function MKG2ClaimsDetector() {
       mappingAccuracy
     }
   }, [claims, missedClaims])
-  const matchedRateLabel = matchingStats ? `${matchingStats.on_page_count ?? matchingStats.matched ?? 0} on-page` : 'N/A'
+  const claimSummary = useMemo(() => summarizeAnnotationClaims(claims), [claims])
+  const matchedRateLabel = matchingStats ? `${claimSummary.onPageCount} on-page` : 'N/A'
 
   const analysisMs = processingTime || 0
   const matchingMs = matchingStats?.matching_total_ms || 0
@@ -1696,8 +1912,7 @@ export default function MKG2ClaimsDetector() {
         return (a.globalIndex ?? 0) - (b.globalIndex ?? 0)
       }
       if (sortOrder === 'annotation' || sortOrder === 'no-matches') return (a.globalIndex ?? 0) - (b.globalIndex ?? 0)
-      if (sortOrder === 'confidence-desc') return b.confidence - a.confidence
-      return a.confidence - b.confidence
+      return (a.globalIndex ?? 0) - (b.globalIndex ?? 0)
     })
 
   const claimsByPage = useMemo(() => {
@@ -1725,9 +1940,7 @@ export default function MKG2ClaimsDetector() {
             <h1 className="title">Annotation Activation</h1>
             <Badge variant="info">POC2</Badge>
           </div>
-          <p className="subtitle">
-            AI-powered claim detection and reference matching for MLR submissions
-          </p>
+          <p className="subtitle" />
         </div>
         <div className="headerRight">
           <button
@@ -1827,76 +2040,74 @@ export default function MKG2ClaimsDetector() {
                       onTypeSelect={setSelectedDocType}
                     />
 
-                    {/* AI QA Toggle */}
+                    {/* AI Analysis Toggle */}
                     <div className="settingItem">
-                      <label className="settingLabel">AI QA</label>
+                      <label className="settingLabel">AI Analysis</label>
                       <div className="settingControl">
-                        <label className="toggleLabel">
+                        <label className="switchLabel">
                           <input
                             type="checkbox"
+                            className="switchInput"
                             checked={enableAiQa}
                             onChange={(e) => setEnableAiQa(e.target.checked)}
                           />
-                          <span>AI QA</span>
+                          <span className="switchTrack" />
+                          <span className="switchStatus">{enableAiQa ? 'On' : 'Off'}</span>
                         </label>
                       </div>
                     </div>
 
-                    {/* AI Model */}
-                    <div className="settingItem">
-                      <label className="settingLabel">AI Model</label>
-                      <select
-                        value={selectedModelId}
-                        onChange={e => setSelectedModelId(e.target.value)}
-                        className="settingSelect"
-                      >
-                        {MODEL_OPTIONS.map(m => (
-                          <option key={m.id} value={m.id}>{m.label}</option>
-                        ))}
-                      </select>
-                    </div>
+                    {/* AI Model — only when AI Analysis is on */}
+                    {enableAiQa && (
+                      <div className="settingItem">
+                        <label className="settingLabel">AI Model</label>
+                        <span className="settingValue">{ACTIVE_MODEL_LABEL}</span>
+                      </div>
+                    )}
                   </div>
                 }
               />
 
-              <AccordionItem
-                title="Master Prompt"
-                defaultOpen={false}
-                size="small"
-                content={
-                  <div className="masterPromptContent">
-                    <div className="promptHeader">
-                      {!isEditingPrompt ? (
-                        <button className="promptIconBtn" onClick={() => setIsEditingPrompt(true)} title="Edit prompt">
-                          <Icon name="edit" size={14} />
-                        </button>
-                      ) : (
-                        <div className="promptEditActions">
-                          <button className="promptIconBtn promptSaveBtn" onClick={() => setIsEditingPrompt(false)} title="Save">
-                            <Icon name="check" size={14} />
+              {enableAiQa && (
+                <AccordionItem
+                  title="Master Prompt"
+                  defaultOpen={false}
+                  size="small"
+                  content={
+                    <div className="masterPromptContent">
+                      <div className="promptHeader">
+                        {!isEditingPrompt ? (
+                          <button className="promptIconBtn" onClick={() => setIsEditingPrompt(true)} title="Edit prompt">
+                            <Icon name="edit" size={14} />
                           </button>
-                          <button className="promptIconBtn promptCancelBtn" onClick={handleCancelEdit} title="Cancel">
-                            <Icon name="x" size={14} />
-                          </button>
-                        </div>
-                      )}
+                        ) : (
+                          <div className="promptEditActions">
+                            <button className="promptIconBtn promptSaveBtn" onClick={() => setIsEditingPrompt(false)} title="Save">
+                              <Icon name="check" size={14} />
+                            </button>
+                            <button className="promptIconBtn promptCancelBtn" onClick={handleCancelEdit} title="Cancel">
+                              <Icon name="x" size={14} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <div className="promptBody">
+                        {isEditingPrompt ? (
+                          <textarea
+                            className="promptTextarea"
+                            value={editablePrompt}
+                            onChange={(e) => setEditablePrompt(e.target.value)}
+                            rows={16}
+                            autoFocus
+                          />
+                        ) : (
+                          <pre className="promptPreview">{editablePrompt}</pre>
+                        )}
+                      </div>
                     </div>
-                    <div className="promptBody">
-                      {isEditingPrompt ? (
-                        <textarea
-                          className="promptTextarea"
-                          value={editablePrompt}
-                          onChange={(e) => setEditablePrompt(e.target.value)}
-                          rows={16}
-                          autoFocus
-                        />
-                      ) : (
-                        <pre className="promptPreview">{editablePrompt}</pre>
-                      )}
-                    </div>
-                  </div>
-                }
-              />
+                  }
+                />
+              )}
 
               <Button
                 variant="primary"
@@ -1916,7 +2127,7 @@ export default function MKG2ClaimsDetector() {
                   </>
                 )}
               </Button>
-              {hasCachedResult && !isAnalyzing && (
+              {ANALYSIS_CACHE_ENABLED && hasCachedResult && !isAnalyzing && (
                 <button className="reanalyzeLink" onClick={handleConfirmReanalyze}>
                   Re-analyze from scratch
                 </button>
@@ -1941,36 +2152,23 @@ export default function MKG2ClaimsDetector() {
                           <span className="resultLabel">Claims Detected</span>
                           <span className="resultValue">{claims.length}</span>
                         </div>
-                        <div className="divider" />
-                        <div className="resultRow highConf">
-                          <span className="resultLabel">High Confidence (90-100%)</span>
-                          <span className="resultValue">{highConfidenceClaims.length}</span>
-                        </div>
-                        <div className="resultRow medConf">
-                          <span className="resultLabel">Medium (70-89%)</span>
-                          <span className="resultValue">{mediumConfidenceClaims.length}</span>
-                        </div>
-                        <div className="resultRow lowConf">
-                          <span className="resultLabel">Low (&lt;70%)</span>
-                          <span className="resultValue">{lowConfidenceClaims.length}</span>
-                        </div>
                         {matchingStats && (
                           <>
                             <div className="divider" />
                             <div className="resultRow matched">
                               <span className="resultLabel">On-Page Annotations</span>
-                              <span className="resultValue">{matchingStats.on_page_count ?? matchingStats.matched ?? 0}</span>
+                              <span className="resultValue">{claimSummary.onPageCount}</span>
                             </div>
-                            {(matchingStats.ai_find_count ?? matchingStats.unmatched ?? 0) > 0 && (
+                            {claimSummary.aiFindCount > 0 && (
                               <div className="resultRow" style={{ color: 'var(--amber-9)' }}>
                                 <span className="resultLabel">AI Finds</span>
-                                <span className="resultValue">{matchingStats.ai_find_count ?? matchingStats.unmatched ?? 0}</span>
+                                <span className="resultValue">{claimSummary.aiFindCount}</span>
                               </div>
                             )}
-                            {(matchingStats.unmatched_footnotes ?? 0) > 0 && (
+                            {claimSummary.globalAnnotationCount > 0 && (
                               <div className="resultRow" style={{ color: 'var(--amber-9)' }}>
-                                <span className="resultLabel">Unmatched Footnotes</span>
-                                <span className="resultValue">{matchingStats.unmatched_footnotes}</span>
+                                <span className="resultLabel">Global Annotations</span>
+                                <span className="resultValue">{claimSummary.globalAnnotationCount}</span>
                               </div>
                             )}
                             <div className="resultRow">
@@ -1999,7 +2197,7 @@ export default function MKG2ClaimsDetector() {
                       <div className="modelPerformance">
                         <div className="resultRow">
                           <span className="resultLabel">Model</span>
-                          <span className="resultValue">{lastUsage?.modelDisplayName || selectedModelOption.label}</span>
+                          <span className="resultValue">{lastUsage?.modelDisplayName || ACTIVE_MODEL_LABEL}</span>
                         </div>
                         <div className="resultRow">
                           <span className="resultLabel">Claims Detected</span>
@@ -2185,8 +2383,8 @@ export default function MKG2ClaimsDetector() {
                       {matchingStats ? (
                         <>
                           <Icon name="gitCompare" size={14} />
-                          <span>Matched {matchingStats.matched} of {matchingStats.total} claims</span>
-                          {cacheHit && (
+                          <span>Matched {claimSummary.onPageCount} of {claimSummary.total} claims</span>
+                          {ANALYSIS_CACHE_ENABLED && cacheHit && (
                             <span
                               className="matchingCacheBadge"
                               title="Match metrics restored from cached analysis"
@@ -2198,7 +2396,7 @@ export default function MKG2ClaimsDetector() {
                       ) : (
                         <>
                           <Icon name="zap" size={14} />
-                          <span>{cacheHit ? `Cached · ${formatTimeAgo(cacheHit.ts)}` : `${claims.length} claims detected`}</span>
+                          <span>{ANALYSIS_CACHE_ENABLED && cacheHit ? `Cached · ${formatTimeAgo(cacheHit.ts)}` : `${claims.length} claims detected`}</span>
                         </>
                       )}
                     </div>
@@ -2265,8 +2463,6 @@ export default function MKG2ClaimsDetector() {
                         >
                           <option value="annotation">Annotation #</option>
                           <option value="page">Page</option>
-                          <option value="confidence-desc">Confidence ↓</option>
-                          <option value="confidence-asc">Confidence ↑</option>
                           <option value="no-matches">No matches</option>
                         </select>
                       </div>
@@ -2328,7 +2524,7 @@ export default function MKG2ClaimsDetector() {
                                     onApprove={handleClaimApprove}
                                     onReject={handleClaimReject}
                                     onSelect={() => handleClaimSelect(claim.id)}
-                                    onViewSource={() => handleViewSource(claim)}
+                                    onViewRef={handleViewRef}
                                     brandReferences={referenceDocuments}
                                     trainingExamples={trainingExamples}
                                   />
@@ -2348,7 +2544,7 @@ export default function MKG2ClaimsDetector() {
                           onApprove={handleClaimApprove}
                           onReject={handleClaimReject}
                           onSelect={() => handleClaimSelect(claim.id)}
-                          onViewSource={() => handleViewSource(claim)}
+                          onViewRef={handleViewRef}
                           brandReferences={referenceDocuments}
                           trainingExamples={trainingExamples}
                         />

@@ -24,7 +24,7 @@ import MissedClaimForm from '@/components/mkg/MissedClaimForm/MissedClaimForm'
 import Alert from '@/components/molecules/Alert/Alert'
 
 // Services
-import { analyzeDocument as analyzeWithGemini, checkGeminiConnection, ALL_CLAIMS_PROMPT_USER, MEDICATION_PROMPT_USER, getDocTypeInstructions, GEMINI_MODEL } from '@/services/gemini'
+import { analyzeDocument as analyzeWithGemini, checkGeminiConnection, ALL_CLAIMS_PROMPT_USER, MEDICATION_PROMPT_USER, getDocTypeInstructions, GEMINI_MODEL, MODEL_DISPLAY_NAMES } from '@/services/gemini'
 import { getMatchingStats } from '@/services/referenceMatching'
 import * as api from '@/services/api'
 
@@ -33,14 +33,11 @@ import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { TextLayer } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import pdfjsWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl
-import { enrichClaimsWithPositions, addGlobalIndices } from '@/utils/textMatcher'
+import { enrichClaimsWithPositions, alignClaimsToSlideLayout, addGlobalIndices } from '@/utils/textMatcher'
 import { dedupeClaimsByPageAndText, getClaimDedupOptions } from '@/utils/claimDedup'
 import { logger } from '@/utils/logger'
 
-const MODEL_OPTIONS = [
-  { id: 'gemini', label: 'Gemini 2.5 Pro', modelId: GEMINI_MODEL },
-  { id: 'gemini-3-pro-preview', label: 'Gemini 3 Pro (Preview)', modelId: 'gemini-3-pro-preview' }
-]
+const ACTIVE_MODEL_LABEL = MODEL_DISPLAY_NAMES[GEMINI_MODEL] || GEMINI_MODEL
 const CLAIM_DEDUP_OPTIONS = getClaimDedupOptions()
 
 const PROMPT_OPTIONS = [
@@ -405,9 +402,7 @@ export default function MKG2ClaimsDetector() {
   const fileInputRef = useRef(null)
 
   // Settings state
-  const [selectedModelId, setSelectedModelId] = useState('gemini')
-  const selectedModelOption = MODEL_OPTIONS.find(m => m.id === selectedModelId) || MODEL_OPTIONS[0]
-  const selectedModel = selectedModelOption.modelId
+  const selectedModel = GEMINI_MODEL
   const [selectedPrompt, _setSelectedPrompt] = useState('all-claims')
   const [editablePrompt, setEditablePrompt] = useState('')
   const [isEditingPrompt, setIsEditingPrompt] = useState(false)
@@ -1110,7 +1105,7 @@ export default function MKG2ClaimsDetector() {
       const promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
       setAnalysisProgress(5)
       setAnalysisStatus('Analyzing document...')
-      const connectionCheck = await checkGeminiConnection(selectedModelOption.modelId)
+      const connectionCheck = await checkGeminiConnection(selectedModel)
       if (!connectionCheck.connected) {
         throw new Error(`Gemini API not connected: ${connectionCheck.error}`)
       }
@@ -1194,7 +1189,7 @@ export default function MKG2ClaimsDetector() {
         setAnalysisProgress(progress)
         setAnalysisStatus(status)
       }
-      const result = await analyzeWithGemini(uploadedFile, progressCb, promptKey, editablePrompt, null, selectedDocType || 'speaker-notes', factInventory, trainingExamples, { modelOverride: selectedModelOption.modelId })
+      const result = await analyzeWithGemini(uploadedFile, progressCb, promptKey, editablePrompt, null, selectedDocType || 'speaker-notes', factInventory, trainingExamples, { modelOverride: selectedModel })
 
       if (cancelAnalysisRef.current) return
       if (!result.success) throw new Error(result.error || 'Analysis failed')
@@ -1244,7 +1239,7 @@ export default function MKG2ClaimsDetector() {
         await api.createAnalysisRun({
           brand_id: selectedBrandId || null,
           document_name: uploadedFile.name,
-          model: selectedModelOption?.modelId || selectedModel,
+          model: selectedModel,
           training_example_count: trainingExamples.length,
           ecosystem_example_count: ecosystemTrainingExamples.length,
           claim_count: indexedClaims.length,
@@ -1741,15 +1736,25 @@ export default function MKG2ClaimsDetector() {
     }
   }
 
-  // ===== Fallback position enrichment =====
+  // ===== Position refinement =====
 
   useEffect(() => {
     if (!analysisComplete || extractedPages.length === 0) return
     setClaims(prev => {
       if (!prev.length) return prev
-      const needsReposition = prev.some(c => !c.position || c.position?.source === 'fallback')
-      if (!needsReposition) return prev
-      const refreshed = enrichClaimsWithPositions(prev, extractedPages)
+      const needsFallbackPosition = prev.some(c => !c.position || c.position?.source === 'fallback')
+      const hasSlideClaims = prev.some(c => c.region === 'slide' && !c.globalSpot)
+      if (!needsFallbackPosition && !hasSlideClaims) return prev
+
+      const withRecoveredPositions = needsFallbackPosition
+        ? enrichClaimsWithPositions(prev, extractedPages)
+        : prev
+      const refreshed = hasSlideClaims
+        ? alignClaimsToSlideLayout(withRecoveredPositions, extractedPages)
+        : withRecoveredPositions
+
+      if (refreshed === prev) return prev
+
       const withIndexes = refreshed.map(claim => {
         const existing = prev.find(c => c.id === claim.id)
         return { ...claim, globalIndex: existing?.globalIndex, matched: existing?.matched, reference: existing?.reference }
@@ -2446,15 +2451,7 @@ export default function MKG2ClaimsDetector() {
                     {/* AI Model */}
                     <div className="settingItem">
                       <label className="settingLabel">AI Model</label>
-                      <select
-                        value={selectedModelId}
-                        onChange={e => setSelectedModelId(e.target.value)}
-                        className="settingSelect"
-                      >
-                        {MODEL_OPTIONS.map(m => (
-                          <option key={m.id} value={m.id}>{m.label}</option>
-                        ))}
-                      </select>
+                      <span className="settingValue">{ACTIVE_MODEL_LABEL}</span>
                     </div>
                   </div>
                 }
@@ -2599,7 +2596,7 @@ export default function MKG2ClaimsDetector() {
                       <div className="modelPerformance">
                         <div className="resultRow">
                           <span className="resultLabel">Model</span>
-                          <span className="resultValue">{lastUsage?.modelDisplayName || selectedModelOption.label}</span>
+                          <span className="resultValue">{lastUsage?.modelDisplayName || ACTIVE_MODEL_LABEL}</span>
                         </div>
                         <div className="resultRow">
                           <span className="resultLabel">Claims Detected</span>

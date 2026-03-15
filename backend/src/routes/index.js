@@ -9,6 +9,7 @@ import trainingRoutes from './training.js'
 import analysisCacheRoutes from './analysis-cache.js'
 import { brandMatchingJobRoutes, matchingJobRoutes } from './matching-jobs.js'
 import analysisRunRoutes from './analysis-runs.js'
+import documentAiRoutes from './document-ai.js'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -30,6 +31,7 @@ export function registerRoutes(app) {
   app.use('/api/analysis-runs', analysisRunRoutes)
   app.use('/api/brands/:brandId', brandMatchingJobRoutes)
   app.use('/api/matching-jobs', matchingJobRoutes)
+  app.use('/api/document-ai', documentAiRoutes)
 
   // Temporary: capture V2 pipeline diagnostics to disk for analysis (dev only)
   if (process.env.NODE_ENV !== 'production') {

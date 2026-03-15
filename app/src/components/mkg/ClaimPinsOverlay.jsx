@@ -11,7 +11,8 @@ const CONTENT_TYPE_X_PCT = {
   bullet: 6,
   'sub-bullet': 10,
   footnote: 5,
-  chart: 5
+  chart: 5,
+  global: 94
 }
 
 /**
@@ -49,6 +50,13 @@ const computeAnchor = (dot, canvasDimensions) => {
   const heightPx = (dot.boxHeightPct || 0) * canvasDimensions.height / 100
   const centerX = (dot.centerXPct / 100) * canvasDimensions.width
   const centerY = (dot.centerYPct / 100) * canvasDimensions.height
+
+  if (dot.contentType === 'global') {
+    return {
+      x: clamp(centerX, DOT_RADIUS_ACTIVE, canvasDimensions.width - DOT_RADIUS_ACTIVE),
+      y: clamp(centerY, DOT_RADIUS_ACTIVE, canvasDimensions.height - DOT_RADIUS_ACTIVE)
+    }
+  }
 
   // No bounding box (Gemini simple x/y) – push pin left of the point
   if (!widthPx || !heightPx) {
@@ -129,9 +137,14 @@ export default function ClaimPinsOverlay({
   const dots = claims
     .filter(claim => Number(claim.page) === currentPage && claim.position)
     .map(claim => {
-      const centerXPct = claim.contentType && CONTENT_TYPE_X_PCT[claim.contentType] != null
-        ? CONTENT_TYPE_X_PCT[claim.contentType]
-        : (Number(claim.position?.x) || 0)
+      const usePositionX = claim.position?.source === 'coarse-slide-anchor' || Boolean(claim.position?.lane)
+      const centerXPct = usePositionX
+        ? (Number(claim.position?.x) || 0)
+        : (
+            claim.contentType && CONTENT_TYPE_X_PCT[claim.contentType] != null
+              ? CONTENT_TYPE_X_PCT[claim.contentType]
+              : (Number(claim.position?.x) || 0)
+          )
       const centerYPct = Number(claim.position.y) || 0
       const boxWidthPct = Number(claim.position.width) || 0
       const boxHeightPct = Number(claim.position.height) || 0
@@ -142,17 +155,18 @@ export default function ClaimPinsOverlay({
       )
 
       return {
-      id: claim.id,
-      x: anchor.x,
-      y: anchor.y,
-      centerXPct,
-      centerYPct,
-      boxWidthPct,
-      boxHeightPct,
-      confidence: claim.confidence,
-      text: claim.text,
-      label: labelFromClaim(claim),
-      positionSource: claim.position?.source || 'unknown'
+        id: claim.id,
+        x: anchor.x,
+        y: anchor.y,
+        contentType: claim.contentType,
+        centerXPct,
+        centerYPct,
+        boxWidthPct,
+        boxHeightPct,
+        confidence: claim.confidence,
+        text: claim.text,
+        label: labelFromClaim(claim),
+        positionSource: claim.position?.source || 'unknown'
       }
     })
 

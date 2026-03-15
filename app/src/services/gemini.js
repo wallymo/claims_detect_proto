@@ -334,10 +334,18 @@ const ANNOTATION_JSON_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          text: { type: 'string', description: 'Exact text containing the superscript or being annotated' },
+          text: { type: 'string', description: 'Exact text of the annotated statement (without superscripts)' },
           region: { type: 'string', enum: ['slide', 'notes'] },
-          refNumber: { type: 'integer', description: 'Reference number matched' },
-          reference: { type: 'string', description: 'Full reference citation text from the page' },
+          refNumbers: {
+            type: 'array',
+            items: { type: 'integer' },
+            description: 'All reference numbers from superscripts on this statement'
+          },
+          references: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Full citation text for each refNumber, in matching order'
+          },
           source: { type: 'string', enum: ['on-page'] },
           confidence: { type: 'integer', minimum: 0, maximum: 100 },
           page: { type: 'integer', minimum: 1 },
@@ -345,17 +353,11 @@ const ANNOTATION_JSON_SCHEMA = {
           y: { type: 'number', minimum: 0, maximum: 100 },
           contentType: { type: 'string', enum: ['title', 'bullet', 'sub-bullet', 'footnote', 'chart'], description: 'Type of content element for pin positioning' }
         },
-        required: ['text', 'region', 'refNumber', 'reference', 'source', 'confidence', 'page', 'x', 'y', 'contentType']
+        required: ['text', 'region', 'refNumbers', 'references', 'source', 'confidence', 'page', 'x', 'y', 'contentType']
       }
     },
-    slideFootnotes: {
-      type: 'object',
-      additionalProperties: { type: 'string' }
-    },
-    notesReferences: {
-      type: 'object',
-      additionalProperties: { type: 'string' }
-    }
+    slideFootnotes: { type: 'object', additionalProperties: { type: 'string' } },
+    notesReferences: { type: 'object', additionalProperties: { type: 'string' } }
   },
   required: ['annotations']
 }
@@ -1007,22 +1009,40 @@ ${VISUAL_CLAIMS_INSTRUCTIONS}
 Analyze now. Find all medication claims.`
 
 export const ANNOTATION_PROMPT_USER = `# Task
-Extract on-page references and map them to content.
+Extract on-page references and map them to content. One annotation per statement, multiple refs per annotation.
+
+# Reference Pools — STRICT SEPARATION
+- SLIDE content → refs come ONLY from the slide footnotes block (abbreviated citations at bottom of slide)
+- NOTES content → refs come ONLY from the "References:" numbered list (full citations)
+- NEVER cross-reference between pools
 
 # Slide Region (top ~50% of page)
 1. Find numbered footnotes at the bottom of the slide (e.g. "1. Smith et al. J Cardiol 2024;45:123-130")
 2. Find superscript numbers in slide content (e.g. "47% reduction¹²")
-3. Match: superscript ¹ → footnote 1. That is the reference. Done.
+3. Match ALL superscripts on a statement to their footnotes. Statement with ¹·² → refNumbers [1, 2]
 4. If a footnote exists but no content has its superscript, annotate the most relevant slide content.
 
 # Speaker Notes Region (bottom ~50% of page)
-1. Find the "References:" section (numbered references list)
-2. If notes content has superscript numbers, match them to the references list the same way.
-3. If NO superscripts exist in notes, annotate ALL notes content with the full references block.
+1. Find the "References:" section (numbered references list with full citations + DOIs)
+2. Match superscript numbers in notes bullets to the "References:" list
+3. Statement with ¹·² → refNumbers [1, 2], references from the "References:" list
+
+# Worked Example — Slide
+Content: "Most common cause of acute flaccid paralysis worldwide—sporadic and unpredictable¹·²"
+Slide footnotes: 1. Leonhard SE et al. Nat Rev Neurol. 2019;15(11):671-683. 2. van den Berg B et al. Nat Rev Neurol. 2014;10(8):469-482.
+→ annotation: { text: "Most common cause of acute flaccid paralysis worldwide—sporadic and unpredictable", region: "slide", refNumbers: [1, 2], references: ["1. Leonhard SE et al. Nat Rev Neurol. 2019;15(11):671-683", "2. van den Berg B et al. Nat Rev Neurol. 2014;10(8):469-482"] }
+
+# Worked Example — Notes
+Content: "Guillain-Barré syndrome (GBS) is the most common cause of acute flaccid paralysis globally, characterized by its sporadic and unpredictable nature¹·²"
+References list: 1. Leonhard SE, Mandarakas MR, Gondim FAA, et al. Diagnosis and management of Guillain–Barré syndrome in ten steps. Nat Rev Neurol. 2019;15(11):671-683. doi:10.1038/s41582-019-0250-9  2. van den Berg B, Walgaard C, Drenthen J, et al...
+→ annotation: { text: "Guillain-Barré syndrome (GBS) is the most common cause of acute flaccid paralysis globally, characterized by its sporadic and unpredictable nature", region: "notes", refNumbers: [1, 2], references: ["1. Leonhard SE, Mandarakas MR, Gondim FAA, et al. ...(full citation)", "2. van den Berg B, Walgaard C, Drenthen J, ...(full citation)"] }
 
 # Rules
 - ONLY use references that exist ON THIS PAGE — never invent references
 - Every footnote/reference on the page MUST be mapped to content
+- One annotation per statement — collect ALL superscript refs into refNumbers array
+- references array must have same length as refNumbers, in matching order
+- Number references with Arabic numerals (1. 2. 3.) — never roman numerals
 - Return source as "on-page" for all annotations
 
 # Position
@@ -1528,27 +1548,42 @@ export async function annotateDocument(pdfFile, onProgress, enableAiQa = false, 
     const { inputTokens, outputTokens } = extractUsageMetadata(response)
     const cost = calculateCost(usedModel, inputTokens, outputTokens)
 
-    const annotations = (Array.isArray(parsed.annotations) ? parsed.annotations : []).map((ann, idx) => ({
-      id: `ann-${idx + 1}`,
-      text: String(ann.text || '').trim(),
-      claim: String(ann.text || '').trim(),
-      region: ann.region || 'slide',
-      refNumber: ann.refNumber || null,
-      reference: {
-        name: String(ann.reference || '').trim(),
-        text: String(ann.reference || '').trim()
-      },
-      source: 'on-page',
-      matched: true,
-      matchTier: 'on-page',
-      contentType: ann.contentType || 'bullet',
-      confidence: clamp(Math.round(Number(ann.confidence) || 80), 0, 100),
-      page: Math.max(1, Number.parseInt(ann.page, 10) || 1),
-      position: {
-        x: clamp(Number(ann.x) || 0, 0, 100),
-        y: clamp(Number(ann.y) || 0, 0, 100)
+    const annotations = (Array.isArray(parsed.annotations) ? parsed.annotations : []).map((ann, idx) => {
+      const refNums = Array.isArray(ann.refNumbers) ? ann.refNumbers : (ann.refNumber ? [ann.refNumber] : [])
+      const refTexts = Array.isArray(ann.references) ? ann.references : (ann.reference ? [String(ann.reference)] : [])
+      const references = refTexts.map((r, i) => ({
+        number: refNums[i] || (i + 1),
+        text: String(r || '').trim()
+      }))
+
+      return {
+        id: `ann-${idx + 1}`,
+        text: String(ann.text || '').trim(),
+        claim: String(ann.text || '').trim(),
+        region: ann.region || 'slide',
+        refNumbers: refNums,
+        references,
+        source: 'on-page',
+        matched: true,
+        matchTier: 'on-page',
+        contentType: ann.contentType || 'bullet',
+        confidence: clamp(Math.round(Number(ann.confidence) || 80), 0, 100),
+        page: Math.max(1, Number.parseInt(ann.page, 10) || 1),
+        position: {
+          x: clamp(Number(ann.x) || 0, 0, 100),
+          y: clamp(Number(ann.y) || 0, 0, 100)
+        }
       }
-    }))
+    })
+
+    // Sort: slide region first (by y position), then notes region (by y position)
+    annotations.sort((a, b) => {
+      const regionOrder = { slide: 0, notes: 1 }
+      const rA = regionOrder[a.region] ?? 0
+      const rB = regionOrder[b.region] ?? 0
+      if (rA !== rB) return rA - rB
+      return (a.position?.y || 0) - (b.position?.y || 0)
+    })
 
     let usage = {
       inputTokens,
@@ -1881,6 +1916,122 @@ export async function checkGeminiConnection(preferredModel = GEMINI_MODEL) {
     }
   } catch (error) {
     return { connected: false, error: error.message }
+  }
+}
+
+// ─── Gemini Vision: Slide Annotation Extraction ─────────────────────────────
+
+const SLIDE_ANNOTATION_SCHEMA = {
+  type: 'object',
+  properties: {
+    annotations: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          statement: { type: 'string', description: 'The complete statement or claim text that the superscript(s) are attached to. Read it naturally from the visual layout — do NOT concatenate text from different columns or sections.' },
+          refNumbers: {
+            type: 'array',
+            items: { type: 'integer' },
+            description: 'All superscript reference numbers attached to this statement (e.g. [1, 2])'
+          },
+          x: { type: 'number', description: 'Horizontal center of the statement as percentage of page width (0=left edge, 100=right edge)' },
+          y: { type: 'number', description: 'Vertical center of the statement as percentage of page height (0=top edge, 100=bottom edge)' }
+        },
+        required: ['statement', 'refNumbers', 'x', 'y']
+      }
+    }
+  },
+  required: ['annotations']
+}
+
+/**
+ * Extract annotated statements from a slide image using Gemini Vision.
+ * Returns array of { statement, refNumbers, x, y } — complete statements
+ * with their superscript refs and positions, read in proper visual order.
+ *
+ * @param {string} imageBase64 - Base64-encoded PNG of the full page
+ * @param {number} pageNum - Page number (for logging)
+ * @param {Object} slideFootnotes - The footnote pool for context
+ * @param {number} notesBoundaryY - Y% where speaker notes begin
+ * @returns {Promise<Array<{ statement: string, refNumbers: number[], x: number, y: number }>>}
+ */
+export async function detectSlideSuperscripts(imageBase64, pageNum, slideFootnotes = {}, notesBoundaryY = 50) {
+  const client = getGeminiClient()
+
+  const refKeys = Object.keys(slideFootnotes).sort((a, b) => Number(a) - Number(b))
+  const refList = refKeys.length > 0
+    ? `\n\nThese numbered references appear as footnotes at the bottom of this slide:\n${refKeys.map(k => `  ${k}. ${String(slideFootnotes[k] || '').slice(0, 100)}`).join('\n')}`
+    : ''
+
+  const prompt = `This is a pharma presentation slide with speaker notes below. The slide content is in the top ~${Math.round(notesBoundaryY)}% of the page.
+
+Your task: Find every statement in the SLIDE REGION (above ~${Math.round(notesBoundaryY)}% from top) that has a superscript reference number attached to it.${refList}
+
+IMPORTANT — Reading order:
+- This is an infographic/presentation slide. Text may be arranged in columns, cards, callout boxes, or visual sections.
+- Read each section or visual group INDEPENDENTLY. Do NOT concatenate text across columns.
+- A statement is the natural phrase or sentence that a superscript is attached to, as a human would read it.
+
+Examples of correct reading:
+- A box showing "71% experience neuropathic pain¹·²" → statement: "71% experience neuropathic pain"
+- A callout "AT 3 YEARS" with stats below → read each stat with its superscript separately
+- A bullet "Can cause serious consequences³·⁴" → statement: "Can cause serious consequences"
+
+For each annotated statement, return:
+- statement: The text as it appears visually (up to 150 chars). Read it naturally from the layout.
+- refNumbers: Array of superscript reference numbers attached to it (e.g. [1, 2])
+- x: Horizontal center of the statement as % of page width (0=left, 100=right)
+- y: Vertical center of the statement as % of page height (0=top, 100=bottom)
+
+Rules:
+- Only report statements in the slide region (y < ${Math.round(notesBoundaryY)})
+- Do NOT include footnote text from the bottom of the slide
+- Do NOT include speaker notes content
+- Do NOT include the slide title unless it has a superscript
+- Return an empty array if no superscripts are found in the slide content`
+
+  try {
+    const { response, model } = await generateContentWithModelFallback(client, {
+      preferredModel: GEMINI_MODEL,
+      contents: [{
+        role: 'user',
+        parts: [
+          { inlineData: { mimeType: 'image/png', data: imageBase64 } },
+          { text: prompt }
+        ]
+      }],
+      config: {
+        temperature: 0,
+        topP: 0.1,
+        topK: 1,
+        maxOutputTokens: 8192,
+        responseMimeType: 'application/json',
+        responseJsonSchema: SLIDE_ANNOTATION_SCHEMA
+      },
+      purpose: `slide-annotation-page-${pageNum}`
+    })
+
+    const rawText = response?.candidates?.[0]?.content?.parts?.[0]?.text
+      || response?.text?.()
+      || ''
+    const parsed = parseJsonResponse(rawText, `slide annotation page ${pageNum}`)
+    const annotations = Array.isArray(parsed?.annotations) ? parsed.annotations : []
+
+    // Filter and normalize
+    const filtered = annotations.filter(a =>
+      a.statement && a.statement.length >= 3 &&
+      Array.isArray(a.refNumbers) && a.refNumbers.length > 0 &&
+      a.refNumbers.every(n => Number.isFinite(n) && n > 0 && n <= 50) &&
+      Number.isFinite(a.x) && a.x >= 0 && a.x <= 100 &&
+      Number.isFinite(a.y) && a.y >= 0 && a.y < notesBoundaryY + 2
+    )
+
+    logger.info(`[Gemini Vision] Page ${pageNum}: found ${filtered.length} annotated statements (model: ${model})`)
+    return filtered
+  } catch (err) {
+    logger.warn(`[Gemini Vision] Page ${pageNum} annotation extraction failed: ${err.message}`)
+    return []
   }
 }
 

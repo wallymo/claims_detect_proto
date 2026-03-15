@@ -1,17 +1,18 @@
 import { getDb } from '../config/database.js'
 
 export const Reference = {
-  create({ brand_id, filename, display_alias, file_path, doc_type, content_text, notes = '', page_count, file_size_bytes, page_boundaries }) {
+  create({ brand_id, filename, display_alias, file_path, doc_type, content_text, notes = '', page_count, file_size_bytes, page_boundaries, citation_metadata }) {
     const db = getDb()
     const stmt = db.prepare(`
       INSERT INTO reference_documents
-        (brand_id, filename, display_alias, file_path, doc_type, content_text, notes, page_count, file_size_bytes, page_boundaries)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (brand_id, filename, display_alias, file_path, doc_type, content_text, notes, page_count, file_size_bytes, page_boundaries, citation_metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     const result = stmt.run(
       brand_id, filename, display_alias, file_path, doc_type,
       content_text, notes, page_count, file_size_bytes,
-      page_boundaries ? JSON.stringify(page_boundaries) : null
+      page_boundaries ? JSON.stringify(page_boundaries) : null,
+      citation_metadata || null
     )
     return this.findById(result.lastInsertRowid)
   },
@@ -20,7 +21,7 @@ export const Reference = {
     const db = getDb()
     let query = `
       SELECT rd.id, rd.brand_id, rd.folder_id, rd.filename, rd.display_alias, rd.doc_type,
-             rd.page_count, rd.file_size_bytes, rd.upload_date, rd.notes,
+             rd.page_count, rd.file_size_bytes, rd.upload_date, rd.notes, rd.citation_metadata,
              (rd.content_text IS NOT NULL) as has_content,
              rf.extraction_status,
              CASE WHEN rf.facts_json IS NOT NULL
@@ -62,16 +63,46 @@ export const Reference = {
     const db = getDb()
     const row = db.prepare(`
       SELECT id, brand_id, display_alias, doc_type, content_text, notes,
-             page_count, file_size_bytes, upload_date, page_boundaries
+             page_count, file_size_bytes, upload_date, page_boundaries, citation_metadata
       FROM reference_documents WHERE id = ?
     `).get(id)
     if (row) row.page_boundaries = row.page_boundaries ? JSON.parse(row.page_boundaries) : null
+    if (row) row.citation_metadata = row.citation_metadata ? JSON.parse(row.citation_metadata) : null
     return row || null
   },
 
   _findByIdFull(id) {
     const db = getDb()
     return db.prepare('SELECT * FROM reference_documents WHERE id = ?').get(id) || null
+  },
+
+  updateExtractedContent(id, { content_text, page_count, page_boundaries, citation_metadata }) {
+    const db = getDb()
+    const updates = []
+    const params = []
+
+    if (content_text !== undefined) {
+      updates.push('content_text = ?')
+      params.push(content_text)
+    }
+    if (page_count !== undefined) {
+      updates.push('page_count = ?')
+      params.push(page_count)
+    }
+    if (page_boundaries !== undefined) {
+      updates.push('page_boundaries = ?')
+      params.push(page_boundaries ? JSON.stringify(page_boundaries) : null)
+    }
+    if (citation_metadata !== undefined) {
+      updates.push('citation_metadata = ?')
+      params.push(citation_metadata ? JSON.stringify(citation_metadata) : null)
+    }
+
+    if (updates.length === 0) return this.findById(id)
+
+    params.push(id)
+    db.prepare(`UPDATE reference_documents SET ${updates.join(', ')} WHERE id = ?`).run(...params)
+    return this.findById(id)
   },
 
   update(id, { display_alias, notes }) {

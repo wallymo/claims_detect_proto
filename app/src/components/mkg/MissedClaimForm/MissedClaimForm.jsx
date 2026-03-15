@@ -32,7 +32,7 @@ export default function MissedClaimForm({
   return (
     <div className={styles.formContainer}>
       <div className={styles.header}>
-        <span className={styles.headerTitle}>Report Missed Claim</span>
+        <span className={styles.headerTitle}>Add Annotation</span>
         <span className={styles.headerMeta}>Page {position.page}</span>
       </div>
 
