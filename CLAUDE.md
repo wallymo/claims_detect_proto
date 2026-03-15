@@ -124,13 +124,13 @@ claims_detector/
 
 **OpenAI uses Responses API** — `client.responses.create()` with `input[]` array format, NOT `chat.completions.create()`.
 
-**MKG3 annotation pipeline:** Deterministic-first and page-local. Text extraction, superscript detection, slide/notes splitting, pin placement, and page-local reference matching should all be deterministic. AI is fallback-only for scanned or non-extractable pages. Optional AI QA remains separate and off by default.
+**MKG3 annotation pipeline:** Hybrid two-engine pipeline. pdf.js text layer handles speaker notes candidates and reference pool extraction (deterministic). Gemini Vision reads every slide image for annotated statements with proper layout-aware reading order and positions. Vision results replace text-layer slide candidates. Optional AI QA remains separate and off by default.
 
 **Database:** SQLite + WAL + `better-sqlite3` + `sqlite-vec`. Soft delete via `deleted_at` timestamp. 5 migrations auto-run on startup.
 
 **Document structure:** "Notes page" PDFs: slide region (top ~50%, y < 55%) and speaker notes (bottom ~50%, y > 55%). Same stat in both regions = 1 pin (dedup by design, do not try to force duplicates).
 
-**Deterministic-first rule:** For `/mkg3`, do not introduce AI for tasks the text layer can already solve. If a PDF has a usable text layer, use deterministic extraction and placement.
+**Hybrid pipeline rule:** For `/mkg3`, the text layer (pdf.js) owns speaker notes and reference pool extraction. Gemini Vision owns slide-region annotation extraction. Both are first-class engines, not fallbacks.
 
 ## Coding Conventions
 

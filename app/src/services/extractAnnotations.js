@@ -1,12 +1,12 @@
 /**
- * Deterministic Annotation Pipeline for MKG3
+ * Hybrid Annotation Pipeline for MKG3
  *
- * Extracts on-page references and maps them to content using pdf.js text layer.
- * Primary path is deterministic. Gemini Vision is used as a fallback for pages
- * where the text layer has reference footnotes but no superscripts (image-only slides).
+ * Two-engine pipeline: pdf.js text layer + Gemini Vision.
+ * - pdf.js: extracts speaker notes candidates, reference pools, page structure
+ * - Gemini Vision: reads every slide image for annotated statements with positions
  *
  * Pipeline: extractPageTextLines() → parseTextAnnotations()
- *           → [Gemini Vision for orphan pages] → buildTextOnlyAnnotations()
+ *           → Gemini Vision (all slide pages) → buildTextOnlyAnnotations()
  */
 
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
@@ -566,73 +566,20 @@ async function renderPageToBase64(pdfFile, pageNum) {
 }
 
 /**
- * Identify pages that need Gemini Vision for the slide region.
- * Two cases:
- *   1. "Orphan" — slide footnotes exist but no text-layer superscript candidates
- *   2. "Garbled" — text-layer candidates exist but look like infographic text
- *      read left-to-right across columns (multiple candidates share identical text)
- *
- * When Vision provides results for a garbled page, the old text-layer
- * candidates for that page are replaced.
- */
-function findPagesNeedingVision(textParsed) {
-  const pagesNeedingVision = new Set()
-
-  const footnotePages = Object.keys(textParsed.slideFootnotes).map(Number)
-
-  // Group slide candidates by page
-  const slideCandidatesByPage = new Map()
-  for (const c of textParsed.candidates) {
-    if (c.region !== 'slide') continue
-    if (!slideCandidatesByPage.has(c.page)) slideCandidatesByPage.set(c.page, [])
-    slideCandidatesByPage.get(c.page).push(c)
-  }
-
-  for (const pageNum of footnotePages) {
-    const pageCandidates = slideCandidatesByPage.get(pageNum)
-    const poolRefs = new Set(Object.keys(textParsed.slideFootnotes[pageNum] || {}))
-
-    // Case 1: No slide candidates at all → orphan
-    if (!pageCandidates || pageCandidates.length === 0) {
-      pagesNeedingVision.add(pageNum)
-      continue
-    }
-
-    // Case 2: Multiple candidates sharing identical text → garbled infographic
-    const textCounts = new Map()
-    for (const c of pageCandidates) {
-      const key = c.text.slice(0, 80)
-      textCounts.set(key, (textCounts.get(key) || 0) + 1)
-    }
-    const hasDuplicateText = [...textCounts.values()].some(count => count >= 2)
-    if (hasDuplicateText) {
-      pagesNeedingVision.add(pageNum)
-      continue
-    }
-
-    // Case 3: Footnote pool has refs that no candidate claims → partial orphan
-    const claimedRefs = new Set(
-      pageCandidates.flatMap(c => (c.refNumbers || []).map(String))
-    )
-    const unclaimedCount = [...poolRefs].filter(r => !claimedRefs.has(r)).length
-    if (unclaimedCount > 0 && poolRefs.size > 1) {
-      pagesNeedingVision.add(pageNum)
-    }
-  }
-
-  return [...pagesNeedingVision].sort((a, b) => a - b)
-}
-
-/**
- * For pages needing Vision, use Gemini to extract annotated statements from
- * the slide image — complete text with superscripts and positions.
- * For garbled pages, replaces the old text-layer candidates.
+ * Use Gemini Vision on every page to extract annotated statements from
+ * the slide image. Vision reads infographic layouts, charts, and multi-column
+ * content with proper reading order. Text-layer slide candidates are replaced
+ * by Vision results; notes candidates stay from the deterministic text layer.
  */
 async function enrichWithGeminiVision(pdfFile, pages, textParsed, onProgress) {
-  const visionPages = findPagesNeedingVision(textParsed)
+  // Vision scans every page that has a slide region (speaker notes boundary)
+  const visionPages = pages
+    .filter(p => p.hasSpeakerNotes && p.notesBoundaryY)
+    .map(p => p.pageNum)
+
   if (visionPages.length === 0) return 0
 
-  logger.info(`Gemini Vision: ${visionPages.length} pages to scan`, { visionPages })
+  logger.info(`Gemini Vision: scanning ${visionPages.length} slide pages`)
   let added = 0
 
   for (let i = 0; i < visionPages.length; i++) {
@@ -641,8 +588,8 @@ async function enrichWithGeminiVision(pdfFile, pages, textParsed, onProgress) {
     const notesBoundaryY = pageData?.notesBoundaryY || 50
     const slideFootnotes = textParsed.slideFootnotes[pageNum] || {}
 
-    const pct = 40 + Math.round((i / visionPages.length) * 25)
-    onProgress?.(pct, `Reading slide ${pageNum} with Gemini Vision...`)
+    const pct = 30 + Math.round((i / visionPages.length) * 35)
+    onProgress?.(pct, `Reading slide ${pageNum} of ${visionPages.length} with Gemini Vision...`)
 
     try {
       const imageBase64 = await renderPageToBase64(pdfFile, pageNum)
@@ -651,20 +598,10 @@ async function enrichWithGeminiVision(pdfFile, pages, textParsed, onProgress) {
       )
 
       if (annotations.length > 0) {
-        // Check if old candidates were garbled (duplicate text)
-        const oldSlideCandidates = textParsed.candidates.filter(
-          c => c.region === 'slide' && c.page === pageNum && c.source !== 'gemini-vision'
+        // Remove all text-layer slide candidates for this page — Vision replaces them
+        textParsed.candidates = textParsed.candidates.filter(
+          c => !(c.region === 'slide' && c.page === pageNum && c.source !== 'gemini-vision')
         )
-        const oldTexts = oldSlideCandidates.map(c => c.text.slice(0, 80))
-        const hasGarbled = oldTexts.some((t, i) => oldTexts.indexOf(t) !== i)
-
-        if (hasGarbled) {
-          // Garbled page: remove all old slide candidates, Vision replaces them
-          textParsed.candidates = textParsed.candidates.filter(
-            c => !(c.region === 'slide' && c.page === pageNum && c.source !== 'gemini-vision')
-          )
-        }
-        // Partial orphan: keep existing good candidates, just add Vision ones
       }
 
       for (const ann of annotations) {
@@ -709,21 +646,19 @@ export async function extractAnnotations(pdfFile, onProgress) {
     logger.warn('Document AI extraction failed, using pdf.js only', err.message)
   }
 
-  onProgress?.(30, 'Parsing references and candidates...')
+  onProgress?.(25, 'Parsing reference pools and notes candidates...')
   const textParsed = parseTextAnnotations(pages)
 
-  logger.info('extractAnnotations parsed', {
+  logger.info('Text layer parsed', {
     pages: pages.length,
-    candidates: textParsed.candidates.length,
+    notesCandidates: textParsed.candidates.filter(c => c.region === 'notes').length,
     slideFootnotePages: Object.keys(textParsed.slideFootnotes).length,
     notesReferencePages: Object.keys(textParsed.notesReferences).length
   })
 
-  // Gemini Vision fallback: scan orphan slide pages for superscripts
+  // Gemini Vision: scan every slide page for annotated statements
   const visionAdded = await enrichWithGeminiVision(pdfFile, pages, textParsed, onProgress)
-  if (visionAdded > 0) {
-    logger.info(`Gemini Vision added ${visionAdded} superscript candidates`)
-  }
+  logger.info(`Gemini Vision: ${visionAdded} slide annotations extracted`)
 
   onProgress?.(70, 'Building annotations...')
   const { annotations, annotationBindings, globalAnnotationCount } = buildTextOnlyAnnotations(textParsed)
