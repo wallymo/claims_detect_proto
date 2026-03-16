@@ -94,74 +94,61 @@ async function extractPageTextLines(pdfFile) {
     const fontFreq = {}
     for (const f of bodyFonts) fontFreq[f] = (fontFreq[f] || 0) + 1
     const bodyFontSize = Number(Object.entries(fontFreq).sort((a, b) => b[1] - a[1])[0]?.[0]) || 11
-    const superThreshold = bodyFontSize * 0.85
 
-    // Classify: body vs superscript. Includes Unicode superscript digits (Fix B).
-    const isSuper = (item) =>
-      item.fontSize <= superThreshold &&
-      /^(?:[\d,.\u00b7·\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+)$/.test(item.text.trim()) &&
-      !/^\d+\.$/.test(item.text.trim())
+    // ORIGINAL threshold (0.7) for speaker notes — proven stable
+    const notesThreshold = bodyFontSize * 0.7
+    // Wider threshold (0.85) for slide region — catches headline superscripts
+    const slideThreshold = bodyFontSize * 0.85
 
-    // Baseline-based superscript detection: same font size but positioned
-    // higher than neighboring text items on the same horizontal line.
-    // Groups items by approximate Y, then checks for digits that sit
-    // above the dominant baseline within their X neighborhood.
-    const isSuperByBaseline = (item, allItems) => {
-      // Must be pure digits
-      if (!/^[\d,.\-]+$/.test(item.text.trim())) return false
+    // Detect speaker notes boundary early (quick scan for "Speaker notes" text)
+    let earlyNotesBoundaryY = null
+    for (const item of items) {
+      if (/^speaker\s+notes?\s*$/i.test(item.text.trim())) {
+        earlyNotesBoundaryY = item.y
+        break
+      }
+    }
+
+    // Classify: body vs superscript. Use stricter threshold for notes, wider for slides.
+    const isSuper = (item) => {
+      const threshold = (earlyNotesBoundaryY && item.y > earlyNotesBoundaryY) ? notesThreshold : slideThreshold
+      return item.fontSize <= threshold &&
+        /^(?:[\d,.\u00b7·\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+)$/.test(item.text.trim()) &&
+        !/^\d+\.$/.test(item.text.trim())
+    }
+
+    // Baseline + local-context detection — SLIDE REGION ONLY
+    const isSuperBySlideContext = (item, allItems) => {
+      // Only apply enhanced detection in slide region
+      if (earlyNotesBoundaryY && item.y > earlyNotesBoundaryY) return false
+
+      if (!/^[\d,.\-\u00b7·\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+$/.test(item.text.trim())) return false
       if (/^\d+\.$/.test(item.text.trim())) return false
-      // Must not already be caught by font-size detection
-      if (item.fontSize <= superThreshold) return false
+      if (item.fontSize <= slideThreshold) return false // already caught
 
-      // Find neighboring items on a similar Y (within 2%)
       const neighbors = allItems.filter(other =>
         other !== item &&
         Math.abs(other.x - item.x) < 30 &&
-        Math.abs(other.y - item.y) < 3 &&
-        other.text.trim().length > 1 &&
-        !/^[\d,.]+$/.test(other.text.trim())
-      )
-      if (neighbors.length === 0) return false
-
-      // If this digit item sits above (lower Y value) the average neighbor baseline
-      // by at least 0.3%, it's likely a superscript
-      const avgNeighborY = neighbors.reduce((sum, n) => sum + n.y, 0) / neighbors.length
-      const yDelta = avgNeighborY - item.y
-      return yDelta > 0.3
-    }
-
-    const bodyItems = items.filter(i => !isSuper(i) && !isSuperByBaseline(i, items))
-    const superItems = items.filter(i => isSuper(i) || isSuperByBaseline(i, items))
-
-    // Pass 1b: Local-context superscript rescue for large-font regions (headlines).
-    // A digit item is a superscript if it's significantly smaller than nearby non-digit text,
-    // even if it's above the global threshold.
-    const localRescueIndices = []
-    for (let bi = bodyItems.length - 1; bi >= 0; bi--) {
-      const item = bodyItems[bi]
-      if (!/^[\d,.\u00b7·\u2070\u00b9\u00b2\u00b3\u2074-\u2079\-]+$/.test(item.text.trim())) continue
-      if (/^\d+\.$/.test(item.text.trim())) continue
-      if (item.fontSize <= superThreshold) continue
-
-      const neighbors = bodyItems.filter(other =>
-        other !== item &&
         Math.abs(other.y - item.y) < 5 &&
-        Math.abs(other.x - item.x) < 30 &&
         other.text.trim().length > 1 &&
         !/^[\d,.]+$/.test(other.text.trim()) &&
         other.fontSize > 0
       )
-      if (neighbors.length === 0) continue
+      if (neighbors.length === 0) return false
 
+      // Baseline check: digit sits above neighbors
+      const avgNeighborY = neighbors.reduce((sum, n) => sum + n.y, 0) / neighbors.length
+      if (avgNeighborY - item.y > 0.3) return true
+
+      // Local font ratio: digit is much smaller than its neighbors
       const maxNeighborFont = Math.max(...neighbors.map(n => n.fontSize))
-      if (item.fontSize / maxNeighborFont < 0.75) {
-        localRescueIndices.push(bi)
-      }
+      if (item.fontSize / maxNeighborFont < 0.75) return true
+
+      return false
     }
-    for (const bi of localRescueIndices) {
-      const [rescued] = bodyItems.splice(bi, 1)
-      superItems.push(rescued)
-    }
+
+    const bodyItems = items.filter(i => !isSuper(i) && !isSuperBySlideContext(i, items))
+    const superItems = items.filter(i => isSuper(i) || isSuperBySlideContext(i, items))
 
     const partsText = (parts) => parts.map(p => typeof p === 'string' ? p : p.text).join(' ').trim()
 
@@ -187,7 +174,7 @@ async function extractPageTextLines(pdfFile) {
           y: item.y, x: item.x, lastX: item.x, maxX: item.x,
           parts: [{ text: item.text, x: item.x }],
           superParts: [], superPositions: [],
-          hasBodyFont: item.fontSize >= superThreshold,
+          hasBodyFont: item.fontSize >= notesThreshold,
           maxFontSize: item.fontSize
         }
         lines.push(currentLine)
@@ -195,7 +182,7 @@ async function extractPageTextLines(pdfFile) {
         currentLine.parts.push({ text: item.text, x: item.x })
         currentLine.lastX = item.x
         if (item.x > currentLine.maxX) currentLine.maxX = item.x
-        if (item.fontSize >= superThreshold) currentLine.hasBodyFont = true
+        if (item.fontSize >= notesThreshold) currentLine.hasBodyFont = true
         if (item.fontSize > currentLine.maxFontSize) currentLine.maxFontSize = item.fontSize
       }
     }
@@ -293,8 +280,11 @@ async function extractPageTextLines(pdfFile) {
         extractTrailingCitationRefs(partsText(l.parts)).forEach(ref => refs.add(ref))
         // Path 3 (Fix A): Unicode superscript chars embedded in line text
         parseSuperscriptCitationRefs(partsText(l.parts)).forEach(ref => refs.add(ref))
-        // Path 4: Inline fused superscripts (e.g., "efficacy2", "outcomes1,2")
-        extractInlineFusedRefs(partsText(l.parts)).forEach(ref => refs.add(ref))
+        // Path 4: Inline fused superscripts — SLIDE REGION ONLY (notes are stable)
+        const isSlideRegionLine = !notesBoundaryY || l.y < notesBoundaryY
+        if (isSlideRegionLine) {
+          extractInlineFusedRefs(partsText(l.parts)).forEach(ref => refs.add(ref))
+        }
 
         const sortedRefs = [...refs].sort((a, b) => a - b)
         return {

@@ -1049,6 +1049,13 @@ export default function MKG2ClaimsDetector() {
     }
   }, [uploadedFile, selectedModel, selectedPrompt, editablePrompt, selectedDocType, selectedBrandId, referenceDocuments])
 
+  const forceReanalyzeRef = useRef(false)
+
+  const handleReanalyze = () => {
+    forceReanalyzeRef.current = true
+    handleAnalyze()
+  }
+
   const handleAnalyze = async () => {
     if (!uploadedFile) return
     cancelAnalysisRef.current = false
@@ -1198,7 +1205,10 @@ export default function MKG2ClaimsDetector() {
         const fileHash = await getFileSha256(uploadedFile)
         setDocumentHash(fileHash)
 
-        const existingVersion = await api.getLatestVersion(fileHash)
+        const skipVersionLoad = forceReanalyzeRef.current
+        forceReanalyzeRef.current = false
+
+        const existingVersion = !skipVersionLoad ? await api.getLatestVersion(fileHash) : null
         if (existingVersion) {
           const savedAnnotations = JSON.parse(existingVersion.annotations_json)
             .map(c => ({ ...c, status: c.status || 'pending' }))
@@ -2416,6 +2426,11 @@ export default function MKG2ClaimsDetector() {
               {ANALYSIS_CACHE_ENABLED && hasCachedResult && !isAnalyzing && (
                 <button className="reanalyzeLink" onClick={handleConfirmReanalyze}>
                   Re-analyze from scratch
+                </button>
+              )}
+              {currentVersion && !isAnalyzing && (
+                <button className="reanalyzeLink" onClick={handleReanalyze}>
+                  Re-analyze (skip saved version)
                 </button>
               )}
 
