@@ -12,6 +12,7 @@ export default function MKGClaimCard({
   onReject,
   onRemove,
   onDelete,
+  onUndo,
   onRefChange,
   onSelect,
   onViewRef,
@@ -168,6 +169,24 @@ export default function MKGClaimCard({
     <div className={cardClassName} onClick={handleCardClick}>
       {/* Header with confidence */}
       <div className={styles.header}>
+        {!isMissed && (
+          <div className={styles.cardActions}>
+            <button
+              className={styles.undoBtn}
+              onClick={(e) => { e.stopPropagation(); onUndo?.(claim.id) }}
+              title={claim.status !== 'pending' ? 'Undo — reset to pending' : 'Undo changes'}
+            >
+              <Icon name="refreshCw" size={12} />
+            </button>
+            <button
+              className={styles.deleteBtn}
+              onClick={handleDelete}
+              title="Remove annotation"
+            >
+              <Icon name="trash" size={12} />
+            </button>
+          </div>
+        )}
         {isMissed ? (
           <div className={styles.missedLabel}>
             <Icon name="alertCircle" size={14} />
@@ -365,28 +384,13 @@ export default function MKGClaimCard({
         </div>
       ) : claim.status === 'pending' && !showFeedback ? (
         <div className={styles.actions}>
-          <Button
-            variant="ghost"
-            size="small"
-            onClick={handleApprove}
-          >
-            <Icon name="thumbsUp" size={16} />
+          <button className={styles.approveBtn} onClick={handleApprove}>
+            <Icon name="thumbsUp" size={14} />
             Approve
-          </Button>
-          <Button
-            variant="ghost"
-            size="small"
-            onClick={handleReject}
-          >
-            <Icon name="thumbsDown" size={16} />
+          </button>
+          <button className={styles.rejectBtn} onClick={handleReject}>
+            <Icon name="thumbsDown" size={14} />
             Reject
-          </Button>
-          <button
-            className={styles.deleteBtn}
-            onClick={handleDelete}
-            title="Remove annotation"
-          >
-            <Icon name="trash" size={14} />
           </button>
         </div>
       ) : null}

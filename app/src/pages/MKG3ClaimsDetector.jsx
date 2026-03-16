@@ -217,6 +217,7 @@ function normalizeAnnotationClaim(item) {
     region,
     page,
     position,
+    status: item.status || 'pending',
     annotationBinding
   }
 }
@@ -1200,6 +1201,7 @@ export default function MKG2ClaimsDetector() {
         const existingVersion = await api.getLatestVersion(fileHash)
         if (existingVersion) {
           const savedAnnotations = JSON.parse(existingVersion.annotations_json)
+            .map(c => ({ ...c, status: c.status || 'pending' }))
           setClaims(savedAnnotations)
           setCurrentVersion(existingVersion)
           const allVersions = await api.listVersions(fileHash)
@@ -1238,6 +1240,7 @@ export default function MKG2ClaimsDetector() {
                     // Carry forward annotations from the matched document
                     const carriedAnnotations = storedAnnotations.map(ann => ({
                       ...ann,
+                      status: ann.status || 'pending',
                       carried: true,
                       carriedFrom: existingDoc.document_hash
                     }))
@@ -1339,6 +1342,7 @@ export default function MKG2ClaimsDetector() {
       const version = await api.getVersionByNumber(documentHash, versionNumber)
       if (version) {
         const savedAnnotations = JSON.parse(version.annotations_json)
+          .map(c => ({ ...c, status: c.status || 'pending' }))
         setClaims(savedAnnotations)
         setCurrentVersion(version)
         setHasUnsavedChanges(false)
@@ -1621,6 +1625,13 @@ export default function MKG2ClaimsDetector() {
     setClaims(prev => prev.filter(c => c.id !== claimId))
     setHasUnsavedChanges(true)
     logger.info({ event: 'annotation_deleted', claimId })
+  }, [])
+
+  const handleClaimUndo = useCallback((claimId) => {
+    setClaims(prev => prev.map(c =>
+      c.id === claimId ? { ...c, status: 'pending', rejectionType: undefined, correctedReferenceName: undefined } : c
+    ))
+    setHasUnsavedChanges(true)
   }, [])
 
   const handleRefChange = useCallback((claimId, updatedRefs) => {
@@ -2653,42 +2664,6 @@ export default function MKG2ClaimsDetector() {
             <div className="claimsPanelBody">
               {rightPanelTab === 0 ? (
                 <>
-                  {/* Matching status bar */}
-                  {analysisComplete ? (
-                    <div className="matchingStatusBar">
-                      {matchingStats ? (
-                        <>
-                          <Icon name="gitCompare" size={14} />
-                          <span>Matched {claimSummary.onPageCount} of {claimSummary.total} claims</span>
-                          {ANALYSIS_CACHE_ENABLED && cacheHit && (
-                            <span
-                              className="matchingCacheBadge"
-                              title="Match metrics restored from cached analysis"
-                            >
-                              Cached match
-                            </span>
-                          )}
-                        </>
-                      ) : (
-                        <>
-                          <Icon name="zap" size={14} />
-                          <span>{ANALYSIS_CACHE_ENABLED && cacheHit ? `Cached · ${formatTimeAgo(cacheHit.ts)}` : `${claims.length} claims detected`}</span>
-                        </>
-                      )}
-                    </div>
-                  ) : null}
-
-                  {/* Training Status Banner */}
-                  {analysisComplete && (
-                    <TrainingStatusBanner
-                      trainingExamples={trainingExamples}
-                      ecosystemExampleCount={ecosystemTrainingExamples.length}
-                      ecosystemBrandCount={ecosystemTrainingBrandCount}
-                      trainingDocumentCount={trainingDocumentCount}
-                      analysisComplete={analysisComplete}
-                    />
-                  )}
-
                   {analysisComplete && (
                     <div className="claimsFilterBar">
                       <div className="statusToggleGroup">
@@ -2802,6 +2777,7 @@ export default function MKG2ClaimsDetector() {
                                     onSelect={() => handleClaimSelect(claim.id)}
                                     onViewRef={handleViewRef}
                                     onDelete={handleClaimDelete}
+                                    onUndo={handleClaimUndo}
                                     onRefChange={handleRefChange}
                                     brandReferences={referenceDocuments}
                                     trainingExamples={trainingExamples}
@@ -2824,6 +2800,7 @@ export default function MKG2ClaimsDetector() {
                           onSelect={() => handleClaimSelect(claim.id)}
                           onViewRef={handleViewRef}
                           onDelete={handleClaimDelete}
+                                    onUndo={handleClaimUndo}
                           onRefChange={handleRefChange}
                           brandReferences={referenceDocuments}
                           trainingExamples={trainingExamples}
