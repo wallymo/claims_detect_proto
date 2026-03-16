@@ -555,10 +555,27 @@ function parseTextAnnotations(pages) {
       const slideAlpha = text.replace(/[^a-zA-Z]/g, '')
       if (slideAlpha.length < 4) continue
 
+      // Filter refs: if suspect chart noise (> 2 refs), keep only refs that exist in the footnote pool.
+      // Real pharma annotations rarely have more than 2-3 refs per statement.
+      // If none match the pool, skip entirely — it's chart noise, not a real annotation.
+      let slideRefs = [...line.refs]
+      const poolKeys = Object.keys(slidePool)
+      if (slideRefs.length > 2 && poolKeys.length > 0) {
+        const poolSet = new Set(poolKeys.map(k => Number(k)))
+        const poolRefs = slideRefs.filter(r => poolSet.has(r))
+        if (poolRefs.length > 0) {
+          slideRefs = poolRefs
+        } else {
+          // No pool matches at all — skip (chart noise)
+          continue
+        }
+      }
+      if (slideRefs.length === 0) continue
+
       result.candidates.push({
         text: stripSuperscripts(text),
         region: 'slide',
-        refNumbers: [...line.refs],
+        refNumbers: slideRefs,
         page: pageNum,
         pdfJsY: startY,
         pdfJsX: startX
