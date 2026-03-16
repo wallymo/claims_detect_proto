@@ -1964,16 +1964,21 @@ export async function refineSlidePositions(imageBase64, pageNum, candidates, not
 I have already identified these annotated statements on the slide:
 ${statementsForVision}
 
-Your task: For EACH statement listed above, find where it appears on the slide image and return the x,y coordinates of its FIRST WORD.
+Your task: For EACH statement listed above, find where it appears on the slide image and return:
+1. The x,y coordinates of its FIRST WORD
+2. The CLEAN statement text as it actually appears on the slide (the text I provided may be garbled from PDF extraction — fix it to match what you see visually)
 
 For each statement, return:
 - index: The statement number from my list (1-based)
 - x: Horizontal position of the FIRST WORD as % of page width (0=left, 100=right)
 - y: Vertical position of the FIRST WORD as % of page height (0=top, 100=bottom)
+- cleanText: The statement text as it visually appears on the slide (up to 150 chars). Read it naturally from the layout — do NOT concatenate text from different visual sections.
 
 Rules:
 - Only look in the slide region (y < ${Math.round(notesBoundaryY)})
 - Place coordinates at the START of the statement text, not the center or end
+- cleanText should be the natural phrase the superscript is attached to, as a human would read it
+- If text is inside a callout box, chart label, or caption, read ONLY that element
 - If you cannot find a statement on the slide, omit it from the results
 - Return an empty array if none are found`
 
@@ -1987,7 +1992,8 @@ Rules:
           properties: {
             index: { type: 'integer' },
             x: { type: 'number' },
-            y: { type: 'number' }
+            y: { type: 'number' },
+            cleanText: { type: 'string' }
           },
           required: ['index', 'x', 'y']
         }

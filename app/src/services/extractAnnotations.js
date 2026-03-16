@@ -708,13 +708,17 @@ async function enrichWithGeminiVision(pdfFile, pages, textParsed, onProgress) {
         imageBase64, pageNum, slideCandidates, notesBoundaryY
       )
 
-      // Apply refined positions to text-layer candidates
+      // Apply refined positions + clean text to text-layer candidates
       for (const pos of positions) {
         const candidate = slideCandidates[pos.index - 1]
         if (candidate) {
           candidate.pdfJsX = pos.x
           candidate.pdfJsY = pos.y
           candidate.source = 'vision-refined'
+          // Vision provides clean statement text (fixes garbled chart text extraction)
+          if (pos.cleanText && pos.cleanText.trim().length > 5) {
+            candidate.text = pos.cleanText.trim().slice(0, 150)
+          }
           refined++
         }
       }
