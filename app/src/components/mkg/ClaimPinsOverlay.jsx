@@ -126,17 +126,40 @@ export default function ClaimPinsOverlay({
   panOffset = { x: 0, y: 0 },
   scale = 1,
   onClaimSelect,
+  onClaimPositionUpdate,
   claimsPanelRef,  // Ref to the claims panel for connector positioning
   showBoxes = false
 }) {
   const canvasRef = useRef(null)
   const svgRef = useRef(null)
   const [hoveredDot, setHoveredDot] = useState(null)
+  const [dragging, setDragging] = useState(null)
+  const dragOffsetRef = useRef(null)
 
   // Filter claims for current page and compute pixel positions
   const dots = claims
     .filter(claim => Number(claim.page) === currentPage && claim.position)
     .map(claim => {
+      // Manual-drag pins bypass all lane/content-type/anchor logic
+      if (claim.position?.source === 'manual-drag') {
+        const x = clamp((Number(claim.position.x) / 100) * canvasDimensions.width, DOT_RADIUS_ACTIVE, canvasDimensions.width - DOT_RADIUS_ACTIVE)
+        const y = clamp((Number(claim.position.y) / 100) * canvasDimensions.height, DOT_RADIUS_ACTIVE, canvasDimensions.height - DOT_RADIUS_ACTIVE)
+        return {
+          id: claim.id,
+          x,
+          y,
+          contentType: claim.contentType,
+          centerXPct: Number(claim.position.x) || 0,
+          centerYPct: Number(claim.position.y) || 0,
+          boxWidthPct: 0,
+          boxHeightPct: 0,
+          confidence: claim.confidence,
+          text: claim.text,
+          label: labelFromClaim(claim),
+          positionSource: 'manual-drag'
+        }
+      }
+
       const usePositionX = claim.position?.source === 'coarse-slide-anchor' || Boolean(claim.position?.lane)
       const centerXPct = usePositionX
         ? (Number(claim.position?.x) || 0)
@@ -150,7 +173,7 @@ export default function ClaimPinsOverlay({
       const boxHeightPct = Number(claim.position.height) || 0
 
       const anchor = computeAnchor(
-        { centerXPct, centerYPct, boxWidthPct, boxHeightPct },
+        { centerXPct, centerYPct, boxWidthPct, boxHeightPct, contentType: claim.contentType },
         canvasDimensions
       )
 
@@ -307,7 +330,7 @@ export default function ClaimPinsOverlay({
       ctx.fillText(dot.label, dot.x, dot.y)
       ctx.restore()
     })
-  }, [displayDots, missedDots, activeClaimId, hoveredDot, canvasDimensions])
+  }, [displayDots, missedDots, activeClaimId, hoveredDot, canvasDimensions, dragging])
 
   // Draw connector SVG
   useEffect(() => {
@@ -398,21 +421,72 @@ export default function ClaimPinsOverlay({
     return closestDist <= DOT_RADIUS + 8 ? closest : null
   }, [displayDots, missedDots])
 
-  const handleCanvasClick = useCallback((e) => {
+  const handleCanvasMouseDown = useCallback((e) => {
     const dot = findDotAt(e.clientX, e.clientY)
-    if (dot) {
+    if (!dot) return
+
+    // Stop propagation so PDFViewer's pan handler doesn't fire
+    e.stopPropagation()
+
+    if (dot.id === activeClaimId && onClaimPositionUpdate) {
+      e.preventDefault()
+      const canvas = canvasRef.current
+      const rect = canvas.getBoundingClientRect()
+      const mouseX = e.clientX - rect.left
+      const mouseY = e.clientY - rect.top
+      const claim = claims.find(c => c.id === dot.id)
+      dragOffsetRef.current = { dx: mouseX - dot.x, dy: mouseY - dot.y }
+      setDragging({
+        id: dot.id,
+        origXPct: claim?.position?.x ?? (dot.centerXPct || 0),
+        origYPct: claim?.position?.y ?? (dot.centerYPct || 0)
+      })
+    } else {
       onClaimSelect?.(dot.id)
     }
-  }, [findDotAt, onClaimSelect])
+  }, [findDotAt, activeClaimId, onClaimPositionUpdate, onClaimSelect, claims])
 
   const handleCanvasMouseMove = useCallback((e) => {
+    if (dragging) {
+      e.stopPropagation()
+      const canvas = canvasRef.current
+      if (!canvas) return
+      const rect = canvas.getBoundingClientRect()
+      const mouseX = e.clientX - rect.left - (dragOffsetRef.current?.dx || 0)
+      const mouseY = e.clientY - rect.top - (dragOffsetRef.current?.dy || 0)
+      const newXPct = clamp((mouseX / canvasDimensions.width) * 100, 1, 99)
+      const newYPct = clamp((mouseY / canvasDimensions.height) * 100, 1, 99)
+      onClaimPositionUpdate?.(dragging.id, { x: newXPct, y: newYPct }, false)
+      return
+    }
     const dot = findDotAt(e.clientX, e.clientY)
     setHoveredDot(dot?.id || null)
-  }, [findDotAt])
+  }, [dragging, findDotAt, canvasDimensions, onClaimPositionUpdate])
+
+  const handleCanvasMouseUp = useCallback((e) => {
+    if (dragging) {
+      e.stopPropagation()
+      const canvas = canvasRef.current
+      if (!canvas) return
+      const rect = canvas.getBoundingClientRect()
+      const mouseX = e.clientX - rect.left - (dragOffsetRef.current?.dx || 0)
+      const mouseY = e.clientY - rect.top - (dragOffsetRef.current?.dy || 0)
+      const newXPct = clamp((mouseX / canvasDimensions.width) * 100, 1, 99)
+      const newYPct = clamp((mouseY / canvasDimensions.height) * 100, 1, 99)
+      onClaimPositionUpdate?.(dragging.id, { x: newXPct, y: newYPct }, true)
+      setDragging(null)
+      dragOffsetRef.current = null
+    }
+  }, [dragging, canvasDimensions, onClaimPositionUpdate])
 
   const handleCanvasMouseLeave = useCallback(() => {
+    if (dragging) {
+      onClaimPositionUpdate?.(dragging.id, { x: dragging.origXPct, y: dragging.origYPct }, true)
+      setDragging(null)
+      dragOffsetRef.current = null
+    }
     setHoveredDot(null)
-  }, [])
+  }, [dragging, onClaimPositionUpdate])
 
   if (canvasDimensions.width === 0 || canvasDimensions.height === 0) {
     return null
@@ -438,12 +512,13 @@ export default function ClaimPinsOverlay({
       )}
       <canvas
         ref={canvasRef}
-        className={`${styles.dotsCanvas} ${hoveredDot ? styles.hasHover : ''}`}
+        className={`${styles.dotsCanvas} ${hoveredDot ? styles.hasHover : ''} ${dragging ? styles.isDragging : ''} ${hoveredDot === activeClaimId && !dragging ? styles.canGrab : ''}`}
         style={{
           transform: `translate(${panOffset.x}px, ${panOffset.y}px)`
         }}
-        onClick={handleCanvasClick}
+        onMouseDown={handleCanvasMouseDown}
         onMouseMove={handleCanvasMouseMove}
+        onMouseUp={handleCanvasMouseUp}
         onMouseLeave={handleCanvasMouseLeave}
       />
       <svg

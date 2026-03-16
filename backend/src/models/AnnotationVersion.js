@@ -1,0 +1,46 @@
+import { getDb } from '../config/database.js'
+
+export class AnnotationVersion {
+  static create({ document_hash, brand_id = null, document_name, annotations_json, source = 'ai', parent_version_id = null, created_by = 'reviewer' }) {
+    const db = getDb()
+
+    // Auto-increment version_number per document
+    const latest = db.prepare(
+      'SELECT MAX(version_number) as max_version FROM annotation_versions WHERE document_hash = ?'
+    ).get(document_hash)
+    const version_number = (latest?.max_version || 0) + 1
+
+    const stmt = db.prepare(`
+      INSERT INTO annotation_versions (document_hash, brand_id, version_number, document_name, annotations_json, source, parent_version_id, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    const result = stmt.run(document_hash, brand_id, version_number, document_name, annotations_json, source, parent_version_id, created_by)
+    return this.findById(result.lastInsertRowid)
+  }
+
+  static findById(id) {
+    const db = getDb()
+    return db.prepare('SELECT * FROM annotation_versions WHERE id = ?').get(id) || null
+  }
+
+  static findLatestByHash(documentHash) {
+    const db = getDb()
+    return db.prepare(
+      'SELECT * FROM annotation_versions WHERE document_hash = ? ORDER BY version_number DESC LIMIT 1'
+    ).get(documentHash) || null
+  }
+
+  static findAllByHash(documentHash) {
+    const db = getDb()
+    return db.prepare(
+      'SELECT id, document_hash, brand_id, version_number, document_name, source, parent_version_id, created_by, created_at FROM annotation_versions WHERE document_hash = ? ORDER BY version_number DESC'
+    ).all(documentHash)
+  }
+
+  static findByHashAndVersion(documentHash, versionNumber) {
+    const db = getDb()
+    return db.prepare(
+      'SELECT * FROM annotation_versions WHERE document_hash = ? AND version_number = ?'
+    ).get(documentHash, versionNumber) || null
+  }
+}

@@ -37,6 +37,7 @@ import { enrichClaimsWithPositions, alignClaimsToSlideLayout, addGlobalIndices }
 import { dedupeClaimsByPageAndText } from '@/utils/claimDedup'
 import { summarizeAnnotationClaims } from '@/utils/annotationSummary'
 import { matchCitationToLibrary } from '@/utils/citationLibraryMatcher'
+import { comparePages, CARRY_FORWARD_THRESHOLD } from '@/services/textSimilarity'
 import { logger } from '@/utils/logger'
 import { charOffsetToPage, parseCitationPageRange, resolveCitationPdfPage } from '@/utils/referenceViewerHints'
 
@@ -474,6 +475,10 @@ export default function MKG2ClaimsDetector() {
   const [sortOrder, setSortOrder] = useState('annotation')
   const [collapsedPages, setCollapsedPages] = useState({})
   const [showClaimPins, setShowClaimPins] = useState(true)
+  const [currentVersion, setCurrentVersion] = useState(null)
+  const [versionList, setVersionList] = useState([])
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [documentHash, setDocumentHash] = useState(null)
   const [isConfigPanelCollapsed, setIsConfigPanelCollapsed] = useState(false)
 
   // Missed claim reporting state
@@ -971,6 +976,10 @@ export default function MKG2ClaimsDetector() {
     setMissedClaims([])
     setSelectionMode(false)
     setPendingPinPosition(null)
+    setCurrentVersion(null)
+    setVersionList([])
+    setHasUnsavedChanges(false)
+    setDocumentHash(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -1159,6 +1168,59 @@ export default function MKG2ClaimsDetector() {
       setAnalysisStatus('Annotations complete')
       setAnalysisComplete(true)
       setMatchingComplete(true)
+
+      // Auto-save v1 / load existing version
+      try {
+        const fileHash = await getFileSha256(uploadedFile)
+        setDocumentHash(fileHash)
+
+        // Fetch brand patterns for prompt hints
+        let brandHints = ''
+        if (selectedBrandId) {
+          try {
+            const patterns = await api.getBrandPatterns(selectedBrandId)
+            if (patterns.length > 0) {
+              const hints = patterns
+                .filter(p => p.pattern_type === 'ref_association' && p.strength >= 2)
+                .slice(0, 10)
+                .map(p => {
+                  const data = JSON.parse(p.pattern_json)
+                  return `"${data.reference}" is commonly cited for claims like "${data.claim_text}"`
+                })
+              if (hints.length > 0) {
+                brandHints = '\n\nBrand-specific reference patterns from reviewer feedback:\n' + hints.join('\n')
+                logger.info({ event: 'brand_hints_loaded', count: hints.length, brand_id: selectedBrandId })
+              }
+            }
+          } catch (hintErr) {
+            logger.error('Brand pattern fetch error:', hintErr)
+          }
+        }
+
+        const existingVersion = await api.getLatestVersion(fileHash)
+        if (existingVersion) {
+          const savedAnnotations = JSON.parse(existingVersion.annotations_json)
+          setClaims(savedAnnotations)
+          setCurrentVersion(existingVersion)
+          const allVersions = await api.listVersions(fileHash)
+          setVersionList(allVersions)
+          logger.info({ event: 'version_loaded', version: existingVersion.version_number, hash: fileHash })
+        } else {
+          const saved = await api.saveAnnotationVersion({
+            document_hash: fileHash,
+            brand_id: selectedBrandId || null,
+            document_name: uploadedFile.name,
+            annotations_json: JSON.stringify(indexedClaims),
+            source: 'ai'
+          })
+          setCurrentVersion(saved)
+          setVersionList([saved])
+          logger.info({ event: 'version_saved', version: 1, hash: fileHash })
+        }
+      } catch (versionErr) {
+        logger.error('Version save error:', versionErr)
+      }
+
       setIsAnalyzing(false)
 
       logger.info({
@@ -1173,6 +1235,42 @@ export default function MKG2ClaimsDetector() {
       logger.error('Annotation error:', error)
       setAnalysisError(error.message)
       setIsAnalyzing(false)
+    }
+  }
+
+  const handleSaveVersion = async () => {
+    if (!documentHash || claims.length === 0) return
+    try {
+      const saved = await api.saveAnnotationVersion({
+        document_hash: documentHash,
+        brand_id: selectedBrandId || null,
+        document_name: uploadedFile.name,
+        annotations_json: JSON.stringify(claims),
+        source: 'manual',
+        parent_version_id: currentVersion?.id || null
+      })
+      setCurrentVersion(saved)
+      setVersionList(prev => [saved, ...prev])
+      setHasUnsavedChanges(false)
+      logger.info({ event: 'version_saved', version: saved.version_number })
+    } catch (err) {
+      logger.error('Save version error:', err)
+    }
+  }
+
+  const handleLoadVersion = async (versionNumber) => {
+    if (!documentHash) return
+    try {
+      const version = await api.getVersionByNumber(documentHash, versionNumber)
+      if (version) {
+        const savedAnnotations = JSON.parse(version.annotations_json)
+        setClaims(savedAnnotations)
+        setCurrentVersion(version)
+        setHasUnsavedChanges(false)
+        logger.info({ event: 'version_loaded', version: version.version_number })
+      }
+    } catch (err) {
+      logger.error('Load version error:', err)
     }
   }
 
@@ -1289,6 +1387,7 @@ export default function MKG2ClaimsDetector() {
 
   const handleClaimApprove = (claimId) => {
     setClaims(prev => prev.map(c => c.id === claimId ? { ...c, status: 'approved' } : c))
+    setHasUnsavedChanges(true)
     const claim = claims.find(c => c.id === claimId)
     if (!claim) return
 
@@ -1316,6 +1415,24 @@ export default function MKG2ClaimsDetector() {
       decision: 'approved',
       confidence_score: claim.confidence
     }).catch(err => logger.error('Feedback save error:', err))
+
+    // Record brand pattern (implicit learning)
+    if (selectedBrandId && claim.references?.length > 0) {
+      claim.references.forEach(ref => {
+        if (ref.text) {
+          api.recordBrandPattern({
+            brand_id: selectedBrandId,
+            pattern_type: 'ref_association',
+            pattern_json: JSON.stringify({
+              reference: ref.text,
+              claim_text: claim.text?.substring(0, 100),
+              action: 'approved'
+            }),
+            strength_delta: 1
+          }).catch(err => logger.error('Pattern record error:', err))
+        }
+      })
+    }
   }
 
   const handleClaimReject = (claimId, { rejectionType, correctedReferenceId } = {}) => {
@@ -1333,6 +1450,7 @@ export default function MKG2ClaimsDetector() {
           }
         : c
     ))
+    setHasUnsavedChanges(true)
 
     const claim = claims.find(c => c.id === claimId)
     if (!claim) return
@@ -1384,7 +1502,59 @@ export default function MKG2ClaimsDetector() {
       corrected_reference_id: correctedReferenceId || null,
       confidence_score: claim.confidence
     }).catch(err => logger.error('Feedback save error:', err))
+
+    // Record negative brand pattern (implicit learning)
+    if (selectedBrandId && claim.references?.length > 0) {
+      claim.references.forEach(ref => {
+        if (ref.text) {
+          api.recordBrandPattern({
+            brand_id: selectedBrandId,
+            pattern_type: 'ref_association',
+            pattern_json: JSON.stringify({
+              reference: ref.text,
+              claim_text: claim.text?.substring(0, 100),
+              action: 'rejected'
+            }),
+            strength_delta: -1
+          }).catch(err => logger.error('Pattern record error:', err))
+        }
+      })
+    }
   }
+
+  const handleClaimPositionUpdate = useCallback((claimId, newPosition, isFinal) => {
+    setClaims(prev => prev.map(c =>
+      c.id === claimId
+        ? {
+            ...c,
+            position: {
+              ...c.position,
+              x: newPosition.x,
+              y: newPosition.y,
+              source: 'manual-drag'
+            }
+          }
+        : c
+    ))
+    if (isFinal) {
+      setHasUnsavedChanges(true)
+      logger.info({ event: 'pin_moved', claimId, x: newPosition.x, y: newPosition.y })
+    }
+  }, [])
+
+  const handleClaimDelete = useCallback((claimId) => {
+    setClaims(prev => prev.filter(c => c.id !== claimId))
+    setHasUnsavedChanges(true)
+    logger.info({ event: 'annotation_deleted', claimId })
+  }, [])
+
+  const handleRefChange = useCallback((claimId, updatedRefs) => {
+    setClaims(prev => prev.map(c =>
+      c.id === claimId ? { ...c, references: updatedRefs } : c
+    ))
+    setHasUnsavedChanges(true)
+    logger.info({ event: 'reference_changed', claimId, refCount: updatedRefs.length })
+  }, [])
 
   const handleClaimSelect = (claimId) => {
     setActiveClaimId(claimId)
@@ -1539,7 +1709,7 @@ export default function MKG2ClaimsDetector() {
   const handlePinPlace = (position) => {
     setPendingPinPosition(position)
     setSelectionMode(false)
-    setTextSelectionMode(true)
+    setTextSelectionMode(false)
   }
 
   const handleTextSelected = (text) => {
@@ -1567,6 +1737,7 @@ export default function MKG2ClaimsDetector() {
     }
 
     setMissedClaims(prev => [...prev, missedClaim])
+    setHasUnsavedChanges(true)
     setPendingPinPosition(null)
     setPendingSupportingText('')
     setTextSelectionMode(false)
@@ -1954,6 +2125,35 @@ export default function MKG2ClaimsDetector() {
               <span className="trainingBadgeDot" />
             )}
           </button>
+          {currentVersion && (
+            <div className="versionNavGroup">
+              <span className="versionBadge" title={`Saved ${currentVersion.created_at}`}>
+                v{currentVersion.version_number}
+              </span>
+              {versionList.length > 1 && (
+                <select
+                  className="versionSelect"
+                  value={currentVersion.version_number}
+                  onChange={(e) => handleLoadVersion(parseInt(e.target.value, 10))}
+                >
+                  {versionList.map(v => (
+                    <option key={v.id} value={v.version_number}>
+                      v{v.version_number} — {v.source === 'ai' ? 'AI' : 'Edit'} — {new Date(v.created_at).toLocaleDateString()}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <button
+                className="saveVersionBtn"
+                onClick={handleSaveVersion}
+                disabled={!hasUnsavedChanges}
+                title={hasUnsavedChanges ? 'Save as new version' : 'No changes'}
+              >
+                <Icon name="fileCheck" size={14} />
+                Save
+              </button>
+            </div>
+          )}
           <ThemeToggle />
         </div>
       </div>
@@ -2314,6 +2514,7 @@ export default function MKG2ClaimsDetector() {
               missedClaims={displayMissedClaims}
               activeClaimId={activeClaimId}
               onClaimSelect={handleClaimSelect}
+              onClaimPositionUpdate={handleClaimPositionUpdate}
               onTextExtracted={handleTextExtracted}
               claimsPanelRef={claimsPanelRef}
               showPins={showClaimPins}
@@ -2525,6 +2726,8 @@ export default function MKG2ClaimsDetector() {
                                     onReject={handleClaimReject}
                                     onSelect={() => handleClaimSelect(claim.id)}
                                     onViewRef={handleViewRef}
+                                    onDelete={handleClaimDelete}
+                                    onRefChange={handleRefChange}
                                     brandReferences={referenceDocuments}
                                     trainingExamples={trainingExamples}
                                   />
@@ -2545,6 +2748,8 @@ export default function MKG2ClaimsDetector() {
                           onReject={handleClaimReject}
                           onSelect={() => handleClaimSelect(claim.id)}
                           onViewRef={handleViewRef}
+                          onDelete={handleClaimDelete}
+                          onRefChange={handleRefChange}
                           brandReferences={referenceDocuments}
                           trainingExamples={trainingExamples}
                         />

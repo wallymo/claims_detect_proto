@@ -1032,3 +1032,74 @@ html, body {
   background: var(--color-text-secondary);
   color: white;
 }
+
+/* ===== Annotation Versioning ===== */
+
+.trainingVersionRow {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.trainingVersionRow > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.versionNavGroup {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--blue-3);
+  border-radius: 6px;
+  background: var(--blue-1);
+}
+
+.versionControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.versionBadge {
+  background: var(--blue-3);
+  color: var(--blue-11);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.versionSelect {
+  font-size: 12px;
+  padding: 2px 6px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 4px;
+  background: var(--color-background-primary);
+  color: var(--color-text-primary);
+}
+
+.saveVersionBtn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--green-7);
+  border-radius: 4px;
+  background: var(--green-3);
+  color: var(--green-11);
+  cursor: pointer;
+}
+
+.saveVersionBtn:hover:not(:disabled) {
+  background: var(--green-4);
+}
+
+.saveVersionBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

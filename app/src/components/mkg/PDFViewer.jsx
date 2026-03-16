@@ -26,6 +26,7 @@ export default function PDFViewer({
   missedClaims = [],
   activeClaimId = null,
   onClaimSelect,
+  onClaimPositionUpdate,
   claimsPanelRef,
   onTextExtracted,
   showPins = true,
@@ -356,6 +357,7 @@ export default function PDFViewer({
                   panOffset={{ x: 0, y: 0 }}
                   scale={scale}
                   onClaimSelect={onClaimSelect}
+                  onClaimPositionUpdate={onClaimPositionUpdate}
                   claimsPanelRef={claimsPanelRef}
                   showBoxes={showBoxes}
                 />
@@ -372,15 +374,7 @@ export default function PDFViewer({
           </>
         )}
 
-        {/* Selection mode banner */}
-        {selectionMode && (
-          <div className={styles.selectionBanner}>
-            <span>Click on the document to mark the missed claim location</span>
-            <Button variant="ghost" size="small" onClick={() => onSelectionModeToggle?.(false)}>
-              Cancel
-            </Button>
-          </div>
-        )}
+        {/* Selection mode — crosshairs only, no banner */}
 
         {/* Scanner overlay */}
         <ScannerOverlay

@@ -11,6 +11,8 @@ export default function MKGClaimCard({
   onApprove,
   onReject,
   onRemove,
+  onDelete,
+  onRefChange,
   onSelect,
   onViewRef,
   brandReferences = [],
@@ -20,6 +22,7 @@ export default function MKGClaimCard({
   const [rejectionType, setRejectionType] = useState('false_positive')
   const [refSearch, setRefSearch] = useState('')
   const [selectedRefId, setSelectedRefId] = useState(null)
+  const [showRefEditor, setShowRefEditor] = useState(false)
 
   const getConfidenceVariant = (confidence) => {
     if (confidence >= 0.8) return 'success'
@@ -103,6 +106,39 @@ export default function MKGClaimCard({
 
   const handleCardClick = () => {
     onSelect?.()
+  }
+
+  const handleDelete = (e) => {
+    e.stopPropagation()
+    onDelete?.(claim.id)
+  }
+
+  const handleRefSwap = (refIndex, newRef) => {
+    const updatedRefs = [...(claim.references || [])]
+    updatedRefs[refIndex] = {
+      ...updatedRefs[refIndex],
+      id: newRef.id,
+      text: newRef.display_alias || newRef.filename,
+      name: newRef.display_alias || newRef.filename,
+      swapped: true
+    }
+    onRefChange?.(claim.id, updatedRefs)
+    setShowRefEditor(false)
+  }
+
+  const handleRefAdd = (newRef) => {
+    const updatedRefs = [
+      ...(claim.references || []),
+      {
+        number: (claim.references?.length || 0) + 1,
+        id: newRef.id,
+        text: newRef.display_alias || newRef.filename,
+        name: newRef.display_alias || newRef.filename,
+        added: true
+      }
+    ]
+    onRefChange?.(claim.id, updatedRefs)
+    setShowRefEditor(false)
   }
 
   const isMissed = claim.status === 'missed'
@@ -205,6 +241,15 @@ export default function MKGClaimCard({
             <Icon name="fileText" size={14} />
             <span className={styles.referenceLabel}>Superscripts:</span>
             <span className={styles.referenceName}>{displaySuperscripts.join(', ')}</span>
+            {!showRefEditor && (
+              <button
+                className={styles.editRefBtn}
+                onClick={(e) => { e.stopPropagation(); setShowRefEditor(true) }}
+                title="Edit references"
+              >
+                <Icon name="edit" size={12} />
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -228,6 +273,62 @@ export default function MKGClaimCard({
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Inline reference editor */}
+      {showRefEditor && (
+        <div className={styles.refEditor} onClick={(e) => e.stopPropagation()}>
+          <div className={styles.refEditorHeader}>
+            <span className={styles.refEditorTitle}>Edit References</span>
+            <button className={styles.refEditorClose} onClick={() => setShowRefEditor(false)}>
+              <Icon name="x" size={14} />
+            </button>
+          </div>
+          {brandReferences.length > 0 ? (
+            <div className={styles.refEditorList}>
+              {brandReferences.map(ref => {
+                const isAlreadyLinked = claim.references?.some(r => r.id === ref.id)
+                return (
+                  <div
+                    key={ref.id}
+                    className={`${styles.refEditorItem} ${isAlreadyLinked ? styles.refEditorItemLinked : ''}`}
+                  >
+                    <span className={styles.refEditorItemName}>
+                      {ref.display_alias || ref.filename}
+                    </span>
+                    <div className={styles.refEditorItemActions}>
+                      {!isAlreadyLinked && (
+                        <>
+                          {claim.references?.length > 0 && (
+                            <button
+                              className={styles.refEditorSwapBtn}
+                              onClick={() => handleRefSwap(0, ref)}
+                              title="Replace first reference"
+                            >
+                              Swap
+                            </button>
+                          )}
+                          <button
+                            className={styles.refEditorAddBtn}
+                            onClick={() => handleRefAdd(ref)}
+                            title="Add this reference"
+                          >
+                            Add
+                          </button>
+                        </>
+                      )}
+                      {isAlreadyLinked && (
+                        <span className={styles.refEditorLinkedBadge}>Linked</span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <p className={styles.refEditorEmpty}>No brand references available. Upload references in the Library tab.</p>
+          )}
         </div>
       )}
 
@@ -280,6 +381,13 @@ export default function MKGClaimCard({
             <Icon name="thumbsDown" size={16} />
             Reject
           </Button>
+          <button
+            className={styles.deleteBtn}
+            onClick={handleDelete}
+            title="Remove annotation"
+          >
+            <Icon name="trash" size={14} />
+          </button>
         </div>
       ) : null}
 

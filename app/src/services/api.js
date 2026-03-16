@@ -240,6 +240,30 @@ export async function getRecentAnalysisRuns(limit = 20) {
   return request(`/analysis-runs?limit=${limit}`)
 }
 
+// ========== Annotation Versions ==========
+
+export async function saveAnnotationVersion({ document_hash, brand_id, document_name, annotations_json, source, parent_version_id }) {
+  return request('/versions', {
+    method: 'POST',
+    body: JSON.stringify({ document_hash, brand_id, document_name, annotations_json, source, parent_version_id })
+  })
+}
+
+export async function getLatestVersion(documentHash) {
+  const data = await request(`/versions/${encodeURIComponent(documentHash)}/latest`)
+  return data.version || null
+}
+
+export async function listVersions(documentHash) {
+  const data = await request(`/versions/${encodeURIComponent(documentHash)}`)
+  return data.versions || []
+}
+
+export async function getVersionByNumber(documentHash, versionNumber) {
+  const data = await request(`/versions/${encodeURIComponent(documentHash)}/${versionNumber}`)
+  return data.version || null
+}
+
 export async function deleteAnalysisCacheEntry(key) {
   return request(`/analysis-cache?key=${encodeURIComponent(key)}`, {
     method: 'DELETE'
@@ -251,6 +275,47 @@ export async function pruneAnalysisCache(maxRows) {
     method: 'POST',
     body: JSON.stringify(Number.isFinite(maxRows) ? { max_rows: maxRows } : {})
   })
+}
+
+// ========== Brand Patterns ==========
+
+export async function recordBrandPattern({ brand_id, pattern_type, pattern_json, strength_delta }) {
+  return request('/brand-patterns', {
+    method: 'POST',
+    body: JSON.stringify({ brand_id, pattern_type, pattern_json, strength_delta })
+  })
+}
+
+export async function getBrandPatterns(brandId, minStrength = 1) {
+  const data = await request(`/brand-patterns/${brandId}?min_strength=${minStrength}`)
+  return data.patterns || []
+}
+
+export async function deleteBrandPattern(id) {
+  return request(`/brand-patterns/${id}`, { method: 'DELETE' })
+}
+
+export async function clearBrandPatterns(brandId) {
+  return request(`/brand-patterns/brand/${brandId}`, { method: 'DELETE' })
+}
+
+// ========== Document Lineage ==========
+
+export async function createDocumentLineage({ document_hash, parent_hash, brand_id, similarity_score }) {
+  return request('/document-lineage', {
+    method: 'POST',
+    body: JSON.stringify({ document_hash, parent_hash, brand_id, similarity_score })
+  })
+}
+
+export async function getDocumentLineage(documentHash) {
+  const data = await request(`/document-lineage/${encodeURIComponent(documentHash)}`)
+  return data.lineage || null
+}
+
+export async function getDocumentParent(documentHash) {
+  const data = await request(`/document-lineage/${encodeURIComponent(documentHash)}/parent`)
+  return data.lineage || null
 }
 
 // ========== Feedback ==========
