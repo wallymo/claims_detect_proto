@@ -307,6 +307,17 @@ export async function clearBrandPatterns(brandId) {
   return request(`/brand-patterns/brand/${brandId}`, { method: 'DELETE' })
 }
 
+// ========== PyMuPDF Extraction ==========
+
+export async function extractWithPyMuPDF(file) {
+  const formData = new FormData()
+  formData.append('pdf', file)
+  return request('/pymupdf-extract', {
+    method: 'POST',
+    body: formData
+  })
+}
+
 // ========== Document Lineage ==========
 
 export async function createDocumentLineage({ document_hash, parent_hash, brand_id, similarity_score }) {
