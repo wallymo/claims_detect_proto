@@ -1208,13 +1208,13 @@ export default function MKG2ClaimsDetector() {
         const skipVersionLoad = forceReanalyzeRef.current
         forceReanalyzeRef.current = false
 
-        const existingVersion = !skipVersionLoad ? await api.getLatestVersion(fileHash) : null
+        const existingVersion = !skipVersionLoad ? await api.getLatestVersion(fileHash, selectedBrandId) : null
         if (existingVersion) {
           const savedAnnotations = JSON.parse(existingVersion.annotations_json)
             .map(c => ({ ...c, status: c.status || 'pending' }))
           setClaims(savedAnnotations)
           setCurrentVersion(existingVersion)
-          const allVersions = await api.listVersions(fileHash)
+          const allVersions = await api.listVersions(fileHash, selectedBrandId)
           setVersionList(allVersions)
           logger.info({ event: 'version_loaded', version: existingVersion.version_number, hash: fileHash })
         } else {
@@ -1349,7 +1349,7 @@ export default function MKG2ClaimsDetector() {
   const handleLoadVersion = async (versionNumber) => {
     if (!documentHash) return
     try {
-      const version = await api.getVersionByNumber(documentHash, versionNumber)
+      const version = await api.getVersionByNumber(documentHash, versionNumber, selectedBrandId)
       if (version) {
         const savedAnnotations = JSON.parse(version.annotations_json)
           .map(c => ({ ...c, status: c.status || 'pending' }))

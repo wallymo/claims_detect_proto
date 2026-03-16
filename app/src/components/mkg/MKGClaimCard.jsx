@@ -119,8 +119,8 @@ export default function MKGClaimCard({
     updatedRefs[refIndex] = {
       ...updatedRefs[refIndex],
       id: newRef.id,
-      text: newRef.display_alias || newRef.filename,
-      name: newRef.display_alias || newRef.filename,
+      text: newRef.name ?? newRef.display_alias ?? newRef.filename,
+      name: newRef.name ?? newRef.display_alias ?? newRef.filename,
       swapped: true
     }
     onRefChange?.(claim.id, updatedRefs)
@@ -133,8 +133,8 @@ export default function MKGClaimCard({
       {
         number: (claim.references?.length || 0) + 1,
         id: newRef.id,
-        text: newRef.display_alias || newRef.filename,
-        name: newRef.display_alias || newRef.filename,
+        text: newRef.name ?? newRef.display_alias ?? newRef.filename,
+        name: newRef.name ?? newRef.display_alias ?? newRef.filename,
         added: true
       }
     ]
@@ -314,7 +314,7 @@ export default function MKGClaimCard({
                     className={`${styles.refEditorItem} ${isAlreadyLinked ? styles.refEditorItemLinked : ''}`}
                   >
                     <span className={styles.refEditorItemName}>
-                      {ref.display_alias || ref.filename}
+                      {ref.name ?? ref.display_alias ?? ref.filename}
                     </span>
                     <div className={styles.refEditorItemActions}>
                       {!isAlreadyLinked && (

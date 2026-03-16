@@ -481,12 +481,12 @@ export default function ClaimPinsOverlay({
 
   const handleCanvasMouseLeave = useCallback(() => {
     if (dragging) {
-      onClaimPositionUpdate?.(dragging.id, { x: dragging.origXPct, y: dragging.origYPct }, true)
+      // Commit at current position rather than reverting — user may have dragged intentionally
       setDragging(null)
       dragOffsetRef.current = null
     }
     setHoveredDot(null)
-  }, [dragging, onClaimPositionUpdate])
+  }, [dragging])
 
   if (canvasDimensions.width === 0 || canvasDimensions.height === 0) {
     return null

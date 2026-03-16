@@ -23,22 +23,37 @@ export class AnnotationVersion {
     return db.prepare('SELECT * FROM annotation_versions WHERE id = ?').get(id) || null
   }
 
-  static findLatestByHash(documentHash) {
+  static findLatestByHash(documentHash, brandId = null) {
     const db = getDb()
+    if (brandId) {
+      return db.prepare(
+        'SELECT * FROM annotation_versions WHERE document_hash = ? AND brand_id = ? ORDER BY version_number DESC LIMIT 1'
+      ).get(documentHash, brandId) || null
+    }
     return db.prepare(
       'SELECT * FROM annotation_versions WHERE document_hash = ? ORDER BY version_number DESC LIMIT 1'
     ).get(documentHash) || null
   }
 
-  static findAllByHash(documentHash) {
+  static findAllByHash(documentHash, brandId = null) {
     const db = getDb()
+    if (brandId) {
+      return db.prepare(
+        'SELECT id, document_hash, brand_id, version_number, document_name, source, parent_version_id, created_by, created_at FROM annotation_versions WHERE document_hash = ? AND brand_id = ? ORDER BY version_number DESC'
+      ).all(documentHash, brandId)
+    }
     return db.prepare(
       'SELECT id, document_hash, brand_id, version_number, document_name, source, parent_version_id, created_by, created_at FROM annotation_versions WHERE document_hash = ? ORDER BY version_number DESC'
     ).all(documentHash)
   }
 
-  static findByHashAndVersion(documentHash, versionNumber) {
+  static findByHashAndVersion(documentHash, versionNumber, brandId = null) {
     const db = getDb()
+    if (brandId) {
+      return db.prepare(
+        'SELECT * FROM annotation_versions WHERE document_hash = ? AND version_number = ? AND brand_id = ?'
+      ).get(documentHash, versionNumber, brandId) || null
+    }
     return db.prepare(
       'SELECT * FROM annotation_versions WHERE document_hash = ? AND version_number = ?'
     ).get(documentHash, versionNumber) || null

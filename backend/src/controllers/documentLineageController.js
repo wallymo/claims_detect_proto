@@ -11,7 +11,7 @@ export const documentLineageController = {
         document_hash,
         parent_hash: parent_hash || null,
         brand_id: brand_id ? parseInt(brand_id, 10) : null,
-        similarity_score: similarity_score ? parseFloat(similarity_score) : null
+        similarity_score: similarity_score != null ? parseFloat(similarity_score) : null
       })
 
       res.status(201).json(lineage)

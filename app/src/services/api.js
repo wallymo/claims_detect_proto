@@ -254,18 +254,21 @@ export async function listVersionsByBrand(brandId) {
   return data.versions || []
 }
 
-export async function getLatestVersion(documentHash) {
-  const data = await request(`/versions/${encodeURIComponent(documentHash)}/latest`)
+export async function getLatestVersion(documentHash, brandId) {
+  const params = brandId ? `?brand_id=${brandId}` : ''
+  const data = await request(`/versions/${encodeURIComponent(documentHash)}/latest${params}`)
   return data.version || null
 }
 
-export async function listVersions(documentHash) {
-  const data = await request(`/versions/${encodeURIComponent(documentHash)}`)
+export async function listVersions(documentHash, brandId) {
+  const params = brandId ? `?brand_id=${brandId}` : ''
+  const data = await request(`/versions/${encodeURIComponent(documentHash)}${params}`)
   return data.versions || []
 }
 
-export async function getVersionByNumber(documentHash, versionNumber) {
-  const data = await request(`/versions/${encodeURIComponent(documentHash)}/${versionNumber}`)
+export async function getVersionByNumber(documentHash, versionNumber, brandId) {
+  const params = brandId ? `?brand_id=${brandId}` : ''
+  const data = await request(`/versions/${encodeURIComponent(documentHash)}/${versionNumber}${params}`)
   return data.version || null
 }
 

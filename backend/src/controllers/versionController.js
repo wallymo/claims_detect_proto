@@ -29,7 +29,8 @@ export const versionController = {
       const { hash } = req.params
       if (!hash) throw new AppError('document hash is required', 400)
 
-      const version = AnnotationVersion.findLatestByHash(hash)
+      const brandId = req.query.brand_id ? parseInt(req.query.brand_id, 10) : null
+      const version = AnnotationVersion.findLatestByHash(hash, brandId)
       res.json({ version })
     } catch (err) {
       next(err)
@@ -41,7 +42,8 @@ export const versionController = {
       const { hash } = req.params
       if (!hash) throw new AppError('document hash is required', 400)
 
-      const versions = AnnotationVersion.findAllByHash(hash)
+      const brandId = req.query.brand_id ? parseInt(req.query.brand_id, 10) : null
+      const versions = AnnotationVersion.findAllByHash(hash, brandId)
       res.json({ versions })
     } catch (err) {
       next(err)
@@ -65,7 +67,8 @@ export const versionController = {
       const { hash, versionNumber } = req.params
       if (!hash) throw new AppError('document hash is required', 400)
 
-      const version = AnnotationVersion.findByHashAndVersion(hash, parseInt(versionNumber, 10))
+      const brandId = req.query.brand_id ? parseInt(req.query.brand_id, 10) : null
+      const version = AnnotationVersion.findByHashAndVersion(hash, parseInt(versionNumber, 10), brandId)
       if (!version) throw new AppError('Version not found', 404)
       res.json({ version })
     } catch (err) {
