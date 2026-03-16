@@ -71,6 +71,41 @@ export const SUPER_CHAR_PATTERN = SUPER_CHARS
 
 const SUPER_PATTERN = new RegExp(`[${SUPER_CHARS}]+(?:[\\u00b7·,][${SUPER_CHARS}]+)*`, 'g')
 
+/**
+ * Extract citation refs fused into body text (no font-size separation).
+ * Catches patterns like: "efficacy2", "outcomes1,2", "response1-3", "disease.2"
+ * Avoids false positives from years (2024), percentages (47%), measurements (p<0.05)
+ */
+export function extractInlineFusedRefs(text) {
+  const source = String(text || '').replace(/[\u2010-\u2015]/g, '-').trim()
+  if (!source) return []
+
+  const refs = new Set()
+
+  // Pattern: word boundary or end-of-sentence followed by small numbers (1-50)
+  // e.g., "efficacy2" "response1,2" "outcomes1-3" "disease.2,3"
+  // Exclude: years (19xx, 20xx), percentages (47%), p-values, doses (mg), page numbers
+  const inlinePattern = /(?<=[a-zA-Z).\]])(\d{1,2}(?:\s*[,\-]\s*\d{1,2})*)(?=[\s,;.)}\]:]|$)/g
+
+  let match
+  while ((match = inlinePattern.exec(source)) !== null) {
+    const candidate = match[1]
+
+    // Skip if it looks like a year
+    if (/^(?:19|20)\d{2}$/.test(candidate)) continue
+    // Skip if preceded by common non-ref contexts
+    const preceding = source.substring(Math.max(0, match.index - 10), match.index)
+    if (/(?:page|pp?|vol|no|n\s*=|p\s*[<=>&]|HR|CI|OR|\d+\.)\s*$/i.test(preceding)) continue
+    // Skip if the number is > 50 (not a citation ref)
+    const parsed = parseNumericCitationRefs(candidate)
+    if (parsed.length > 0 && parsed.every(r => r <= MAX_CITATION_REF_NUMBER)) {
+      parsed.forEach(r => refs.add(r))
+    }
+  }
+
+  return [...refs].sort((a, b) => a - b)
+}
+
 export function parseSuperscriptCitationRefs(text) {
   const matches = String(text || '').match(SUPER_PATTERN)
   if (!matches) return []

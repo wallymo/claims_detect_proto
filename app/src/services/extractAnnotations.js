@@ -14,6 +14,7 @@ import pdfjsWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { logger } from '@/utils/logger'
 import {
   SUPER_CHAR_PATTERN,
+  extractInlineFusedRefs,
   extractTrailingCitationRefs,
   parseNumericCitationRefs,
   parseSuperscriptCitationRefs
@@ -93,7 +94,7 @@ async function extractPageTextLines(pdfFile) {
     const fontFreq = {}
     for (const f of bodyFonts) fontFreq[f] = (fontFreq[f] || 0) + 1
     const bodyFontSize = Number(Object.entries(fontFreq).sort((a, b) => b[1] - a[1])[0]?.[0]) || 11
-    const superThreshold = bodyFontSize * 0.7
+    const superThreshold = bodyFontSize * 0.85
 
     // Classify: body vs superscript. Includes Unicode superscript digits (Fix B).
     const isSuper = (item) =>
@@ -101,8 +102,36 @@ async function extractPageTextLines(pdfFile) {
       /^(?:[\d,.\u00b7·\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+)$/.test(item.text.trim()) &&
       !/^\d+\.$/.test(item.text.trim())
 
-    const bodyItems = items.filter(i => !isSuper(i))
-    const superItems = items.filter(i => isSuper(i))
+    // Baseline-based superscript detection: same font size but positioned
+    // higher than neighboring text items on the same horizontal line.
+    // Groups items by approximate Y, then checks for digits that sit
+    // above the dominant baseline within their X neighborhood.
+    const isSuperByBaseline = (item, allItems) => {
+      // Must be pure digits
+      if (!/^[\d,.\-]+$/.test(item.text.trim())) return false
+      if (/^\d+\.$/.test(item.text.trim())) return false
+      // Must not already be caught by font-size detection
+      if (item.fontSize <= superThreshold) return false
+
+      // Find neighboring items on a similar Y (within 2%)
+      const neighbors = allItems.filter(other =>
+        other !== item &&
+        Math.abs(other.x - item.x) < 30 &&
+        Math.abs(other.y - item.y) < 3 &&
+        other.text.trim().length > 1 &&
+        !/^[\d,.]+$/.test(other.text.trim())
+      )
+      if (neighbors.length === 0) return false
+
+      // If this digit item sits above (lower Y value) the average neighbor baseline
+      // by at least 0.3%, it's likely a superscript
+      const avgNeighborY = neighbors.reduce((sum, n) => sum + n.y, 0) / neighbors.length
+      const yDelta = avgNeighborY - item.y
+      return yDelta > 0.3
+    }
+
+    const bodyItems = items.filter(i => !isSuper(i) && !isSuperByBaseline(i, items))
+    const superItems = items.filter(i => isSuper(i) || isSuperByBaseline(i, items))
     const partsText = (parts) => parts.map(p => typeof p === 'string' ? p : p.text).join(' ').trim()
 
     // Pass 1: Group body items into lines (1.5% y-threshold + 20% x-gap splitting)
@@ -233,6 +262,8 @@ async function extractPageTextLines(pdfFile) {
         extractTrailingCitationRefs(partsText(l.parts)).forEach(ref => refs.add(ref))
         // Path 3 (Fix A): Unicode superscript chars embedded in line text
         parseSuperscriptCitationRefs(partsText(l.parts)).forEach(ref => refs.add(ref))
+        // Path 4: Inline fused superscripts (e.g., "efficacy2", "outcomes1,2")
+        extractInlineFusedRefs(partsText(l.parts)).forEach(ref => refs.add(ref))
 
         const sortedRefs = [...refs].sort((a, b) => a - b)
         return {
