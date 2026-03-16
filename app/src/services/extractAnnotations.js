@@ -86,7 +86,8 @@ async function extractPageTextLines(pdfFile) {
       // pdf.js Y is bottom-up — convert to top-down percentage
       const y = ((viewport.height - tx[5]) / viewport.height) * 100
       const fontSize = Math.abs(tx[3])
-      items.push({ text: item.str, x, y, fontSize })
+      const endX = x + ((item.width || 0) / viewport.width) * 100
+      items.push({ text: item.str, x, y, fontSize, endX })
     }
 
     // Dominant body font size (mode of fonts >= 8pt)
@@ -110,11 +111,35 @@ async function extractPageTextLines(pdfFile) {
     }
 
     // Classify: body vs superscript. Use stricter threshold for notes, wider for slides.
+    // Guard: only match ref-sized numbers (1-2 digits, or comma/dot-separated like "1,2").
+    // Exclude chart axis values, decimals, and list markers.
+    // Chart axis guard: standalone small digits NOT near the right edge of a body text
+    // line are likely chart values, not superscripts. Real superscripts sit at the end of statements.
     const isSuper = (item) => {
       const threshold = (earlyNotesBoundaryY && item.y > earlyNotesBoundaryY) ? notesThreshold : slideThreshold
-      return item.fontSize <= threshold &&
-        /^(?:[\d,.\u00b7·\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+)$/.test(item.text.trim()) &&
-        !/^\d+\.$/.test(item.text.trim())
+      const text = item.text.trim()
+      if (item.fontSize > threshold) return false
+      if (!/^(?:[\d,\u00b7·\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+)$/.test(text)) return false
+      if (/^\d+\.$/.test(text)) return false       // list markers like "1."
+      if (/^\d{3,}$/.test(text)) return false       // 3+ digit numbers (chart values: 100, 429)
+      if (/^\d+\.\d+$/.test(text)) return false     // decimals like "7.1"
+
+      // Chart axis guard (slide region only): a standalone number with NO
+      // nearby word-text (any font) is likely a chart axis label.
+      // Real superscripts sit next to statements; chart numbers sit alone.
+      const inSlide = !earlyNotesBoundaryY || item.y <= earlyNotesBoundaryY
+      if (inSlide && /^\d{1,2}$/.test(text)) {
+        const nearbyWords = items.filter(other =>
+          other !== item &&
+          other.text.trim().length > 2 &&
+          !/^[\d,.%]+$/.test(other.text.trim()) &&
+          Math.abs(other.y - item.y) < 2 &&
+          Math.abs(other.x - item.x) < 25
+        )
+        if (nearbyWords.length === 0) return false
+      }
+
+      return true
     }
 
     // Baseline + local-context detection — SLIDE REGION ONLY
@@ -122,8 +147,11 @@ async function extractPageTextLines(pdfFile) {
       // Only apply enhanced detection in slide region
       if (earlyNotesBoundaryY && item.y > earlyNotesBoundaryY) return false
 
-      if (!/^[\d,.\-\u00b7·\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+$/.test(item.text.trim())) return false
-      if (/^\d+\.$/.test(item.text.trim())) return false
+      const text = item.text.trim()
+      if (!/^[\d,\-\u00b7·\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+$/.test(text)) return false
+      if (/^\d+\.$/.test(text)) return false
+      if (/^\d{3,}$/.test(text)) return false     // chart values
+      if (/^\d+\.\d+$/.test(text)) return false   // decimals
       if (item.fontSize <= slideThreshold) return false // already caught
 
       const neighbors = allItems.filter(other =>
@@ -171,7 +199,7 @@ async function extractPageTextLines(pdfFile) {
       const xGap = !newY && Math.abs(item.x - currentLine.lastX) > X_GAP
       if (newY || xGap) {
         currentLine = {
-          y: item.y, x: item.x, lastX: item.x, maxX: item.x,
+          y: item.y, x: item.x, lastX: item.x, maxX: item.endX || item.x,
           parts: [{ text: item.text, x: item.x }],
           superParts: [], superPositions: [],
           hasBodyFont: item.fontSize >= 5,
@@ -181,7 +209,8 @@ async function extractPageTextLines(pdfFile) {
       } else {
         currentLine.parts.push({ text: item.text, x: item.x })
         currentLine.lastX = item.x
-        if (item.x > currentLine.maxX) currentLine.maxX = item.x
+        const itemEndX = item.endX || item.x
+        if (itemEndX > currentLine.maxX) currentLine.maxX = itemEndX
         if (item.fontSize >= 5) currentLine.hasBodyFont = true
         if (item.fontSize > currentLine.maxFontSize) currentLine.maxFontSize = item.fontSize
       }
