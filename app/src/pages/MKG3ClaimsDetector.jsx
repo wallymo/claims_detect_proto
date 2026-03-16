@@ -19,13 +19,11 @@ import MKGClaimCard from '@/components/mkg/MKGClaimCard'
 import DocumentTypeSelector from '@/components/claims-detector/DocumentTypeSelector'
 import LibraryTab from '@/components/claims-detector/LibraryTab'
 import TrainingDataOverlay from '@/components/mkg/TrainingDataOverlay/TrainingDataOverlay'
-import TrainingStatusBanner from '@/components/mkg/TrainingStatusBanner/TrainingStatusBanner'
 import MissedClaimForm from '@/components/mkg/MissedClaimForm/MissedClaimForm'
 import Alert from '@/components/molecules/Alert/Alert'
 
 // Services
-import { checkGeminiConnection, MEDICATION_PROMPT_USER, getDocTypeInstructions, GEMINI_MODEL, MODEL_DISPLAY_NAMES, annotateDocument, AI_QA_PROMPT_USER } from '@/services/gemini'
-import { extractAnnotations } from '@/services/extractAnnotations'
+import { MEDICATION_PROMPT_USER, getDocTypeInstructions, GEMINI_MODEL, MODEL_DISPLAY_NAMES, AI_QA_PROMPT_USER } from '@/services/gemini'
 import * as api from '@/services/api'
 
 // Utils
@@ -33,13 +31,11 @@ import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { TextLayer } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import pdfjsWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl
-import { enrichClaimsWithPositions, alignClaimsToSlideLayout, addGlobalIndices } from '@/utils/textMatcher'
+import { addGlobalIndices } from '@/utils/textMatcher'
 import { dedupeClaimsByPageAndText } from '@/utils/claimDedup'
 import { summarizeAnnotationClaims } from '@/utils/annotationSummary'
-import { matchCitationToLibrary } from '@/utils/citationLibraryMatcher'
-import { comparePages, CARRY_FORWARD_THRESHOLD } from '@/services/textSimilarity'
 import { logger } from '@/utils/logger'
-import { charOffsetToPage, parseCitationPageRange, resolveCitationPdfPage } from '@/utils/referenceViewerHints'
+import { charOffsetToPage, resolveCitationPdfPage } from '@/utils/referenceViewerHints'
 
 const ACTIVE_MODEL_LABEL = MODEL_DISPLAY_NAMES[GEMINI_MODEL] || GEMINI_MODEL
 
@@ -49,23 +45,21 @@ const PROMPT_OPTIONS = [
   { id: 'medication', label: 'Medication', promptKey: 'drug' }
 ]
 
-const ANNOTATION_POSITIONING_DISPLAY = `--- TEXT-FIRST ANNOTATION ENGINE ---
+const ANNOTATION_POSITIONING_DISPLAY = `--- PYMUPDF ANNOTATION ENGINE ---
 
-Step 1: pdf.js extracts all text from the PDF with positions (deterministic, no AI)
-Step 2: Parser identifies superscripted content and reference pools:
-  - Slide footnotes (numbered citations at bottom of slide, y 30-55%)
-  - Notes references (after "References:" header in speaker notes)
-  - Slide content with superscripts
-  - Notes content with superscripts
-Step 3: Direct pool lookup — each candidate's refNumbers matched to its region's pool
-  - Slide candidates → slideFootnotes[page]
-  - Notes candidates → notesReferences[page]
-Step 4: Positions from pdf.js text extraction (deterministic, no AI)
+Step 1: PyMuPDF extracts text spans, superscripts, and coordinates from the PDF (deterministic, no AI)
+Step 2: Parser splits each page into slide and speaker-notes regions and builds page-local reference pools:
+  - Slide footnotes at the bottom of the slide
+  - Notes references after the "References" header
+Step 3: Each superscript-backed statement resolves only against its own region's pool
+  - Slide candidates → same-page slide footnotes
+  - Notes candidates → same-page notes references
+Step 4: Orphan references become global annotations for that page and region
 Step 5: Sort (page → region → y → x), re-index, return
 
 No AI call for annotation positioning. Instant, free, deterministic.
 
-[Pre-identified annotations are inserted here dynamically from text extraction]
+[Pre-identified annotations are inserted here dynamically from PyMuPDF extraction]
 [Reference pools are inserted here dynamically]
 
 CRITICAL: Include ALL annotations listed above. If you cannot locate one visually, use your best estimate for position. NEVER drop an annotation.
@@ -80,32 +74,7 @@ const PROMPT_DISPLAY_TEXT = {
   'drug': MEDICATION_PROMPT_USER
 }
 
-// ===== Analysis Result Cache =====
-
-const ANALYSIS_CACHE_NS = 'claims_analysis_v3'
-const ANALYSIS_CACHE_VERSION = String(import.meta.env.VITE_ANALYSIS_CACHE_VERSION || '2026-02-20').trim() || '2026-02-20'
-const ANALYSIS_BROWSER_CACHE_NS = `${ANALYSIS_CACHE_NS}:browser`
-
-function parseBooleanEnvFlag(value, fallback) {
-  if (value === undefined || value === null || value === '') return fallback
-  const normalized = String(value).trim().toLowerCase()
-  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true
-  if (['0', 'false', 'no', 'off'].includes(normalized)) return false
-  return fallback
-}
-
-const PERSISTENT_ANALYSIS_CACHE_ENABLED = parseBooleanEnvFlag(
-  import.meta.env.VITE_PERSISTENT_ANALYSIS_CACHE_ENABLED,
-  true
-)
-const ANALYSIS_CACHE_STORE_DIAGNOSTICS = parseBooleanEnvFlag(
-  import.meta.env.VITE_ANALYSIS_CACHE_STORE_DIAGNOSTICS,
-  false
-)
-const ANALYSIS_CACHE_ENABLED = false
-
 const fileShaPromiseCache = new WeakMap()
-const analysisCacheMetaByKey = new Map()
 
 function stableStringHash(value) {
   const source = String(value || '')
@@ -114,129 +83,6 @@ function stableStringHash(value) {
     h = (Math.imul(31, h) + source.charCodeAt(i)) | 0
   }
   return (h >>> 0).toString(16).padStart(8, '0')
-}
-
-function makeReferenceFingerprint(refIds) {
-  return refIds && refIds.length > 0 ? [...refIds].sort((a, b) => a - b).join(',') : 'norefs'
-}
-
-function rememberAnalysisCacheDescriptor(descriptor) {
-  analysisCacheMetaByKey.set(descriptor.key, descriptor)
-  if (analysisCacheMetaByKey.size <= 300) return
-  const oldest = analysisCacheMetaByKey.keys().next().value
-  if (oldest) analysisCacheMetaByKey.delete(oldest)
-}
-
-function getAnalysisCacheDescriptor(key) {
-  return analysisCacheMetaByKey.get(key) || null
-}
-
-function readBrowserAnalysisCache(key) {
-  if (!key) return null
-  try {
-    return JSON.parse(localStorage.getItem(`${ANALYSIS_BROWSER_CACHE_NS}|${key}`) || 'null')
-  } catch {
-    return null
-  }
-}
-
-function writeBrowserAnalysisCache(key, payload) {
-  if (!key) return
-  try {
-    localStorage.setItem(`${ANALYSIS_BROWSER_CACHE_NS}|${key}`, JSON.stringify(payload))
-  } catch {
-    /* quota */
-  }
-}
-
-function deleteBrowserAnalysisCache(key) {
-  if (!key) return
-  try { localStorage.removeItem(`${ANALYSIS_BROWSER_CACHE_NS}|${key}`) } catch { /* ignore */ }
-}
-
-function purgeBrowserAnalysisCacheNamespace() {
-  try {
-    const prefix = `${ANALYSIS_BROWSER_CACHE_NS}|`
-    const keysToDelete = []
-    for (let i = 0; i < localStorage.length; i += 1) {
-      const key = localStorage.key(i)
-      if (key?.startsWith(prefix)) keysToDelete.push(key)
-    }
-    keysToDelete.forEach((key) => localStorage.removeItem(key))
-  } catch {
-    /* ignore */
-  }
-}
-
-function normalizePayloadClaims(claims) {
-  const normalized = Array.isArray(claims) ? claims : []
-  if (ANALYSIS_CACHE_STORE_DIAGNOSTICS) return normalized
-  return normalized.map((claim) => {
-    if (!claim || typeof claim !== 'object') return claim
-    const next = { ...claim }
-    delete next.diagnostics
-    return next
-  })
-}
-
-function normalizeAnnotationClaim(item) {
-  if (!item || typeof item !== 'object') return item
-
-  const statement = String(item.statement || item.text || item.claim || '').trim()
-  const superscripts = Array.isArray(item.superscripts)
-    ? [...item.superscripts]
-    : Array.isArray(item.refNumbers)
-      ? [...item.refNumbers]
-      : []
-  const references = Array.isArray(item.references)
-    ? item.references.map(ref => ({ ...ref }))
-    : []
-  const region = item.region === 'notes' ? 'notes' : 'slide'
-  const page = Math.max(1, Number.parseInt(item.page, 10) || 1)
-  const position = item.position ? { ...item.position } : null
-  const annotationBinding = {
-    ...(item.annotationBinding && typeof item.annotationBinding === 'object' ? item.annotationBinding : {}),
-    statement,
-    superscripts,
-    references,
-    region,
-    page,
-    position,
-    globalSpot: Boolean(item.globalSpot),
-    globalReason: item.globalReason || null
-  }
-
-  return {
-    ...item,
-    text: statement,
-    claim: statement,
-    statement,
-    refNumbers: superscripts,
-    superscripts,
-    references,
-    region,
-    page,
-    position,
-    status: item.status || 'pending',
-    annotationBinding
-  }
-}
-
-function buildAnalysisCachePayload(claims, extras = {}, existing = null) {
-  const base = existing && typeof existing === 'object' ? existing : {}
-  const payload = {
-    ts: Date.now(),
-    cacheVersion: ANALYSIS_CACHE_VERSION,
-    claims: normalizePayloadClaims(claims),
-    analysisMs: Number.isFinite(extras.analysisMs) ? extras.analysisMs : base.analysisMs,
-    usage: extras.usage !== undefined ? extras.usage : base.usage,
-    matchingStats: extras.matchingStats !== undefined ? extras.matchingStats : base.matchingStats
-  }
-
-  if (ANALYSIS_CACHE_STORE_DIAGNOSTICS && extras.diagnostics !== undefined) {
-    payload.diagnostics = extras.diagnostics
-  }
-  return payload
 }
 
 async function sha256Hex(input) {
@@ -264,101 +110,6 @@ async function getFileSha256(file) {
 
   fileShaPromiseCache.set(file, promise)
   return promise
-}
-
-async function makeAnalysisCacheDescriptor(file, model, promptKey, editablePrompt, docType, brandId, refIds) {
-  const fileSha = await getFileSha256(file)
-  const promptHash = stableStringHash(editablePrompt)
-  const referencesFingerprint = makeReferenceFingerprint(refIds)
-  const normalizedDocType = docType || 'speaker-notes'
-  const normalizedBrandId = Number.isFinite(Number(brandId)) ? Number(brandId) : null
-
-  const key = [
-    ANALYSIS_CACHE_NS,
-    ANALYSIS_CACHE_VERSION,
-    fileSha,
-    model,
-    promptKey,
-    normalizedDocType,
-    normalizedBrandId || '',
-    promptHash,
-    referencesFingerprint
-  ].join('|')
-
-  const descriptor = {
-    key,
-    meta: {
-      cache_version: ANALYSIS_CACHE_VERSION,
-      brand_id: normalizedBrandId,
-      file_sha256: fileSha,
-      model,
-      prompt_key: promptKey,
-      prompt_hash: promptHash,
-      doc_type: normalizedDocType,
-      reference_fingerprint: referencesFingerprint,
-      diagnostics_enabled: ANALYSIS_CACHE_STORE_DIAGNOSTICS
-    }
-  }
-  rememberAnalysisCacheDescriptor(descriptor)
-  return descriptor
-}
-
-async function readAnalysisCache(key) {
-  if (!key) return null
-  const localPayload = readBrowserAnalysisCache(key)
-  if (!PERSISTENT_ANALYSIS_CACHE_ENABLED) return localPayload
-
-  try {
-    const cache = await api.getAnalysisCache(key)
-    if (cache?.payload) {
-      const payload = cache.payload
-      if (!payload.ts) {
-        const fallbackTs = cache.updated_at || cache.created_at
-        payload.ts = fallbackTs ? new Date(fallbackTs).getTime() : Date.now()
-      }
-      writeBrowserAnalysisCache(key, payload)
-      return payload
-    }
-  } catch (err) {
-    logger.warn('Persistent analysis cache read failed, falling back to browser cache:', err.message)
-  }
-
-  return localPayload
-}
-
-function writeAnalysisCache(key, claims, extras = {}) {
-  if (!key) return
-  const existing = readBrowserAnalysisCache(key) || null
-  const payload = buildAnalysisCachePayload(claims, extras, existing)
-  writeBrowserAnalysisCache(key, payload)
-
-  if (!PERSISTENT_ANALYSIS_CACHE_ENABLED) return
-  const descriptor = getAnalysisCacheDescriptor(key)
-  if (!descriptor) return
-
-  void api.upsertAnalysisCache({
-    key,
-    meta: descriptor.meta,
-    payload
-  }).catch((err) => {
-    logger.warn('Persistent analysis cache write failed:', err.message)
-  })
-}
-
-function deleteAnalysisCache(key) {
-  if (!key) return
-  deleteBrowserAnalysisCache(key)
-  if (!PERSISTENT_ANALYSIS_CACHE_ENABLED) return
-  void api.deleteAnalysisCacheEntry(key).catch((err) => {
-    logger.warn('Persistent analysis cache delete failed:', err.message)
-  })
-}
-
-function formatTimeAgo(ts) {
-  const d = Date.now() - ts
-  if (d < 60000) return 'just now'
-  if (d < 3600000) return `${Math.floor(d / 60000)}m ago`
-  return `${Math.floor(d / 3600000)}h ago`
 }
 
 function formatMinutes(ms) {
@@ -497,19 +248,17 @@ function transformPyMuPDFResults(data) {
   return annotations
 }
 
-export default function MKG2ClaimsDetector() {
+export default function MKG3ClaimsDetector() {
   // Document state
   const [uploadedFile, setUploadedFile] = useState(null)
   const [uploadState, setUploadState] = useState('empty')
   const fileInputRef = useRef(null)
 
   // Settings state
-  const selectedModel = GEMINI_MODEL
   const [selectedPrompt, _setSelectedPrompt] = useState('all-claims')
   const [editablePrompt, setEditablePrompt] = useState('')
   const [isEditingPrompt, setIsEditingPrompt] = useState(false)
   const [selectedDocType, setSelectedDocType] = useState('speaker-notes')
-  // AI Discovery always on — show all claims, over-flag rather than miss
 
   // Brand state
   const [brands, setBrands] = useState([])
@@ -534,21 +283,8 @@ export default function MKG2ClaimsDetector() {
   const [analysisStatus, setAnalysisStatus] = useState('')
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
 
-  // Reference matching state
-  const [_matchingComplete, setMatchingComplete] = useState(false)
-  const [matchingStats, setMatchingStats] = useState(null)
-
-  // Cache state
-  const [cacheHit, setCacheHit] = useState(null)  // { ts: number } | null
-  const [hasCachedResult, setHasCachedResult] = useState(false)
-  const currentCacheKeyRef = useRef(null)
   const cancelAnalysisRef = useRef(false)
-
-  // PyMuPDF comparison state
-  const [pymupdfAnnotations, setPymupdfAnnotations] = useState([])
-  const [pymupdfLoading, setPymupdfLoading] = useState(false)
-  const [pymupdfError, setPymupdfError] = useState(null)
-  const [pipelineTab, setPipelineTab] = useState('pymupdf') // 'current' | 'pymupdf'
+  const [matchingStats, setMatchingStats] = useState(null)
 
   // Claims state
   const [claims, setClaims] = useState([])
@@ -572,12 +308,6 @@ export default function MKG2ClaimsDetector() {
   const [textSelectionMode, setTextSelectionMode] = useState(false)
   const [pendingSupportingText, setPendingSupportingText] = useState('')
 
-  useEffect(() => {
-    if (ANALYSIS_CACHE_ENABLED) return
-    purgeBrowserAnalysisCacheNamespace()
-    analysisCacheMetaByKey.clear()
-  }, [])
-
   // Combine real missed claims with pending pin so ClaimPinsOverlay renders it immediately
   const displayMissedClaims = useMemo(() => {
     if (!pendingPinPosition) return missedClaims
@@ -594,11 +324,6 @@ export default function MKG2ClaimsDetector() {
 
   // Cost tracking
   const [lastUsage, setLastUsage] = useState(null)
-  const [totalCost, setTotalCost] = useState(0)
-  const [sessionCost, setSessionCost] = useState(0)
-
-  // Text extraction
-  const [extractedPages, setExtractedPages] = useState([])
 
   // Library state
   const [referenceDocuments, setReferenceDocuments] = useState([])
@@ -668,8 +393,6 @@ export default function MKG2ClaimsDetector() {
     }
     return blocks.join('\n\n')
   }, [trainingExamples])
-
-  const trainingDocumentCount = useMemo(() => trainingDocuments.length, [trainingDocuments])
 
   // Load brands, references, and folders on mount
   useEffect(() => {
@@ -745,12 +468,6 @@ export default function MKG2ClaimsDetector() {
     }
   }, [selectedBrandId, brands])
 
-  // Load total cost from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem('gemini_total_cost')
-    if (saved) setTotalCost(parseFloat(saved))
-  }, [])
-
   // Sync editable prompt — annotation prompts are self-contained (no doc-type scaffold needed)
   useEffect(() => {
     const promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
@@ -810,9 +527,6 @@ export default function MKG2ClaimsDetector() {
       setActiveClaimId(indexedClaims[0]?.id || null)
     }
     setClaims(indexedClaims)
-    if (ANALYSIS_CACHE_ENABLED && currentCacheKeyRef.current) {
-      writeAnalysisCache(currentCacheKeyRef.current, indexedClaims)
-    }
   }, [claims, activeClaimId])
 
   // ===== Data Loading =====
@@ -1032,7 +746,6 @@ export default function MKG2ClaimsDetector() {
       setUploadedFile(file)
       setUploadState('complete')
       setAnalysisComplete(false)
-      setMatchingComplete(false)
       setClaims([])
       setStatusFilter('all')
       setCollapsedPages({})
@@ -1053,7 +766,6 @@ export default function MKG2ClaimsDetector() {
     setStatusFilter('all')
     setCollapsedPages({})
     setAnalysisComplete(false)
-    setMatchingComplete(false)
     setAnalysisError(null)
     setMatchingStats(null)
     setMissedClaims([])
@@ -1063,18 +775,8 @@ export default function MKG2ClaimsDetector() {
     setVersionList([])
     setHasUnsavedChanges(false)
     setDocumentHash(null)
-    setPymupdfAnnotations([])
-    setPymupdfLoading(false)
-    setPymupdfError(null)
-    setPipelineTab('current')
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
-
-  // ===== Text Extraction =====
-
-  const handleTextExtracted = useCallback((pages) => {
-    setExtractedPages(pages)
-  }, [])
 
   // ===== Prompt Editing =====
 
@@ -1090,51 +792,6 @@ export default function MKG2ClaimsDetector() {
 
   // ===== Analysis =====
 
-  useEffect(() => {
-    if (!ANALYSIS_CACHE_ENABLED) {
-      setHasCachedResult(false)
-      setCacheHit(null)
-      currentCacheKeyRef.current = null
-      return
-    }
-
-    let cancelled = false
-
-    const checkCachedResult = async () => {
-      if (!uploadedFile) {
-        if (!cancelled) setHasCachedResult(false)
-        return
-      }
-
-      try {
-        const promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
-        const refIds = referenceDocuments.map(r => r.id)
-        const descriptor = await makeAnalysisCacheDescriptor(
-          uploadedFile,
-          selectedModel,
-          promptKey,
-          editablePrompt,
-          selectedDocType || 'speaker-notes',
-          selectedBrandId,
-          refIds
-        )
-        if (cancelled) return
-        const cached = await readAnalysisCache(descriptor.key)
-        if (!cancelled) setHasCachedResult(!!cached)
-      } catch (err) {
-        if (!cancelled) {
-          logger.warn('Could not resolve analysis cache status:', err.message)
-          setHasCachedResult(false)
-        }
-      }
-    }
-
-    void checkCachedResult()
-    return () => {
-      cancelled = true
-    }
-  }, [uploadedFile, selectedModel, selectedPrompt, editablePrompt, selectedDocType, selectedBrandId, referenceDocuments])
-
   const forceReanalyzeRef = useRef(false)
 
   const handleReanalyze = () => {
@@ -1148,19 +805,15 @@ export default function MKG2ClaimsDetector() {
 
     setIsAnalyzing(true)
     setAnalysisComplete(false)
-    setMatchingComplete(false)
     setAnalysisError(null)
     setAnalysisProgress(0)
     setAnalysisStatus('Reading document...')
     setMatchingStats(null)
-    setCacheHit(null)
-    setPymupdfAnnotations([])
-    setPymupdfError(null)
-    setPymupdfLoading(true)
+    setClaims([])
+    setHasUnsavedChanges(false)
     const analysisStartedAt = Date.now()
 
     try {
-      // === PRIMARY: PyMuPDF (fast, deterministic) ===
       setAnalysisProgress(20)
       setAnalysisStatus('Extracting annotations (PyMuPDF)...')
 
@@ -1172,15 +825,57 @@ export default function MKG2ClaimsDetector() {
 
       const transformed = transformPyMuPDFResults(pymupdfData)
       const indexed = addGlobalIndices(transformed)
-      setPymupdfAnnotations(indexed)
-      setPymupdfLoading(false)
       logger.info({ event: 'pymupdf_extraction_complete', annotations: indexed.length })
+
+      let nextClaims = indexed
+
+      try {
+        const fileHash = await getFileSha256(uploadedFile)
+        setDocumentHash(fileHash)
+
+        if (!forceReanalyzeRef.current) {
+          const existingVersion = await api.getLatestVersion(fileHash, selectedBrandId)
+          if (existingVersion) {
+            const savedAnnotations = JSON.parse(existingVersion.annotations_json)
+            const statusMap = new Map()
+            for (const annotation of savedAnnotations) {
+              if (annotation.status && annotation.status !== 'pending') {
+                statusMap.set(`${annotation.page}-${annotation.text?.slice(0, 60)}`, annotation.status)
+              }
+            }
+
+            if (statusMap.size > 0) {
+              nextClaims = indexed.map((annotation) => {
+                const key = `${annotation.page}-${annotation.text?.slice(0, 60)}`
+                const savedStatus = statusMap.get(key)
+                return savedStatus ? { ...annotation, status: savedStatus } : annotation
+              })
+            }
+          }
+        }
+
+        setClaims(nextClaims)
+
+        const saved = await api.saveAnnotationVersion({
+          document_hash: fileHash,
+          brand_id: selectedBrandId || null,
+          document_name: uploadedFile.name,
+          annotations_json: JSON.stringify(nextClaims),
+          source: 'pymupdf'
+        })
+        setCurrentVersion(saved)
+        setVersionList(await api.listVersions(fileHash, selectedBrandId))
+        logger.info({ event: 'version_saved', hash: fileHash, claims: nextClaims.length })
+      } catch (versionErr) {
+        setClaims(nextClaims)
+        logger.error('Version save error:', versionErr)
+      }
 
       const analysisTotalMs = Date.now() - analysisStartedAt
       setProcessingTime(analysisTotalMs)
-      setLastUsage({ inputTokens: 0, outputTokens: 0, cost: 0, model: 'pymupdf' })
+      setLastUsage({ inputTokens: 0, outputTokens: 0, cost: 0, model: 'pymupdf', modelDisplayName: 'PyMuPDF' })
 
-      const summary = summarizeAnnotationClaims(indexed)
+      const summary = summarizeAnnotationClaims(nextClaims)
       setMatchingStats({
         total: summary.total,
         matched: summary.onPageCount,
@@ -1194,55 +889,6 @@ export default function MKG2ClaimsDetector() {
       setAnalysisProgress(100)
       setAnalysisStatus('Annotations complete')
       setAnalysisComplete(true)
-      setMatchingComplete(true)
-
-      // Old Vision+pdf.js pipeline removed — PyMuPDF is the sole pipeline
-
-      // Save fresh PyMuPDF results as new version
-      try {
-        const fileHash = await getFileSha256(uploadedFile)
-        setDocumentHash(fileHash)
-
-        // Merge approval/rejection status from latest saved version (if any)
-        if (!forceReanalyzeRef.current) {
-          const existingVersion = await api.getLatestVersion(fileHash, selectedBrandId)
-          if (existingVersion) {
-            const savedAnnotations = JSON.parse(existingVersion.annotations_json)
-            const statusMap = new Map()
-            for (const ann of savedAnnotations) {
-              if (ann.status && ann.status !== 'pending') {
-                statusMap.set(`${ann.page}-${ann.text?.slice(0, 60)}`, ann.status)
-              }
-            }
-            if (statusMap.size > 0) {
-              const merged = indexed.map(ann => {
-                const key = `${ann.page}-${ann.text?.slice(0, 60)}`
-                const savedStatus = statusMap.get(key)
-                return savedStatus ? { ...ann, status: savedStatus } : ann
-              })
-              setPymupdfAnnotations(merged)
-            }
-          }
-        }
-        forceReanalyzeRef.current = false
-
-        // Always save fresh results as new version
-        const saved = await api.saveAnnotationVersion({
-          document_hash: fileHash,
-          brand_id: selectedBrandId || null,
-          document_name: uploadedFile.name,
-          annotations_json: JSON.stringify(indexed),
-          source: 'pymupdf'
-        })
-        setCurrentVersion(saved)
-        const allVersions = await api.listVersions(fileHash, selectedBrandId)
-        setVersionList(allVersions)
-        logger.info({ event: 'version_saved', hash: fileHash, claims: indexed.length })
-      } catch (versionErr) {
-        logger.error('Version save error:', versionErr)
-      }
-
-      setIsAnalyzing(false)
 
       logger.info({
         event: 'mkg3_annotation_summary',
@@ -1250,23 +896,25 @@ export default function MKG2ClaimsDetector() {
         on_page_annotations: summary.onPageCount,
         ai_finds: summary.aiFindCount,
         global_annotations: summary.globalAnnotationCount,
-        model: selectedModel
+        model: 'pymupdf'
       })
     } catch (error) {
       logger.error('Annotation error:', error)
       setAnalysisError(error.message)
+    } finally {
+      forceReanalyzeRef.current = false
       setIsAnalyzing(false)
     }
   }
 
   const handleSaveVersion = async () => {
-    if (!documentHash || _activeClaims.length === 0) return
+    if (!documentHash || claims.length === 0) return
     try {
       const saved = await api.saveAnnotationVersion({
         document_hash: documentHash,
         brand_id: selectedBrandId || null,
         document_name: uploadedFile.name,
-        annotations_json: JSON.stringify(_activeClaims),
+        annotations_json: JSON.stringify(claims),
         source: 'manual',
         parent_version_id: currentVersion?.id || null
       })
@@ -1284,8 +932,9 @@ export default function MKG2ClaimsDetector() {
     try {
       const version = await api.getVersionByNumber(documentHash, versionNumber, selectedBrandId)
       if (version) {
-        const savedAnnotations = JSON.parse(version.annotations_json)
-          .map(c => ({ ...c, status: c.status || 'pending' }))
+        const savedAnnotations = addGlobalIndices(
+          JSON.parse(version.annotations_json).map(c => ({ ...c, status: c.status || 'pending' }))
+        )
         setClaims(savedAnnotations)
         setCurrentVersion(version)
         setHasUnsavedChanges(false)
@@ -1296,76 +945,15 @@ export default function MKG2ClaimsDetector() {
     }
   }
 
-  const handleConfirmReanalyze = async () => {
-    if (!uploadedFile) return
-    if (!ANALYSIS_CACHE_ENABLED) {
-      handleAnalyze()
-      return
-    }
-
-    // Compute the key fresh in case currentCacheKeyRef hasn't been set yet
-    const _promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
-    const _refIds = referenceDocuments.map(r => r.id)
-    const descriptor = await makeAnalysisCacheDescriptor(
-      uploadedFile,
-      selectedModel,
-      _promptKey,
-      editablePrompt,
-      selectedDocType || 'speaker-notes',
-      selectedBrandId,
-      _refIds
-    )
-    deleteAnalysisCache(descriptor.key)
-    if (currentCacheKeyRef.current) deleteAnalysisCache(currentCacheKeyRef.current)
-    currentCacheKeyRef.current = null
-    setCacheHit(null)
-    setHasCachedResult(false)
-    handleAnalyze()
-  }
-
   const handleCancelAnalysis = () => {
     cancelAnalysisRef.current = true
     setIsAnalyzing(false)
     setAnalysisComplete(false)
-    setMatchingComplete(false)
     setAnalysisProgress(0)
     setAnalysisStatus('Analyzing document...')
     setClaims([])
     setMatchingStats(null)
-    setCacheHit(null)
-    setPymupdfAnnotations([])
-    setPymupdfLoading(false)
-    setPymupdfError(null)
-    setPipelineTab('current')
   }
-
-  // ===== Position refinement =====
-
-  useEffect(() => {
-    if (!analysisComplete || extractedPages.length === 0) return
-    setClaims(prev => {
-      if (!prev.length) return prev
-      const needsFallbackPosition = prev.some(c => !c.position || c.position?.source === 'fallback')
-      const hasSlideClaims = prev.some(c => c.region === 'slide' && !c.globalSpot)
-      if (!needsFallbackPosition && !hasSlideClaims) return prev
-
-      const withRecoveredPositions = needsFallbackPosition
-        ? enrichClaimsWithPositions(prev, extractedPages)
-        : prev
-      const refreshed = hasSlideClaims
-        ? alignClaimsToSlideLayout(withRecoveredPositions, extractedPages)
-        : withRecoveredPositions
-
-      if (refreshed === prev) return prev
-
-      const withIndexes = refreshed.map(claim => {
-        const existing = prev.find(c => c.id === claim.id)
-        return { ...claim, globalIndex: existing?.globalIndex, matched: existing?.matched, reference: existing?.reference }
-      })
-      const missingIndex = withIndexes.some(c => !c.globalIndex)
-      return missingIndex ? addGlobalIndices(withIndexes) : withIndexes
-    })
-  }, [analysisComplete, extractedPages])
 
   // ===== Claim Actions =====
 
@@ -2024,10 +1612,9 @@ export default function MKG2ClaimsDetector() {
 
   // ===== Computed Values =====
 
-  const _activeClaims = pipelineTab === 'pymupdf' ? pymupdfAnnotations : claims
-  const pendingCount = _activeClaims.filter(c => c.status === 'pending').length
-  const approvedCount = _activeClaims.filter(c => c.status === 'approved').length
-  const rejectedCount = _activeClaims.filter(c => c.status === 'rejected').length
+  const pendingCount = claims.filter(c => c.status === 'pending').length
+  const approvedCount = claims.filter(c => c.status === 'approved').length
+  const rejectedCount = claims.filter(c => c.status === 'rejected').length
   const missedCount = missedClaims.length
 
   // ===== Validation Scorecard Metrics =====
@@ -2067,16 +1654,14 @@ export default function MKG2ClaimsDetector() {
       mappingAccuracy
     }
   }, [claims, missedClaims])
-  const claimSummary = useMemo(() => summarizeAnnotationClaims(_activeClaims), [_activeClaims])
-  const matchedRateLabel = matchingStats ? `${claimSummary.onPageCount} on-page` : 'N/A'
+  const claimSummary = useMemo(() => summarizeAnnotationClaims(claims), [claims])
+  const matchedRateLabel = `${claimSummary.onPageCount} on-page`
 
   const analysisMs = processingTime || 0
-  const matchingMs = matchingStats?.matching_total_ms || 0
-  const endToEndMs = analysisMs + matchingMs
+  const endToEndMs = analysisMs
 
   const claimDetectionRunCost = lastUsage?.cost || 0
-  const referenceMatchingRunCost = matchingStats?.matching_ai_cost || 0
-  const totalRunAICost = claimDetectionRunCost + referenceMatchingRunCost
+  const totalRunAICost = claimDetectionRunCost
 
   const pageOptions = useMemo(() => {
     const uniquePages = new Set()
@@ -2101,11 +1686,7 @@ export default function MKG2ClaimsDetector() {
     })
   }, [pageOptions])
 
-  // Always show all claims — better to over-flag than miss a claim
-  // Switch data source based on active pipeline tab
-  const activeClaims = pipelineTab === 'pymupdf' ? pymupdfAnnotations : claims
-
-  const displayedClaims = statusFilter === 'missed' ? [] : activeClaims
+  const displayedClaims = statusFilter === 'missed' ? [] : claims
     .filter(c => {
       if (statusFilter !== 'all' && c.status !== statusFilter) return false
       if (searchQuery && !c.text.toLowerCase().includes(searchQuery.toLowerCase())) return false
@@ -2364,11 +1945,6 @@ export default function MKG2ClaimsDetector() {
                   </>
                 )}
               </Button>
-              {ANALYSIS_CACHE_ENABLED && hasCachedResult && !isAnalyzing && (
-                <button className="reanalyzeLink" onClick={handleConfirmReanalyze}>
-                  Re-analyze from scratch
-                </button>
-              )}
               {currentVersion && !isAnalyzing && (
                 <button className="reanalyzeLink" onClick={handleReanalyze}>
                   Re-analyze (skip saved version)
@@ -2392,7 +1968,7 @@ export default function MKG2ClaimsDetector() {
                       <div className="resultsSummary">
                         <div className="resultRow">
                           <span className="resultLabel">Claims Detected</span>
-                          <span className="resultValue">{_activeClaims.length}</span>
+                          <span className="resultValue">{claims.length}</span>
                         </div>
                         {matchingStats && (
                           <>
@@ -2415,7 +1991,7 @@ export default function MKG2ClaimsDetector() {
                             )}
                             <div className="resultRow">
                               <span className="resultLabel">Processing Time</span>
-                              <span className="resultValue">{formatMinutes(matchingMs)}</span>
+                              <span className="resultValue">{formatMinutes(analysisMs)}</span>
                             </div>
                           </>
                         )}
@@ -2439,11 +2015,11 @@ export default function MKG2ClaimsDetector() {
                       <div className="modelPerformance">
                         <div className="resultRow">
                           <span className="resultLabel">Model</span>
-                          <span className="resultValue">{lastUsage?.modelDisplayName || ACTIVE_MODEL_LABEL}</span>
+                          <span className="resultValue">{lastUsage?.modelDisplayName || 'PyMuPDF'}</span>
                         </div>
                         <div className="resultRow">
                           <span className="resultLabel">Claims Detected</span>
-                          <span className="resultValue">{_activeClaims.length}</span>
+                          <span className="resultValue">{claims.length}</span>
                         </div>
                         <div className="resultRow">
                           <span className="resultLabel">On-Page Annotations</span>
@@ -2460,7 +2036,7 @@ export default function MKG2ClaimsDetector() {
                         </div>
                         <div className="resultRow">
                           <span className="resultLabel">Reference Matching Time</span>
-                          <span className="resultValue">{matchingStats ? formatMinutes(matchingMs) : 'N/A'}</span>
+                          <span className="resultValue">N/A</span>
                         </div>
                         <div className="divider" />
                         <div className="resultRow">
@@ -2469,15 +2045,11 @@ export default function MKG2ClaimsDetector() {
                         </div>
                         <div className="resultRow">
                           <span className="resultLabel">Reference Matching Cost</span>
-                          <span className="resultValue">{matchingStats ? `$${referenceMatchingRunCost.toFixed(4)}` : 'N/A'}</span>
+                          <span className="resultValue">N/A</span>
                         </div>
                         <div className="resultRow">
                           <span className="resultLabel">Total Run AI Cost</span>
                           <span className="resultValue">${totalRunAICost.toFixed(4)}</span>
-                        </div>
-                        <div className="resultRow">
-                          <span className="resultLabel">Session Cost (Detection)</span>
-                          <span className="resultValue">${sessionCost.toFixed(4)}</span>
                         </div>
                       </div>
                     }
@@ -2552,12 +2124,11 @@ export default function MKG2ClaimsDetector() {
               analysisStatus={analysisStatus}
               elapsedSeconds={elapsedSeconds}
               onScanComplete={() => {}}
-              claims={activeClaims}
+              claims={claims}
               missedClaims={displayMissedClaims}
               activeClaimId={activeClaimId}
               onClaimSelect={handleClaimSelect}
               onClaimPositionUpdate={handleClaimPositionUpdate}
-              onTextExtracted={handleTextExtracted}
               claimsPanelRef={claimsPanelRef}
               showPins={showClaimPins}
               onTogglePins={() => setShowClaimPins(prev => !prev)}
@@ -2606,7 +2177,7 @@ export default function MKG2ClaimsDetector() {
                   className={`segmentedBtn ${rightPanelTab === 0 ? 'active' : ''}`}
                   onClick={() => setRightPanelTab(0)}
                 >
-                  Claims{activeClaims.length > 0 ? ` (${activeClaims.length}${missedCount > 0 ? `+${missedCount}` : ''})` : ''}
+                  Claims{claims.length > 0 ? ` (${claims.length}${missedCount > 0 ? `+${missedCount}` : ''})` : ''}
                 </button>
                 <button
                   className={`segmentedBtn ${rightPanelTab === 1 ? 'active' : ''}`}
@@ -2620,32 +2191,6 @@ export default function MKG2ClaimsDetector() {
             <div className="claimsPanelBody">
               {rightPanelTab === 0 ? (
                 <>
-                  {/* Pipeline tab bar hidden — PyMuPDF is primary. Uncomment to restore comparison:
-                  {(analysisComplete || pymupdfAnnotations.length > 0 || pymupdfLoading) && (
-                    <div className="pipelineTabBar">
-                      <button
-                        className={`pipelineTab ${pipelineTab === 'current' ? 'pipelineTabActive' : ''}`}
-                        onClick={() => setPipelineTab('current')}
-                      >
-                        Vision + pdf.js
-                        {analysisComplete && <span className="pipelineTabCount">{claims.length}</span>}
-                      </button>
-                      <button
-                        className={`pipelineTab ${pipelineTab === 'pymupdf' ? 'pipelineTabActive' : ''}`}
-                        onClick={() => setPipelineTab('pymupdf')}
-                      >
-                        PyMuPDF
-                        {pymupdfLoading
-                          ? <Spinner size="small" />
-                          : pymupdfError
-                            ? <span className="pipelineTabError" title={pymupdfError}>Error</span>
-                            : <span className="pipelineTabCount">{pymupdfAnnotations.length}</span>
-                        }
-                      </button>
-                    </div>
-                  )}
-                  */}
-
                   {analysisComplete && (
                     <div className="claimsFilterBar">
                       <div className="statusToggleGroup">
@@ -2653,7 +2198,7 @@ export default function MKG2ClaimsDetector() {
                           className={`statusToggleBtn ${statusFilter === 'all' ? 'active' : ''}`}
                           onClick={() => setStatusFilter('all')}
                         >
-                          All ({activeClaims.length})
+                          All ({claims.length})
                         </button>
                         <button
                           className={`statusToggleBtn ${statusFilter === 'pending' ? 'active' : ''}`}

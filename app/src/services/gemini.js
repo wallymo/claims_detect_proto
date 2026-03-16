@@ -2043,7 +2043,6 @@ Rules:
   }
 }
 
-// DEPRECATED — kept for backward compatibility
 /**
  * Extract annotated statements from a slide image using Gemini Vision.
  * Returns array of { statement, refNumbers, x, y } — complete statements
