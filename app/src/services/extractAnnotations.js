@@ -174,7 +174,7 @@ async function extractPageTextLines(pdfFile) {
           y: item.y, x: item.x, lastX: item.x, maxX: item.x,
           parts: [{ text: item.text, x: item.x }],
           superParts: [], superPositions: [],
-          hasBodyFont: item.fontSize >= notesThreshold,
+          hasBodyFont: item.fontSize >= 5,
           maxFontSize: item.fontSize
         }
         lines.push(currentLine)
@@ -182,7 +182,7 @@ async function extractPageTextLines(pdfFile) {
         currentLine.parts.push({ text: item.text, x: item.x })
         currentLine.lastX = item.x
         if (item.x > currentLine.maxX) currentLine.maxX = item.x
-        if (item.fontSize >= notesThreshold) currentLine.hasBodyFont = true
+        if (item.fontSize >= 5) currentLine.hasBodyFont = true
         if (item.fontSize > currentLine.maxFontSize) currentLine.maxFontSize = item.fontSize
       }
     }
