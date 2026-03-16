@@ -1946,6 +1946,99 @@ const SLIDE_ANNOTATION_SCHEMA = {
 }
 
 /**
+ * Gemini Vision position refinement.
+ * Given text-layer candidates (the truth), Vision locates each statement
+ * on the slide image and returns x,y coordinates near the first word.
+ */
+export async function refineSlidePositions(imageBase64, pageNum, candidates, notesBoundaryY = 50) {
+  const client = getGeminiClient()
+
+  if (candidates.length === 0) return []
+
+  const statementsForVision = candidates.map((c, i) =>
+    `${i + 1}. "${String(c.text || '').slice(0, 120)}" (refs: ${(c.refNumbers || []).join(',')})`
+  ).join('\n')
+
+  const prompt = `This is a pharma presentation slide. The slide content is in the top ~${Math.round(notesBoundaryY)}% of the page.
+
+I have already identified these annotated statements on the slide:
+${statementsForVision}
+
+Your task: For EACH statement listed above, find where it appears on the slide image and return the x,y coordinates of its FIRST WORD.
+
+For each statement, return:
+- index: The statement number from my list (1-based)
+- x: Horizontal position of the FIRST WORD as % of page width (0=left, 100=right)
+- y: Vertical position of the FIRST WORD as % of page height (0=top, 100=bottom)
+
+Rules:
+- Only look in the slide region (y < ${Math.round(notesBoundaryY)})
+- Place coordinates at the START of the statement text, not the center or end
+- If you cannot find a statement on the slide, omit it from the results
+- Return an empty array if none are found`
+
+  const POSITION_SCHEMA = {
+    type: 'object',
+    properties: {
+      positions: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            index: { type: 'integer' },
+            x: { type: 'number' },
+            y: { type: 'number' }
+          },
+          required: ['index', 'x', 'y']
+        }
+      }
+    },
+    required: ['positions']
+  }
+
+  try {
+    const { response, model } = await generateContentWithModelFallback(client, {
+      preferredModel: GEMINI_MODEL,
+      contents: [{
+        role: 'user',
+        parts: [
+          { inlineData: { mimeType: 'image/png', data: imageBase64 } },
+          { text: prompt }
+        ]
+      }],
+      config: {
+        temperature: 0,
+        topP: 0.1,
+        topK: 1,
+        maxOutputTokens: 4096,
+        responseMimeType: 'application/json',
+        responseJsonSchema: POSITION_SCHEMA
+      },
+      purpose: `slide-position-refine-page-${pageNum}`
+    })
+
+    const rawText = response?.candidates?.[0]?.content?.parts?.[0]?.text
+      || response?.text?.()
+      || ''
+    const parsed = parseJsonResponse(rawText, `slide position refinement page ${pageNum}`)
+    const positions = Array.isArray(parsed?.positions) ? parsed.positions : []
+
+    const filtered = positions.filter(p =>
+      Number.isFinite(p.index) && p.index >= 1 && p.index <= candidates.length &&
+      Number.isFinite(p.x) && p.x >= 0 && p.x <= 100 &&
+      Number.isFinite(p.y) && p.y >= 0 && p.y < notesBoundaryY + 2
+    )
+
+    logger.info(`[Gemini Vision] Page ${pageNum}: refined ${filtered.length}/${candidates.length} positions (model: ${model})`)
+    return filtered
+  } catch (err) {
+    logger.warn(`[Gemini Vision] Page ${pageNum} position refinement failed: ${err.message}`)
+    return []
+  }
+}
+
+// DEPRECATED — kept for backward compatibility
+/**
  * Extract annotated statements from a slide image using Gemini Vision.
  * Returns array of { statement, refNumbers, x, y } — complete statements
  * with their superscript refs and positions, read in proper visual order.

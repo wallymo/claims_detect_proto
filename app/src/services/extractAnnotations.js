@@ -21,7 +21,7 @@ import {
 } from '@/utils/citationRefParsing'
 import { collectFullStatement, looksLikeShortHeading } from '@/utils/statementAssembly'
 import { buildTextOnlyAnnotations } from '@/utils/textOnlyAnnotations'
-import { detectSlideSuperscripts } from '@/services/gemini'
+import { refineSlidePositions } from '@/services/gemini'
 
 // Ensure pdf.js worker is configured (idempotent)
 if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
@@ -132,6 +132,37 @@ async function extractPageTextLines(pdfFile) {
 
     const bodyItems = items.filter(i => !isSuper(i) && !isSuperByBaseline(i, items))
     const superItems = items.filter(i => isSuper(i) || isSuperByBaseline(i, items))
+
+    // Pass 1b: Local-context superscript rescue for large-font regions (headlines).
+    // A digit item is a superscript if it's significantly smaller than nearby non-digit text,
+    // even if it's above the global threshold.
+    const localRescueIndices = []
+    for (let bi = bodyItems.length - 1; bi >= 0; bi--) {
+      const item = bodyItems[bi]
+      if (!/^[\d,.\u00b7·\u2070\u00b9\u00b2\u00b3\u2074-\u2079\-]+$/.test(item.text.trim())) continue
+      if (/^\d+\.$/.test(item.text.trim())) continue
+      if (item.fontSize <= superThreshold) continue
+
+      const neighbors = bodyItems.filter(other =>
+        other !== item &&
+        Math.abs(other.y - item.y) < 5 &&
+        Math.abs(other.x - item.x) < 30 &&
+        other.text.trim().length > 1 &&
+        !/^[\d,.]+$/.test(other.text.trim()) &&
+        other.fontSize > 0
+      )
+      if (neighbors.length === 0) continue
+
+      const maxNeighborFont = Math.max(...neighbors.map(n => n.fontSize))
+      if (item.fontSize / maxNeighborFont < 0.75) {
+        localRescueIndices.push(bi)
+      }
+    }
+    for (const bi of localRescueIndices) {
+      const [rescued] = bodyItems.splice(bi, 1)
+      superItems.push(rescued)
+    }
+
     const partsText = (parts) => parts.map(p => typeof p === 'string' ? p : p.text).join(' ').trim()
 
     // Pass 1: Group body items into lines (1.5% y-threshold + 20% x-gap splitting)
@@ -599,60 +630,62 @@ async function renderPageToBase64(pdfFile, pageNum) {
 /**
  * Use Gemini Vision on every page to extract annotated statements from
  * the slide image. Vision reads infographic layouts, charts, and multi-column
- * content with proper reading order. Text-layer slide candidates are replaced
- * by Vision results; notes candidates stay from the deterministic text layer.
+ * content with proper reading order. Vision results are merged with text-layer
+ * slide candidates (deduped); notes candidates stay from the deterministic text layer.
+ */
+/**
+ * Use Gemini Vision to refine positions of text-layer slide candidates.
+ * Text layer is the source of truth for WHAT annotations exist.
+ * Vision only provides WHERE they are on the slide (x,y near first word).
  */
 async function enrichWithGeminiVision(pdfFile, pages, textParsed, onProgress) {
-  // Vision scans every page that has a slide region (speaker notes boundary)
   const visionPages = pages
     .filter(p => p.hasSpeakerNotes && p.notesBoundaryY)
     .map(p => p.pageNum)
 
   if (visionPages.length === 0) return 0
 
-  logger.info(`Gemini Vision: scanning ${visionPages.length} slide pages`)
-  let added = 0
+  logger.info(`Gemini Vision: refining positions for ${visionPages.length} slide pages`)
+  let refined = 0
 
   for (let i = 0; i < visionPages.length; i++) {
     const pageNum = visionPages[i]
     const pageData = pages.find(p => p.pageNum === pageNum)
     const notesBoundaryY = pageData?.notesBoundaryY || 50
-    const slideFootnotes = textParsed.slideFootnotes[pageNum] || {}
+
+    // Get text-layer slide candidates for this page
+    const slideCandidates = textParsed.candidates.filter(
+      c => c.region === 'slide' && c.page === pageNum
+    )
+
+    if (slideCandidates.length === 0) continue
 
     const pct = 30 + Math.round((i / visionPages.length) * 35)
-    onProgress?.(pct, `Reading slide ${pageNum} of ${visionPages.length} with Gemini Vision...`)
+    onProgress?.(pct, `Refining slide ${i + 1} of ${visionPages.length} positions...`)
 
     try {
       const imageBase64 = await renderPageToBase64(pdfFile, pageNum)
-      const annotations = await detectSlideSuperscripts(
-        imageBase64, pageNum, slideFootnotes, notesBoundaryY
+      const positions = await refineSlidePositions(
+        imageBase64, pageNum, slideCandidates, notesBoundaryY
       )
 
-      if (annotations.length > 0) {
-        // Remove all text-layer slide candidates for this page — Vision replaces them
-        textParsed.candidates = textParsed.candidates.filter(
-          c => !(c.region === 'slide' && c.page === pageNum && c.source !== 'gemini-vision')
-        )
-      }
-
-      for (const ann of annotations) {
-        textParsed.candidates.push({
-          text: String(ann.statement || '').slice(0, 150),
-          region: 'slide',
-          refNumbers: Array.isArray(ann.refNumbers) ? ann.refNumbers : [ann.refNumbers],
-          page: pageNum,
-          pdfJsY: ann.y,
-          pdfJsX: ann.x,
-          source: 'gemini-vision'
-        })
-        added++
+      // Apply refined positions to text-layer candidates
+      for (const pos of positions) {
+        const candidate = slideCandidates[pos.index - 1]
+        if (candidate) {
+          candidate.pdfJsX = pos.x
+          candidate.pdfJsY = pos.y
+          candidate.source = 'vision-refined'
+          refined++
+        }
       }
     } catch (err) {
-      logger.warn(`Gemini Vision failed for page ${pageNum}: ${err.message}`)
+      logger.warn(`Gemini Vision position refinement failed for page ${pageNum}: ${err.message}`)
     }
   }
 
-  return added
+  logger.info(`Gemini Vision: refined ${refined} slide candidate positions`)
+  return refined
 }
 
 // ─── Step 3: Public Entry Point ───────────────────────────────────────────────
@@ -687,9 +720,9 @@ export async function extractAnnotations(pdfFile, onProgress) {
     notesReferencePages: Object.keys(textParsed.notesReferences).length
   })
 
-  // Gemini Vision: scan every slide page for annotated statements
-  const visionAdded = await enrichWithGeminiVision(pdfFile, pages, textParsed, onProgress)
-  logger.info(`Gemini Vision: ${visionAdded} slide annotations extracted`)
+  // Gemini Vision: refine positions of text-layer slide candidates
+  const visionRefined = await enrichWithGeminiVision(pdfFile, pages, textParsed, onProgress)
+  logger.info(`Gemini Vision: ${visionRefined} slide positions refined`)
 
   onProgress?.(70, 'Building annotations...')
   const { annotations, annotationBindings, globalAnnotationCount } = buildTextOnlyAnnotations(textParsed)
