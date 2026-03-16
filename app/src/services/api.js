@@ -272,6 +272,10 @@ export async function getVersionByNumber(documentHash, versionNumber, brandId) {
   return data.version || null
 }
 
+export async function deleteVersionsByHash(documentHash) {
+  return request(`/versions/${encodeURIComponent(documentHash)}`, { method: 'DELETE' })
+}
+
 export async function deleteAnalysisCacheEntry(key) {
   return request(`/analysis-cache?key=${encodeURIComponent(key)}`, {
     method: 'DELETE'

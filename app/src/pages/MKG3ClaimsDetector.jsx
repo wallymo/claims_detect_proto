@@ -792,13 +792,6 @@ export default function MKG3ClaimsDetector() {
 
   // ===== Analysis =====
 
-  const forceReanalyzeRef = useRef(false)
-
-  const handleReanalyze = () => {
-    forceReanalyzeRef.current = true
-    handleAnalyze()
-  }
-
   const handleAnalyze = async () => {
     if (!uploadedFile) return
     cancelAnalysisRef.current = false
@@ -833,7 +826,7 @@ export default function MKG3ClaimsDetector() {
         const fileHash = await getFileSha256(uploadedFile)
         setDocumentHash(fileHash)
 
-        if (!forceReanalyzeRef.current) {
+        {
           const existingVersion = await api.getLatestVersion(fileHash, selectedBrandId)
           if (existingVersion) {
             const savedAnnotations = JSON.parse(existingVersion.annotations_json)
@@ -902,7 +895,6 @@ export default function MKG3ClaimsDetector() {
       logger.error('Annotation error:', error)
       setAnalysisError(error.message)
     } finally {
-      forceReanalyzeRef.current = false
       setIsAnalyzing(false)
     }
   }
@@ -924,6 +916,20 @@ export default function MKG3ClaimsDetector() {
       logger.info({ event: 'version_saved', version: saved.version_number })
     } catch (err) {
       logger.error('Save version error:', err)
+    }
+  }
+
+  const handleResetVersions = async () => {
+    if (!documentHash) return
+    try {
+      await api.deleteVersionsByHash(documentHash)
+      setCurrentVersion(null)
+      setVersionList([])
+      logger.info({ event: 'versions_reset', hash: documentHash })
+      // Re-analyze to get a fresh v1
+      handleAnalyze()
+    } catch (err) {
+      logger.error('Reset versions error:', err)
     }
   }
 
@@ -1770,6 +1776,13 @@ export default function MKG3ClaimsDetector() {
                 <Icon name="fileCheck" size={14} />
                 Save
               </button>
+              <button
+                className="resetVersionBtn"
+                onClick={handleResetVersions}
+                title="Reset all versions for this document"
+              >
+                <Icon name="refreshCw" size={14} />
+              </button>
             </div>
           )}
           <ThemeToggle />
@@ -1945,11 +1958,6 @@ export default function MKG3ClaimsDetector() {
                   </>
                 )}
               </Button>
-              {currentVersion && !isAnalyzing && (
-                <button className="reanalyzeLink" onClick={handleReanalyze}>
-                  Re-analyze (skip saved version)
-                </button>
-              )}
 
               {analysisError && (
                 <div className="analysisError">

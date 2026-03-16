@@ -1103,3 +1103,20 @@ html, body {
   opacity: 0.5;
   cursor: default;
 }
+
+.resetVersionBtn {
+  display: flex;
+  align-items: center;
+  padding: 4px 6px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: 4px;
+  background: var(--color-background-secondary);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.resetVersionBtn:hover {
+  background: var(--red-3);
+  border-color: var(--red-7);
+  color: var(--red-11);
+}

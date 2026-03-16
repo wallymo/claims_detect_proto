@@ -62,6 +62,17 @@ export const versionController = {
     }
   },
 
+  deleteByHash(req, res, next) {
+    try {
+      const { hash } = req.params
+      if (!hash) throw new AppError('document hash is required', 400)
+      const result = AnnotationVersion.deleteByHash(hash)
+      res.json({ deleted: result.changes })
+    } catch (err) {
+      next(err)
+    }
+  },
+
   getByVersion(req, res, next) {
     try {
       const { hash, versionNumber } = req.params

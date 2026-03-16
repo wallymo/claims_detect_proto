@@ -59,6 +59,11 @@ export class AnnotationVersion {
     ).get(documentHash, versionNumber) || null
   }
 
+  static deleteByHash(documentHash) {
+    const db = getDb()
+    return db.prepare('DELETE FROM annotation_versions WHERE document_hash = ?').run(documentHash)
+  }
+
   static findLatestPerDocumentByBrand(brandId) {
     const db = getDb()
     return db.prepare(`
