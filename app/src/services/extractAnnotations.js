@@ -188,6 +188,10 @@ async function extractPageTextLines(pdfFile) {
     }
 
     // Detect "Speaker notes" boundary
+    // Method 1: Explicit "Speaker notes" text
+    // Method 2: Font-size jump heuristic — if no explicit label, look for a
+    //   sudden large-font region starting around y 45-55% (notes body font is
+    //   typically larger than slide fine-print)
     let notesBoundaryY = null
     let hasSpeakerNotes = false
     for (const line of lines) {
@@ -196,6 +200,22 @@ async function extractPageTextLines(pdfFile) {
         notesBoundaryY = Math.round(line.y * 10) / 10
         hasSpeakerNotes = true
         break
+      }
+    }
+
+    // Fallback: detect boundary by font-size transition in y 42-58% range
+    // Notes pages have a clear slide region (small fonts) then notes (large fonts like 12-13pt)
+    if (!notesBoundaryY) {
+      const sortedByY = [...lines].sort((a, b) => a.y - b.y)
+      for (const line of sortedByY) {
+        if (line.y < 42 || line.y > 58) continue
+        const text = partsText(line.parts)
+        // Look for bullet-starting lines with large font that signal notes content
+        if (line.maxFontSize >= bodyFontSize * 0.9 && /^[•\-–—\u2022]/.test(text) && line.y > 42) {
+          notesBoundaryY = Math.round((line.y - 1) * 10) / 10
+          hasSpeakerNotes = true
+          break
+        }
       }
     }
 
