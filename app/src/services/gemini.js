@@ -1506,7 +1506,7 @@ ${OUTPUT_DEDUP_RULES}
  * Annotate a PDF document by mapping on-page references to content.
  * Optionally runs AI QA pass to detect unreferenced claims.
  */
-export async function annotateDocument(pdfFile, onProgress, enableAiQa = false, docType = 'speaker-notes', { modelOverride } = {}) {
+export async function annotateDocument(pdfFile, onProgress, enableAiQa = false, docType = 'speaker-notes', { modelOverride, brandHints = '' } = {}) {
   const activeModel = modelOverride || GEMINI_MODEL
   const client = getGeminiClient()
 
@@ -1597,7 +1597,7 @@ export async function annotateDocument(pdfFile, onProgress, enableAiQa = false, 
       onProgress?.(75, 'Running AI QA...')
       try {
         const qaRunId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-        const qaPrompt = `${structure}${AI_QA_PROMPT_USER}\n\n<!-- run:${qaRunId} -->`
+        const qaPrompt = `${structure}${AI_QA_PROMPT_USER}${brandHints}\n\n<!-- run:${qaRunId} -->`
 
         const { response: qaResponse, model: qaModel } = await generateContentWithModelFallback(client, {
           preferredModel: activeModel,

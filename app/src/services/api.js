@@ -249,6 +249,11 @@ export async function saveAnnotationVersion({ document_hash, brand_id, document_
   })
 }
 
+export async function listVersionsByBrand(brandId) {
+  const data = await request(`/versions/brand/${brandId}`)
+  return data.versions || []
+}
+
 export async function getLatestVersion(documentHash) {
   const data = await request(`/versions/${encodeURIComponent(documentHash)}/latest`)
   return data.version || null

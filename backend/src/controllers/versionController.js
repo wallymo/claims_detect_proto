@@ -48,6 +48,18 @@ export const versionController = {
     }
   },
 
+  listByBrand(req, res, next) {
+    try {
+      const { brandId } = req.params
+      if (!brandId) throw new AppError('brandId is required', 400)
+
+      const versions = AnnotationVersion.findLatestPerDocumentByBrand(parseInt(brandId, 10))
+      res.json({ versions })
+    } catch (err) {
+      next(err)
+    }
+  },
+
   getByVersion(req, res, next) {
     try {
       const { hash, versionNumber } = req.params

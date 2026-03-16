@@ -1078,6 +1078,29 @@ export default function MKG2ClaimsDetector() {
         setAnalysisStatus(status)
       }
 
+      // Fetch brand patterns for prompt hints (before analysis so AI QA can use them)
+      let brandHints = ''
+      if (selectedBrandId) {
+        try {
+          const patterns = await api.getBrandPatterns(selectedBrandId)
+          if (patterns.length > 0) {
+            const hints = patterns
+              .filter(p => p.pattern_type === 'ref_association' && p.strength >= 2)
+              .slice(0, 10)
+              .map(p => {
+                const data = JSON.parse(p.pattern_json)
+                return `"${data.reference}" is commonly cited for claims like "${data.claim_text}"`
+              })
+            if (hints.length > 0) {
+              brandHints = '\n\nBrand-specific reference patterns from reviewer feedback:\n' + hints.join('\n')
+              logger.info({ event: 'brand_hints_loaded', count: hints.length, brand_id: selectedBrandId })
+            }
+          }
+        } catch (hintErr) {
+          logger.error('Brand pattern fetch error:', hintErr)
+        }
+      }
+
       const result = textOnly
         ? await extractAnnotations(uploadedFile, progressCb)
         : await annotateDocument(
@@ -1085,7 +1108,7 @@ export default function MKG2ClaimsDetector() {
             progressCb,
             enableAiQa,
             selectedDocType || 'speaker-notes',
-            { modelOverride: selectedModel }
+            { modelOverride: selectedModel, brandHints }
           )
 
       if (cancelAnalysisRef.current) return
@@ -1174,29 +1197,6 @@ export default function MKG2ClaimsDetector() {
         const fileHash = await getFileSha256(uploadedFile)
         setDocumentHash(fileHash)
 
-        // Fetch brand patterns for prompt hints
-        let brandHints = ''
-        if (selectedBrandId) {
-          try {
-            const patterns = await api.getBrandPatterns(selectedBrandId)
-            if (patterns.length > 0) {
-              const hints = patterns
-                .filter(p => p.pattern_type === 'ref_association' && p.strength >= 2)
-                .slice(0, 10)
-                .map(p => {
-                  const data = JSON.parse(p.pattern_json)
-                  return `"${data.reference}" is commonly cited for claims like "${data.claim_text}"`
-                })
-              if (hints.length > 0) {
-                brandHints = '\n\nBrand-specific reference patterns from reviewer feedback:\n' + hints.join('\n')
-                logger.info({ event: 'brand_hints_loaded', count: hints.length, brand_id: selectedBrandId })
-              }
-            }
-          } catch (hintErr) {
-            logger.error('Brand pattern fetch error:', hintErr)
-          }
-        }
-
         const existingVersion = await api.getLatestVersion(fileHash)
         if (existingVersion) {
           const savedAnnotations = JSON.parse(existingVersion.annotations_json)
@@ -1206,16 +1206,91 @@ export default function MKG2ClaimsDetector() {
           setVersionList(allVersions)
           logger.info({ event: 'version_loaded', version: existingVersion.version_number, hash: fileHash })
         } else {
-          const saved = await api.saveAnnotationVersion({
-            document_hash: fileHash,
-            brand_id: selectedBrandId || null,
-            document_name: uploadedFile.name,
-            annotations_json: JSON.stringify(indexedClaims),
-            source: 'ai'
-          })
-          setCurrentVersion(saved)
-          setVersionList([saved])
-          logger.info({ event: 'version_saved', version: 1, hash: fileHash })
+          // No exact match — try fuzzy carry-forward from similar brand documents
+          let carried = false
+          if (selectedBrandId && indexedClaims.length > 0) {
+            try {
+              const brandDocVersions = await api.listVersionsByBrand(selectedBrandId)
+              if (brandDocVersions.length > 0) {
+                // Build page text from current extractedPages state
+                const currentPages = extractedPages.map(p => ({
+                  text: Array.isArray(p.lines) ? p.lines.map(l => l.text).join(' ') : ''
+                }))
+
+                for (const existingDoc of brandDocVersions) {
+                  if (existingDoc.document_hash === fileHash) continue
+                  const storedAnnotations = JSON.parse(existingDoc.annotations_json || '[]')
+                  if (storedAnnotations.length === 0) continue
+
+                  // Build page text from stored annotations (group by page)
+                  const maxPage = Math.max(...storedAnnotations.map(a => a.page || 1))
+                  const oldPages = Array.from({ length: maxPage }, (_, i) => ({
+                    text: storedAnnotations
+                      .filter(a => (a.page || 1) === i + 1)
+                      .map(a => a.text || '')
+                      .join(' ')
+                  }))
+
+                  const pageComparison = comparePages(oldPages, currentPages)
+                  const avgSimilarity = pageComparison.reduce((sum, p) => sum + p.similarity, 0) / (pageComparison.length || 1)
+
+                  if (avgSimilarity >= CARRY_FORWARD_THRESHOLD) {
+                    // Carry forward annotations from the matched document
+                    const carriedAnnotations = storedAnnotations.map(ann => ({
+                      ...ann,
+                      carried: true,
+                      carriedFrom: existingDoc.document_hash
+                    }))
+
+                    setClaims(carriedAnnotations)
+
+                    const saved = await api.saveAnnotationVersion({
+                      document_hash: fileHash,
+                      brand_id: selectedBrandId,
+                      document_name: uploadedFile.name,
+                      annotations_json: JSON.stringify(carriedAnnotations),
+                      source: 'carried'
+                    })
+
+                    await api.createDocumentLineage({
+                      document_hash: fileHash,
+                      parent_hash: existingDoc.document_hash,
+                      brand_id: selectedBrandId,
+                      similarity_score: avgSimilarity
+                    })
+
+                    setCurrentVersion(saved)
+                    setVersionList([saved])
+                    carried = true
+                    logger.info({
+                      event: 'version_carried_forward',
+                      from_hash: existingDoc.document_hash,
+                      to_hash: fileHash,
+                      similarity: avgSimilarity,
+                      annotations_carried: carriedAnnotations.length
+                    })
+                    break
+                  }
+                }
+              }
+            } catch (carryErr) {
+              logger.error('Carry-forward error:', carryErr)
+            }
+          }
+
+          if (!carried) {
+            // First time, no similar document — save as v1
+            const saved = await api.saveAnnotationVersion({
+              document_hash: fileHash,
+              brand_id: selectedBrandId || null,
+              document_name: uploadedFile.name,
+              annotations_json: JSON.stringify(indexedClaims),
+              source: 'ai'
+            })
+            setCurrentVersion(saved)
+            setVersionList([saved])
+            logger.info({ event: 'version_saved', version: 1, hash: fileHash })
+          }
         }
       } catch (versionErr) {
         logger.error('Version save error:', versionErr)

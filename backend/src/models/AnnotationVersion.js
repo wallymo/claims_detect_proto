@@ -43,4 +43,19 @@ export class AnnotationVersion {
       'SELECT * FROM annotation_versions WHERE document_hash = ? AND version_number = ?'
     ).get(documentHash, versionNumber) || null
   }
+
+  static findLatestPerDocumentByBrand(brandId) {
+    const db = getDb()
+    return db.prepare(`
+      SELECT av.* FROM annotation_versions av
+      INNER JOIN (
+        SELECT document_hash, MAX(version_number) as max_version
+        FROM annotation_versions
+        WHERE brand_id = ?
+        GROUP BY document_hash
+      ) latest ON av.document_hash = latest.document_hash AND av.version_number = latest.max_version
+      WHERE av.brand_id = ?
+      ORDER BY av.created_at DESC
+    `).all(brandId, brandId)
+  }
 }
