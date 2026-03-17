@@ -11,6 +11,9 @@ export default function MKGClaimCard({
   onApprove,
   onReject,
   onRemove,
+  onDelete,
+  onUndo,
+  onRefChange,
   onSelect,
   onViewRef,
   brandReferences = [],
@@ -20,6 +23,7 @@ export default function MKGClaimCard({
   const [rejectionType, setRejectionType] = useState('false_positive')
   const [refSearch, setRefSearch] = useState('')
   const [selectedRefId, setSelectedRefId] = useState(null)
+  const [showRefEditor, setShowRefEditor] = useState(false)
 
   const getConfidenceVariant = (confidence) => {
     if (confidence >= 0.8) return 'success'
@@ -105,6 +109,39 @@ export default function MKGClaimCard({
     onSelect?.()
   }
 
+  const handleDelete = (e) => {
+    e.stopPropagation()
+    onDelete?.(claim.id)
+  }
+
+  const handleRefSwap = (refIndex, newRef) => {
+    const updatedRefs = [...(claim.references || [])]
+    updatedRefs[refIndex] = {
+      ...updatedRefs[refIndex],
+      id: newRef.id,
+      text: newRef.name ?? newRef.display_alias ?? newRef.filename,
+      name: newRef.name ?? newRef.display_alias ?? newRef.filename,
+      swapped: true
+    }
+    onRefChange?.(claim.id, updatedRefs)
+    setShowRefEditor(false)
+  }
+
+  const handleRefAdd = (newRef) => {
+    const updatedRefs = [
+      ...(claim.references || []),
+      {
+        number: (claim.references?.length || 0) + 1,
+        id: newRef.id,
+        text: newRef.name ?? newRef.display_alias ?? newRef.filename,
+        name: newRef.name ?? newRef.display_alias ?? newRef.filename,
+        added: true
+      }
+    ]
+    onRefChange?.(claim.id, updatedRefs)
+    setShowRefEditor(false)
+  }
+
   const isMissed = claim.status === 'missed'
 
   const cardClassName = [
@@ -132,6 +169,24 @@ export default function MKGClaimCard({
     <div className={cardClassName} onClick={handleCardClick}>
       {/* Header with confidence */}
       <div className={styles.header}>
+        {!isMissed && (
+          <div className={styles.cardActions}>
+            <button
+              className={styles.undoBtn}
+              onClick={(e) => { e.stopPropagation(); onUndo?.(claim.id) }}
+              title={claim.status !== 'pending' ? 'Undo — reset to pending' : 'Undo changes'}
+            >
+              <Icon name="refreshCw" size={12} />
+            </button>
+            <button
+              className={styles.deleteBtn}
+              onClick={handleDelete}
+              title="Remove annotation"
+            >
+              <Icon name="trash" size={12} />
+            </button>
+          </div>
+        )}
         {isMissed ? (
           <div className={styles.missedLabel}>
             <Icon name="alertCircle" size={14} />
@@ -205,6 +260,15 @@ export default function MKGClaimCard({
             <Icon name="fileText" size={14} />
             <span className={styles.referenceLabel}>Superscripts:</span>
             <span className={styles.referenceName}>{displaySuperscripts.join(', ')}</span>
+            {!showRefEditor && (
+              <button
+                className={styles.editRefBtn}
+                onClick={(e) => { e.stopPropagation(); setShowRefEditor(true) }}
+                title="Edit references"
+              >
+                <Icon name="edit" size={12} />
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -228,6 +292,62 @@ export default function MKGClaimCard({
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Inline reference editor */}
+      {showRefEditor && (
+        <div className={styles.refEditor} onClick={(e) => e.stopPropagation()}>
+          <div className={styles.refEditorHeader}>
+            <span className={styles.refEditorTitle}>Edit References</span>
+            <button className={styles.refEditorClose} onClick={() => setShowRefEditor(false)}>
+              <Icon name="x" size={14} />
+            </button>
+          </div>
+          {brandReferences.length > 0 ? (
+            <div className={styles.refEditorList}>
+              {brandReferences.map(ref => {
+                const isAlreadyLinked = claim.references?.some(r => r.id === ref.id)
+                return (
+                  <div
+                    key={ref.id}
+                    className={`${styles.refEditorItem} ${isAlreadyLinked ? styles.refEditorItemLinked : ''}`}
+                  >
+                    <span className={styles.refEditorItemName}>
+                      {ref.name ?? ref.display_alias ?? ref.filename}
+                    </span>
+                    <div className={styles.refEditorItemActions}>
+                      {!isAlreadyLinked && (
+                        <>
+                          {claim.references?.length > 0 && (
+                            <button
+                              className={styles.refEditorSwapBtn}
+                              onClick={() => handleRefSwap(0, ref)}
+                              title="Replace first reference"
+                            >
+                              Swap
+                            </button>
+                          )}
+                          <button
+                            className={styles.refEditorAddBtn}
+                            onClick={() => handleRefAdd(ref)}
+                            title="Add this reference"
+                          >
+                            Add
+                          </button>
+                        </>
+                      )}
+                      {isAlreadyLinked && (
+                        <span className={styles.refEditorLinkedBadge}>Linked</span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <p className={styles.refEditorEmpty}>No brand references available. Upload references in the Library tab.</p>
+          )}
         </div>
       )}
 
@@ -264,22 +384,14 @@ export default function MKGClaimCard({
         </div>
       ) : claim.status === 'pending' && !showFeedback ? (
         <div className={styles.actions}>
-          <Button
-            variant="ghost"
-            size="small"
-            onClick={handleApprove}
-          >
-            <Icon name="thumbsUp" size={16} />
+          <button className={styles.approveBtn} onClick={handleApprove}>
+            <Icon name="thumbsUp" size={14} />
             Approve
-          </Button>
-          <Button
-            variant="ghost"
-            size="small"
-            onClick={handleReject}
-          >
-            <Icon name="thumbsDown" size={16} />
+          </button>
+          <button className={styles.rejectBtn} onClick={handleReject}>
+            <Icon name="thumbsDown" size={14} />
             Reject
-          </Button>
+          </button>
         </div>
       ) : null}
 

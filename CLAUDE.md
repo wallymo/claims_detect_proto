@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 Claims Detector: React + Express POC for AI-powered annotation and claim detection in pharma documents. Built for MKG to streamline MLR (Medical, Legal, Regulatory) review. Primary goal: automate reference annotation (connecting on-page references to content). Secondary goal: AI-powered claim detection as QA.
 
 ## Design Principles (IMPORTANT)
@@ -15,34 +17,41 @@ Claims Detector: React + Express POC for AI-powered annotation and claim detecti
 - `/mkg` — POC1: AI claim detection with PDF upload
 - `/demo` — Client-friendly `/mkg` (hides POC badge)
 - `/mkg2` — Earlier page-local annotation workflow
-- `/mkg3` — Current deterministic annotation workflow for this branch
+- `/mkg3` — Current annotation workflow (PyMuPDF pipeline)
 
 ## MKG3 — Annotation Engine (newworkflow branch)
 
-**Purpose:** Automate reference annotation from page-local evidence. `/mkg3` extracts page text and positions, detects superscript-backed statements, and maps them to the references on that same page. Saves the manual annotation step without making AI the primary engine.
+**Purpose:** Automate reference annotation from page-local evidence. `/mkg3` extracts page text and positions, detects superscript-backed statements, and maps them to the references on that same page. Saves the manual annotation step without using AI.
 
-**Primary flow (always runs):**
-1. Extract text from each page with positions.
-2. Split each page into `slide` and `notes` regions by coordinates.
-3. Parse superscript-backed statements in each region.
-   - Numeric superscripts only for now. Ignore dagger, double-dagger, asterisk, and other symbol markers in `/mkg3`.
-4. Parse page-local reference pools:
-   - slide footnotes at the bottom of the slide
-   - notes references under the speaker notes `References` section
-5. Match superscript numbers directly to the local pool for that same page and region.
-6. Place pins from extracted text coordinates.
-7. If a reference pool exists but no clear superscript target exists, emit a global annotation for that page/region.
+**Primary pipeline: PyMuPDF (deterministic, zero-AI)**
+
+The sole annotation engine is a standalone Python script (`scripts/pymupdf_poc.py`) called from the Express backend. No Gemini, no OpenAI, no API keys, no token costs. Processes 31-page decks in under 1 second.
+
+Flow per page:
+1. Extract all text spans with coordinates, font size, and flags via `page.get_text("dict")`.
+2. Split page into `slide` and `notes` regions by detecting "Speaker notes" label (fallback: 50% y).
+3. Detect superscripts using PyMuPDF font flags (`flags & 1`). Numeric only.
+4. Parse two reference pools per page:
+   - Slide footnotes: tiny text (< 6pt) at bottom of slide region
+   - Notes references: text below "References" header in notes region
+   - Handles both numbered (`1. Author...`) and unnumbered single citations
+5. Associate each superscript with its nearest parent text (same visual line, to the left).
+6. Resolve superscripts against their region's pool only. Never cross-reference.
+7. Orphan references (pool entries with no superscript) → global annotations.
+8. Output structured JSON → frontend transforms to annotation format.
+
+**Backend endpoint:** `POST /api/pymupdf-extract` receives PDF via Multer, calls Python script via `child_process.execFile`, returns JSON.
+
+**Reference scope rule:** Slide content may only resolve against that page's slide footnotes. Speaker notes bullets may only resolve against that page's notes references. Never cross-reference between the two pools.
 
 **Secondary flow (AI QA toggle in settings, off by default):**
 - When ON, model does additional pass looking for potential claims with NO on-page reference
 - Tagged `"source": "ai-find"` — flagged for human review
-- When OFF, it must not interfere with deterministic extraction; only deterministic on-page annotations and required global annotations are shown
-
-**Reference scope rule:** Slide content may only resolve against that page's slide footnotes. Speaker notes bullets may only resolve against that page's notes references. Never cross-reference between the two pools.
+- When OFF, only deterministic on-page annotations and global annotations are shown
 
 **See:** [PROCESS.md](./PROCESS.md)
 
-**Previous approach (deprecated on this branch):** Multi-tier backend matching pipeline (semantic search, AI confirmation, keyword fallback) against brand reference library. `/mkg3` should not use that as its primary path.
+**Previous approach (deprecated on this branch):** Vision+pdf.js hybrid pipeline (Gemini Vision for slides, pdf.js for notes). Also deprecated: multi-tier backend matching pipeline (semantic search, AI confirmation, keyword fallback) against brand reference library.
 
 ## Commands
 
@@ -66,6 +75,18 @@ node scripts/embed-references.js          # Batch passage embedding (--force, --
 node scripts/benchmark-passages-search.js # Search recall/latency benchmarks (--claims-file, --brand-id)
 ```
 
+**PyMuPDF script** (from project root):
+```bash
+# Setup (one-time)
+python3 -m venv scripts/.venv
+scripts/.venv/bin/pip install -r scripts/requirements.txt
+
+# Run standalone
+scripts/.venv/bin/python3 scripts/pymupdf_poc.py <pdf_path> --pretty
+scripts/.venv/bin/python3 scripts/pymupdf_poc.py <pdf_path> --debug    # stderr diagnostics
+scripts/.venv/bin/python3 scripts/pymupdf_poc.py <pdf_path> --page 2   # single page
+```
+
 **Both servers required for development.** Vite proxies `/api` → `http://localhost:3001`.
 
 **Tests** in `app/test/` (not colocated). Environment: happy-dom. Coverage threshold: 50%.
@@ -84,7 +105,7 @@ VITE_ANTHROPIC_API_KEY=your_key
 VITE_GEMINI_API_KEY=your_key     # Required for fact indexing + embeddings
 ```
 
-Matching pipeline has 15+ optional tuning env vars with sensible defaults — see `referenceMatching.js` header or `app/.env.local` for the full list.
+**Note:** The PyMuPDF pipeline requires NO API keys. Keys are only needed for the AI QA secondary flow and the reference fact indexing system.
 
 **Deployment:** Vercel via `app/vercel.json`. Production: `/` → `/mkg`, SPA rewrites for `/mkg2`, `/demo`.
 
@@ -107,30 +128,38 @@ claims_detector/
 │   ├── scripts/                  # preload, index, embed, benchmark
 │   └── src/
 │       ├── models/               # Brand, Reference, ClaimFeedback, Folder, ReferenceFact, ReferencePassage
-│       ├── controllers/          # brand, reference, file, feedback, fact, passage
+│       ├── controllers/          # brand, reference, file, feedback, fact, passage, pymupdf
 │       ├── services/             # textExtractor, factExtractor, passageEmbedder
 │       └── middleware/           # errorHandler, upload (Multer)
+├── scripts/                      # PyMuPDF parser + Python venv
+│   ├── pymupdf_poc.py            # Standalone annotation extraction script
+│   ├── requirements.txt          # PyMuPDF==1.27.2
+│   └── .venv/                    # Python virtual environment
 ├── docs/                         # Plans and briefs
 └── MKG Knowledge Base/           # 54 source reference PDFs
 ```
 
 ## Key Technical Details
 
-**AI services:** Three interchangeable backends (`gemini.js`, `openai.js`, `anthropic.js`). All send PDFs as base64 multimodal. Gemini returns `position: { x, y }` as % of page dimensions for claim pin placement.
+**PyMuPDF pipeline (primary):** `scripts/pymupdf_poc.py` is the sole annotation engine. Called from `backend/src/controllers/pymupdfController.js` via `child_process.execFile`. Frontend calls `POST /api/pymupdf-extract` with the PDF, receives JSON, transforms via `transformPyMuPDFResults()` in `MKG3ClaimsDetector.jsx`. Zero AI involvement — pure text extraction.
+
+**PyMuPDF superscript detection:** Uses `flags & 1` on each text span. This is reliable on PowerPoint PDF exports. Body text threshold is 6pt (catches callout box text at 7pt, skips 4pt footnotes). Y-tolerance for parent text association is 0.9% (accounts for superscripts sitting above baseline).
+
+**PyMuPDF global annotations:** When a reference pool exists but no superscripts claim its entries, orphan references become global annotations. Slide globals positioned at (14%, 15%), notes globals at (14%, boundary_y + 1%).
+
+**AI services (secondary, off by default):** Three interchangeable backends (`gemini.js`, `openai.js`, `anthropic.js`). All send PDFs as base64 multimodal. Only used when AI QA toggle is enabled.
 
 **Model defaults:** Gemini 3 Pro Preview, Claude Opus 4.6, GPT-5.2 Codex. Override Gemini with `VITE_GEMINI_MODEL`.
 
-**Gemini two-pass detection:** Primary pass extracts claims from text + notes. Optional visual sweep (`VITE_GEMINI_VISUAL_SWEEP_ENABLED`, default: true) re-scans for chart/table statistics. Results merged with deduplication.
-
 **OpenAI uses Responses API** — `client.responses.create()` with `input[]` array format, NOT `chat.completions.create()`.
-
-**MKG3 annotation pipeline:** Hybrid two-engine pipeline. pdf.js text layer handles speaker notes candidates and reference pool extraction (deterministic). Gemini Vision reads every slide image for annotated statements with proper layout-aware reading order and positions. Vision results replace text-layer slide candidates. Optional AI QA remains separate and off by default.
 
 **Database:** SQLite + WAL + `better-sqlite3` + `sqlite-vec`. Soft delete via `deleted_at` timestamp. 5 migrations auto-run on startup.
 
-**Document structure:** "Notes page" PDFs: slide region (top ~50%, y < 55%) and speaker notes (bottom ~50%, y > 55%). Same stat in both regions = 1 pin (dedup by design, do not try to force duplicates).
+**Document structure:** "Notes page" PDFs: slide region (top ~50%) and speaker notes (bottom ~50%). "Speaker notes" label detected by text scan; fallback to 50% midpoint.
 
-**Hybrid pipeline rule:** For `/mkg3`, the text layer (pdf.js) owns speaker notes and reference pool extraction. Gemini Vision owns slide-region annotation extraction. Both are first-class engines, not fallbacks.
+**Version system:** Each analysis saves results as a version tied to file hash + brand. Re-analysis creates a new version. Approval/rejection statuses are carried forward from prior versions. No carry-forward from different documents.
+
+**Frontend state:** PyMuPDF results stored in `pymupdfAnnotations` state. `_activeClaims` is the computed variable used by all display components (claim cards, pins, counts, summaries). The old `claims` state exists but is not used for display.
 
 ## Coding Conventions
 
@@ -147,17 +176,19 @@ claims_detector/
 
 | Symptom | Fix |
 |---------|-----|
-| Claim count varies between runs | Normal — Gemini non-determinism, not a bug |
+| PyMuPDF endpoint returns 500 | Check `scripts/.venv/bin/python3` exists. Run setup: `python3 -m venv scripts/.venv && scripts/.venv/bin/pip install -r scripts/requirements.txt` |
 | Results seem stale after code change | Restart Vite dev server to clear cache |
 | `/api` routes return 404 | Backend not running — `cd backend && npm run dev` |
 | Build warning >500KB chunk | Expected (pdf.js worker) |
-| Annotations missing on-page references | Check page-local text extraction, slide/notes split, and superscript parsing before considering AI fallback |
+| Port 3001 in use | `lsof -i :3001 -t \| xargs kill` then restart backend |
+| Annotations missing on-page references | Check PyMuPDF debug output: `scripts/.venv/bin/python3 scripts/pymupdf_poc.py <pdf> --page N --debug` |
+| New PDF shows 0 claims | Check backend logs for PyMuPDF errors. Test endpoint directly: `curl -F "pdf=@file.pdf" http://localhost:3001/api/pymupdf-extract` |
 
 ## Reference Docs
 
 For detailed specs beyond this file:
 - Deterministic `/mkg3` workflow: [PROCESS.md](./PROCESS.md)
+- PyMuPDF POC design: @docs/plans/2026-03-16-pymupdf-poc-design.md
+- PyMuPDF integration design: @docs/plans/2026-03-16-pymupdf-integration-design.md
 - POC2 scope & validation: @docs/plans/2026-02-13-poc2-sow-alignment-assessment.md
-- Workflow diagram: @docs/workflow-infographic.jpg
-- Matching tuning vars: see `referenceMatching.js` header comments
 - Backend API endpoints: see route files in `backend/src/routes/`

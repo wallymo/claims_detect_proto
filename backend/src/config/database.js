@@ -132,6 +132,11 @@ export function initDb() {
     try { db.exec(stmt) } catch (err) { if (!err.message.includes('duplicate column')) throw err }
   }
 
+  // 015: annotation versioning (versions, edits, brand patterns, document lineage)
+  const migration015Path = path.resolve(__dirname, '../../migrations/015_annotation_versioning.sql')
+  const migration015 = fs.readFileSync(migration015Path, 'utf-8')
+  db.exec(migration015)
+
   console.log('Database initialized:', env.DB_PATH)
   return db
 }

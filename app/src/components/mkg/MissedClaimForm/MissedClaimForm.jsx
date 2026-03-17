@@ -38,20 +38,6 @@ export default function MissedClaimForm({
 
       <form className={styles.body} onSubmit={handleSubmit}>
         <div className={styles.field}>
-          <label className={styles.label} htmlFor="missedClaimText">
-            Claim text <span className={styles.required}>*</span>
-          </label>
-          <textarea
-            id="missedClaimText"
-            className={styles.textarea}
-            rows={3}
-            placeholder="Type or paste the missed claim..."
-            value={claimText}
-            onChange={(e) => setClaimText(e.target.value)}
-          />
-        </div>
-
-        <div className={styles.field}>
           <label className={styles.label}>Reference</label>
           <div className={styles.refSearchWrapper}>
             <input
@@ -87,6 +73,20 @@ export default function MissedClaimForm({
               </button>
             ))}
           </div>
+        </div>
+
+        <div className={styles.field}>
+          <label className={styles.label} htmlFor="missedClaimText">
+            Statement <span className={styles.required}>*</span>
+          </label>
+          <textarea
+            id="missedClaimText"
+            className={styles.textarea}
+            rows={3}
+            placeholder="The statement this reference supports..."
+            value={claimText}
+            onChange={(e) => setClaimText(e.target.value)}
+          />
         </div>
 
         <div className={styles.actions}>
