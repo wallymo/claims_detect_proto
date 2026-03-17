@@ -21,6 +21,7 @@ import LibraryTab from '@/components/claims-detector/LibraryTab'
 import TrainingDataOverlay from '@/components/mkg/TrainingDataOverlay/TrainingDataOverlay'
 import MissedClaimForm from '@/components/mkg/MissedClaimForm/MissedClaimForm'
 import Alert from '@/components/molecules/Alert/Alert'
+import ReferenceViewer from '@/components/mkg/ReferenceViewer/ReferenceViewer'
 
 // Services
 import { MEDICATION_PROMPT_USER, getDocTypeInstructions, GEMINI_MODEL, MODEL_DISPLAY_NAMES, AI_QA_PROMPT_USER } from '@/services/gemini'
@@ -36,6 +37,7 @@ import { dedupeClaimsByPageAndText } from '@/utils/claimDedup'
 import { summarizeAnnotationClaims } from '@/utils/annotationSummary'
 import { logger } from '@/utils/logger'
 import { charOffsetToPage, resolveCitationPdfPage } from '@/utils/referenceViewerHints'
+import { matchCitationToLibrary } from '@/utils/citationLibraryMatcher'
 
 const ACTIVE_MODEL_LABEL = MODEL_DISPLAY_NAMES[GEMINI_MODEL] || GEMINI_MODEL
 
@@ -172,9 +174,14 @@ function mergeTrainingSessionsByDocument(sessions) {
   )
 }
 
-function transformPyMuPDFResults(data) {
+function transformPyMuPDFResults(data, referenceDocuments = []) {
   const annotations = []
   if (!data?.pages) return annotations
+  const matchRef = (text) => {
+    if (!referenceDocuments.length) return null
+    const matched = matchCitationToLibrary(text, referenceDocuments)
+    return matched ? matched.id : null
+  }
   for (const page of data.pages) {
     const mapClaim = (claim, idx, region, prefix) => ({
       id: `pymupdf-${prefix}-${page.page}-${idx}`,
@@ -184,7 +191,7 @@ function transformPyMuPDFResults(data) {
       region,
       refNumbers: claim.superscripts || [],
       superscripts: claim.superscripts || [],
-      references: (claim.references || []).map(r => ({ number: r.number, text: r.text, missing: false })),
+      references: (claim.references || []).map(r => ({ number: r.number, text: r.text, missing: false, id: matchRef(r.text) })),
       source: 'pymupdf',
       matched: (claim.references || []).length > 0,
       matchTier: 'on-page',
@@ -200,27 +207,8 @@ function transformPyMuPDFResults(data) {
     for (const [idx, claim] of (page.notes_claims || []).entries()) {
       annotations.push(mapClaim(claim, idx, 'notes', 'n'))
     }
-    for (const [idx, u] of (page.unresolved_superscripts || []).entries()) {
-      annotations.push({
-        id: `pymupdf-u-${page.page}-${idx}`,
-        text: u.claim_text || `Unresolved superscript ${u.superscript}`,
-        claim: u.claim_text || `Unresolved superscript ${u.superscript}`,
-        statement: u.claim_text || `Unresolved superscript ${u.superscript}`,
-        region: u.region || 'slide',
-        refNumbers: [u.superscript],
-        superscripts: [u.superscript],
-        references: [],
-        source: 'pymupdf',
-        matched: false,
-        matchTier: 'unresolved',
-        confidence: 100,
-        page: page.page,
-        position: null,
-        globalSpot: true,
-        globalReason: 'unresolved-superscript',
-        status: 'pending',
-      })
-    }
+    // Unresolved superscripts are kept in PyMuPDF JSON for debugging
+    // but not surfaced as annotations — they have no matched reference.
     // Global annotations for orphan references (no superscripts in region)
     for (const [idx, g] of (page.global_annotations || []).entries()) {
       const region = (g.global_reason || '').includes('slide') ? 'slide' : 'notes'
@@ -232,7 +220,7 @@ function transformPyMuPDFResults(data) {
         region,
         refNumbers: g.superscripts || [],
         superscripts: g.superscripts || [],
-        references: (g.references || []).map(r => ({ number: r.number, text: r.text, missing: false })),
+        references: (g.references || []).map(r => ({ number: r.number, text: r.text, missing: false, id: matchRef(r.text) })),
         source: 'pymupdf',
         matched: true,
         matchTier: 'on-page',
@@ -340,6 +328,7 @@ export default function MKG3ClaimsDetector() {
 
   // Reference viewer overlay
   const [referenceViewerData, setReferenceViewerData] = useState(null)
+  const markerCacheRef = useRef(new Map())
 
   // Training data state
   const [trainingDocuments, setTrainingDocuments] = useState([])
@@ -816,7 +805,7 @@ export default function MKG3ClaimsDetector() {
       setAnalysisProgress(70)
       setAnalysisStatus('Processing results...')
 
-      const transformed = transformPyMuPDFResults(pymupdfData)
+      const transformed = transformPyMuPDFResults(pymupdfData, referenceDocuments)
       const indexed = addGlobalIndices(transformed)
       logger.info({ event: 'pymupdf_extraction_complete', annotations: indexed.length })
 
@@ -1322,12 +1311,29 @@ export default function MKG3ClaimsDetector() {
       }
     }
 
+    // Fetch highlight markers (parallel, non-blocking — cached after first load)
+    let markers = []
+    if (ref.id) {
+      if (markerCacheRef.current.has(ref.id)) {
+        markers = markerCacheRef.current.get(ref.id)
+      } else {
+        try {
+          const result = await api.fetchReferenceMarkers(ref.id)
+          markers = result?.markers || []
+          markerCacheRef.current.set(ref.id, markers)
+        } catch {
+          markers = []
+        }
+      }
+    }
+
     setReferenceViewerData({
       referenceId: ref.id,
-      page: targetPage,
-      excerpt: excerpt || (!resolvedPage ? claimText : null),
+      page: markers.length > 0 ? markers[0].page_number : targetPage,
+      excerpt: markers.length > 0 ? null : (excerpt || (!resolvedPage ? claimText : null)),
       pageResolution: resolutionReason,
-      citationPageLabel: ref.citationPageLabel || null
+      citationPageLabel: ref.citationPageLabel || null,
+      markers,
     })
   }
 
@@ -2419,10 +2425,11 @@ export default function MKG3ClaimsDetector() {
               </Button>
             </div>
             <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-              <ReferenceViewerContent
+              <ReferenceViewer
                 referenceId={referenceViewerData.referenceId}
                 page={referenceViewerData.page}
                 excerpt={referenceViewerData.excerpt}
+                markers={referenceViewerData.markers}
               />
             </div>
           </div>
@@ -2589,374 +2596,6 @@ export default function MKG3ClaimsDetector() {
               </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-/**
- * Reference Viewer Content - renders reference PDF with PDF.js canvas and a pin marker at the excerpt location
- */
-function ReferenceViewerContent({ referenceId, page, excerpt }) {
-  const [pdfDoc, setPdfDoc] = useState(null)
-  const [currentPage, setCurrentPage] = useState(page || 1)
-  const [totalPages, setTotalPages] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [pinY, setPinY] = useState(null)
-  const [highlightRects, setHighlightRects] = useState([])
-  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
-  const canvasRef = useRef(null)
-  const textLayerRef = useRef(null)
-  const containerRef = useRef(null)
-
-  function normalizeForSearch(text) {
-    return String(text || '')
-      .replace(/\ufb01/g, 'fi')
-      .replace(/\ufb02/g, 'fl')
-      .replace(/\ufb00/g, 'ff')
-      .replace(/\ufb03/g, 'ffi')
-      .replace(/\ufb04/g, 'ffl')
-      .replace(/\u00AD/g, '')
-      .replace(/[\u200B-\u200D\uFEFF]/g, '')
-      .replace(/[\u2018\u2019]/g, "'")
-      .replace(/[\u201C\u201D]/g, '"')
-      .replace(/[\u2013\u2014]/g, '-')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .toLowerCase()
-  }
-
-  useEffect(() => {
-    if (Number.isFinite(page) && page > 0) {
-      setCurrentPage(Math.max(1, Math.floor(page)))
-    }
-  }, [page])
-
-  // Load PDF blob into PDF.js
-  useEffect(() => {
-    let cancelled = false
-    async function load() {
-      try {
-        setLoading(true)
-        setError(null)
-        setPinY(null)
-        setHighlightRects([])
-        const blob = await api.fetchReferenceFile(referenceId)
-        if (cancelled) return
-        const arrayBuffer = await blob.arrayBuffer()
-        const doc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
-        if (cancelled) return
-        setPdfDoc(doc)
-        setTotalPages(doc.numPages)
-      } catch (err) {
-        if (!cancelled) setError(err.message)
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    load()
-    return () => { cancelled = true }
-  }, [referenceId])
-
-  // Render page to canvas and locate excerpt
-  useEffect(() => {
-    if (!pdfDoc || !canvasRef.current) return
-    let cancelled = false
-
-    async function renderPage() {
-      try {
-        const pdfPage = await pdfDoc.getPage(currentPage)
-        const containerWidth = containerRef.current?.clientWidth || 800
-        const baseViewport = pdfPage.getViewport({ scale: 1 })
-        const fitScale = Math.min(2.0, (containerWidth - 48) / baseViewport.width)
-        const viewport = pdfPage.getViewport({ scale: fitScale })
-
-        if (cancelled) return
-        const canvas = canvasRef.current
-        canvas.width = viewport.width
-        canvas.height = viewport.height
-        setCanvasSize({ width: viewport.width, height: viewport.height })
-
-        await pdfPage.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
-        const textLayerDiv = textLayerRef.current
-
-        // Render pdf.js text layer for DOM-based highlighting
-        if (textLayerDiv) {
-          textLayerDiv.innerHTML = ''
-          textLayerDiv.style.width = `${viewport.width}px`
-          textLayerDiv.style.height = `${viewport.height}px`
-          const textLayer = new TextLayer({
-            textContentSource: pdfPage.streamTextContent(),
-            container: textLayerDiv,
-            viewport,
-          })
-          await textLayer.render()
-        }
-        if (cancelled) return
-
-        // Find excerpt Y position in this page
-        if (excerpt && !cancelled) {
-          async function findExcerptOnPage(pageNum) {
-            const searchPage = await pdfDoc.getPage(pageNum)
-            const textContent = await searchPage.getTextContent()
-            const items = textContent.items.filter(i => i.str?.trim() && Array.isArray(i.transform))
-            const pageText = normalizeForSearch(items.map(i => i.str).join(' '))
-            const normalizedExcerpt = normalizeForSearch(excerpt)
-            const candidateNeedles = [
-              normalizedExcerpt.slice(0, 180),
-              normalizedExcerpt.slice(0, 140),
-              normalizedExcerpt.slice(0, 90),
-            ].filter((candidate, index, arr) => candidate.length >= 24 && arr.indexOf(candidate) === index)
-
-            let matchIdx = -1
-            let matchedNeedle = ''
-            for (const candidate of candidateNeedles) {
-              const idx = pageText.indexOf(candidate)
-              if (idx !== -1) {
-                matchIdx = idx
-                matchedNeedle = candidate
-                break
-              }
-            }
-
-            return { items, matchIdx, matchedNeedle, textContent, searchPage }
-          }
-
-          let searchResult = await findExcerptOnPage(currentPage)
-          if (cancelled) return
-
-          let actualPage = currentPage
-          if (searchResult.matchIdx === -1 && !cancelled) {
-            const pagesToTry = []
-            if (currentPage > 1) pagesToTry.push(currentPage - 1)
-            if (currentPage < totalPages) pagesToTry.push(currentPage + 1)
-
-            for (const tryPage of pagesToTry) {
-              const result = await findExcerptOnPage(tryPage)
-              if (cancelled) return
-              if (result.matchIdx !== -1) {
-                searchResult = result
-                actualPage = tryPage
-                if (actualPage !== currentPage) {
-                  setPinY(null)
-                  setHighlightRects([])
-                  setCurrentPage(actualPage)
-                  return
-                }
-                break
-              }
-            }
-          }
-
-          const { items, matchIdx, matchedNeedle } = searchResult
-
-          if (matchIdx !== -1) {
-            // DOM-based highlighting via text layer spans
-            if (textLayerDiv) {
-              const spans = Array.from(textLayerDiv.querySelectorAll('span'))
-              let charCount = 0
-              const matchEnd = matchIdx + matchedNeedle.length
-              let firstHighlightTop = null
-
-              for (const span of spans) {
-                const spanNormalized = normalizeForSearch(span.textContent || '')
-                const itemStart = charCount
-                const itemEnd = charCount + spanNormalized.length
-
-                if (itemEnd > matchIdx && itemStart < matchEnd) {
-                  span.style.backgroundColor = 'rgba(255, 193, 7, 0.35)'
-                  span.style.borderRadius = '2px'
-                  if (firstHighlightTop === null) {
-                    firstHighlightTop = span.offsetTop
-                  }
-                }
-
-                charCount += spanNormalized.length + 1
-              }
-
-              if (!cancelled) {
-                setHighlightRects([])
-                setPinY(firstHighlightTop)
-              }
-            } else {
-              // Fallback: rect-based highlighting if text layer unavailable
-              let charCount = 0
-              const matchEnd = matchIdx + matchedNeedle.length
-              const nextRects = []
-
-              for (const item of items) {
-                const itemStart = charCount
-                const itemEnd = itemStart + item.str.length
-                const overlaps = itemEnd >= matchIdx && itemStart <= matchEnd
-
-                if (overlaps) {
-                  const width = Math.max(6, (item.width || 0) * fitScale)
-                  const height = Math.max(10, (item.height || 0) * fitScale)
-                  const left = item.transform[4] * fitScale
-                  const top = (baseViewport.height - item.transform[5]) * fitScale - height
-                  nextRects.push({
-                    left: Math.max(0, left),
-                    top: Math.max(0, top),
-                    width,
-                    height
-                  })
-                }
-
-                charCount += item.str.length + 1
-              }
-
-              if (!cancelled) {
-                setHighlightRects(nextRects)
-                setPinY(nextRects.length > 0 ? nextRects[0].top : null)
-              }
-            }
-          } else {
-            if (!cancelled) {
-              setPinY(null)
-              setHighlightRects([])
-            }
-          }
-        } else if (!cancelled) {
-          setPinY(null)
-          setHighlightRects([])
-        }
-      } catch (err) {
-        logger.error('Reference render error:', err)
-      }
-    }
-
-    renderPage()
-    return () => { cancelled = true }
-  }, [pdfDoc, currentPage, excerpt, totalPages])
-
-  // Scroll pin into view when located
-  useEffect(() => {
-    if (pinY !== null && containerRef.current) {
-      containerRef.current.scrollTop = Math.max(0, pinY - containerRef.current.clientHeight / 3)
-    }
-  }, [pinY, canvasSize])
-
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-        <Spinner size="large" />
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div style={{ padding: '24px', textAlign: 'center', color: 'var(--red-7)' }}>
-        <Icon name="alertCircle" size={32} />
-        <p>{error}</p>
-      </div>
-    )
-  }
-
-  return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {/* Excerpt banner */}
-      {excerpt && (
-        <div style={{
-          padding: '10px 16px',
-          background: 'var(--gray-9)',
-          borderBottom: '1px solid var(--gray-8)',
-          fontSize: '13px',
-          color: 'var(--gray-1)',
-          display: 'flex',
-          gap: 8,
-          alignItems: 'baseline',
-          lineHeight: 1.5,
-        }}>
-          <Icon name="mapPin" size={13} />
-          <span style={{ opacity: 0.7, flexShrink: 0 }}>Supporting text:</span>
-          <span style={{ fontStyle: 'italic' }}>&ldquo;{excerpt}&rdquo;</span>
-        </div>
-      )}
-
-      {/* PDF canvas + pin overlay */}
-      <div
-        ref={containerRef}
-        style={{ flex: 1, overflow: 'auto', background: 'var(--gray-3)', padding: '16px 40px 16px 16px' }}
-      >
-        <div style={{ position: 'relative', width: canvasSize.width, margin: '0 auto' }}>
-          <canvas ref={canvasRef} style={{ display: 'block', boxShadow: '0 2px 12px rgba(0,0,0,0.18)' }} />
-          <div
-            ref={textLayerRef}
-            className='textLayer'
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              opacity: 0.3,
-              lineHeight: 1,
-            }}
-          />
-
-          {/* Text highlight overlay for matched supporting excerpt */}
-          {highlightRects.length > 0 && (
-            <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-              {highlightRects.map((rect, idx) => (
-                <div
-                  key={`${rect.left}-${rect.top}-${idx}`}
-                  style={{
-                    position: 'absolute',
-                    left: rect.left,
-                    top: rect.top,
-                    width: rect.width,
-                    height: rect.height,
-                    background: 'rgba(255, 193, 7, 0.28)',
-                    border: '1px solid rgba(255, 152, 0, 0.7)',
-                    borderRadius: 2,
-                  }}
-                />
-              ))}
-            </div>
-          )}
-
-          {/* Amber pin marker in the left margin */}
-          {pinY !== null && (
-            <div
-              title={excerpt}
-              style={{
-                position: 'absolute',
-                top: pinY,
-                left: -30,
-                width: 18,
-                height: 18,
-                background: 'var(--amber-5)',
-                border: '2px solid var(--amber-7)',
-                borderRadius: '50% 50% 50% 0',
-                transform: 'rotate(-45deg)',
-                boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
-                cursor: 'default',
-              }}
-            />
-          )}
-        </div>
-      </div>
-
-      {/* Page navigation */}
-      {totalPages > 1 && (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 12,
-          padding: '8px 16px',
-          borderTop: '1px solid var(--gray-3)',
-          fontSize: 13,
-          color: 'var(--gray-8)',
-        }}>
-          <Button variant="ghost" size="small" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage <= 1}>
-            <Icon name="chevronLeft" size={14} />
-          </Button>
-          <span>Page {currentPage} of {totalPages}</span>
-          <Button variant="ghost" size="small" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}>
-            <Icon name="chevronRight" size={14} />
-          </Button>
         </div>
       )}
     </div>

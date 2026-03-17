@@ -56,7 +56,7 @@ def extract_spans(page):
     pw, ph = page.rect.width, page.rect.height
     spans = []
 
-    for block in data["blocks"]:
+    for block_idx, block in enumerate(data["blocks"]):
         if block["type"] != 0:  # skip image blocks
             continue
         for line in block["lines"]:
@@ -74,6 +74,7 @@ def extract_spans(page):
                     "flags": span["flags"],
                     "font": span["font"],
                     "is_superscript": bool(span["flags"] & 1),
+                    "block_id": block_idx,
                 })
 
     return spans, pw, ph
@@ -270,7 +271,9 @@ def _parse_numbered_refs_inline(text):
     while i < len(parts) - 1:
         num = int(parts[i])
         ref_text = parts[i + 1].strip()
-        if 1 <= num <= 50 and ref_text:
+        # Skip false positives: ref text must start with an author name, not
+        # P-values, symbols, or other non-citation content
+        if 1 <= num <= 50 and ref_text and re.match(r"^[A-Z][a-z]", ref_text):
             refs[num] = ref_text
         i += 2
 
@@ -279,7 +282,7 @@ def _parse_numbered_refs_inline(text):
         # Try to extract just the citation portion (skip disclaimers/legends)
         # Look for author-style pattern: "Name et al." or "Name, Name..."
         citation_match = re.search(
-            r"([A-Z][a-z'-]+ [A-Z]{1,3}(?:\s+et\s+al)?\.?\s+.+?\.\s*\d{4}[^.]*\.)",
+            r"([A-Z][\w'-]+ [A-Z]{1,3}(?:\s+et\s+al)?\.?\s+.+?\.\s*\d{4}[^.]*\.)",
             text
         )
         if citation_match:
@@ -369,7 +372,7 @@ def associate_superscripts(spans, boundary_y):
         region = "slide" if sup["y"] < boundary_y else "notes"
 
         # Find the nearest body text to the left on the same line
-        parent_text = _find_parent_text(sup, body_spans, boundary_y)
+        parent_text = _find_parent_text(sup, body_spans, boundary_y, sup_spans)
 
         if parent_text:
             claims.append({
@@ -386,30 +389,64 @@ def associate_superscripts(spans, boundary_y):
     return _merge_claims(claims)
 
 
-def _find_parent_text(sup_span, body_spans, boundary_y):
+def _find_parent_text(sup_span, body_spans, boundary_y, all_sup_spans=None):
     """Find the parent text for a superscript span.
 
-    Strategy: collect body spans on the same visual line that are to the left
-    of the superscript. Then look one line above for multi-line statements.
-    Use tight y-tolerance and x-proximity to avoid pulling in adjacent columns.
+    Strategy: first try spans in the same PyMuPDF block (visual text box).
+    Fall back to y-proximity only if same-block yields nothing.
+    Then look above within the same block for multi-line statements,
+    stopping at the nearest other superscript (to avoid accumulating
+    text from a previous annotation in the same block).
     """
     y_tol = 0.9  # same visual line (superscripts sit slightly above baseline)
     sup_region = "slide" if sup_span["y"] < boundary_y else "notes"
+    sup_block = sup_span.get("block_id")
 
-    # Find spans on the same visual line, to the left of the superscript
-    same_line = []
-    for bs in body_spans:
+    # Find the y of the nearest OTHER superscript above us in the same block.
+    # This is the ceiling — don't grab text at or above another superscript's line.
+    # Add y_tol to include the baseline offset (superscripts sit above their text).
+    above_ceiling = -1.0
+    if all_sup_spans and sup_block is not None:
+        for other in all_sup_spans:
+            if other is sup_span:
+                continue
+            if other.get("block_id") != sup_block:
+                continue
+            if other["y"] < sup_span["y"] - 0.5:  # must be meaningfully above
+                above_ceiling = max(above_ceiling, other["y"] + y_tol)
+
+    def _candidate(bs):
+        """Check if a body span is a valid candidate (right region, not bullet/number)."""
         bs_region = "slide" if bs["y"] < boundary_y else "notes"
         if bs_region != sup_region:
-            continue
-        if abs(bs["y"] - sup_span["y"]) <= y_tol and bs["x"] < sup_span["x"] + 2:
-            # Skip bullet markers
-            if re.match(r"^[•\-–—]\s*$", bs["text"].strip()):
+            return False
+        if re.match(r"^[•\-–—]\s*$", bs["text"].strip()):
+            return False
+        if re.match(r"^\d{1,2}\.\s*$", bs["text"].strip()):
+            return False
+        if re.match(r"^speaker\s+notes?\s*$", bs["text"].strip(), re.IGNORECASE):
+            return False
+        return True
+
+    # First pass: same block as the superscript (preferred — respects visual grouping)
+    same_line = []
+    if sup_block is not None:
+        for bs in body_spans:
+            if bs.get("block_id") != sup_block:
                 continue
-            # Skip if it looks like a footnote definition number
-            if re.match(r"^\d{1,2}\.\s*$", bs["text"].strip()):
+            if not _candidate(bs):
                 continue
-            same_line.append(bs)
+            if abs(bs["y"] - sup_span["y"]) <= y_tol and bs["x"] < sup_span["x"] + 2:
+                same_line.append(bs)
+
+    # Fallback: any span on the same visual line (original behavior for notes region
+    # or when block info is missing)
+    if not same_line:
+        for bs in body_spans:
+            if not _candidate(bs):
+                continue
+            if abs(bs["y"] - sup_span["y"]) <= y_tol and bs["x"] < sup_span["x"] + 2:
+                same_line.append(bs)
 
     if not same_line:
         return None
@@ -417,19 +454,24 @@ def _find_parent_text(sup_span, body_spans, boundary_y):
     same_line.sort(key=lambda s: s["x"])
     line_text = _join_line_spans(same_line)
 
-    # Look one line above for continuation (multi-line statements)
+    # Look above for continuation (multi-line statements)
     line_y = same_line[0]["y"]
     line_x_min = same_line[0]["x"]
+    search_block = same_line[0].get("block_id")
     above_line = []
     for bs in body_spans:
-        bs_region = "slide" if bs["y"] < boundary_y else "notes"
-        if bs_region != sup_region:
+        if not _candidate(bs):
             continue
         y_diff = line_y - bs["y"]
-        # One line above, similar x-range (same column)
-        if 0.8 < y_diff < 2.5 and abs(bs["x"] - line_x_min) < 15:
-            if re.match(r"^[•\-–—]\s*$", bs["text"].strip()):
-                continue
+        if y_diff <= 0.8:
+            continue  # same line or below
+        # Same block: grab lines above, but stop at the previous superscript's line
+        if search_block is not None and bs.get("block_id") == search_block:
+            if bs["y"] > above_ceiling:  # above the ceiling (below previous superscript)
+                above_line.append(bs)
+            continue
+        # Different/unknown block: tight proximity only (one line up, same column)
+        if search_block is None and y_diff < 2.5 and abs(bs["x"] - line_x_min) < 15:
             above_line.append(bs)
 
     if above_line:
