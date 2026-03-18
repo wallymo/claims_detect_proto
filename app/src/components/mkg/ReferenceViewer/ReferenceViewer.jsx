@@ -98,7 +98,10 @@ export default function ReferenceViewer({ referenceId, page, excerpt, markers = 
         const pdfPage = await pdfDoc.getPage(currentPage)
         const containerWidth = containerRef.current?.clientWidth || 800
         const baseViewport = pdfPage.getViewport({ scale: 1 })
-        const computedFitScale = Math.min(2.0, (containerWidth - 48) / baseViewport.width)
+        const scrollAreaHeight = containerRef.current?.clientHeight || 700
+        const fitWidth = (containerWidth - 48) / baseViewport.width
+        const fitHeight = (scrollAreaHeight - 32) / baseViewport.height
+        const computedFitScale = Math.min(fitWidth, fitHeight, 2.0)
         const viewport = pdfPage.getViewport({ scale: computedFitScale })
         if (!cancelled) {
           setPageHeightPts(baseViewport.height)
@@ -278,7 +281,10 @@ export default function ReferenceViewer({ referenceId, page, excerpt, markers = 
       activeMarker.rects, activeMarker.page_height || pageHeightPts, fitScale
     )[0]
     if (topRect) {
-      containerRef.current.scrollTop = Math.max(0, topRect.top - containerRef.current.clientHeight / 3)
+      // Only scroll if content overflows the container
+      if (containerRef.current.scrollHeight > containerRef.current.clientHeight) {
+        containerRef.current.scrollTop = Math.max(0, topRect.top - containerRef.current.clientHeight / 3)
+      }
     }
   }, [activeMarkerIndex, currentPage, pageHeightPts, fitScale, hasMarkers, activeMarker])
 
@@ -353,7 +359,7 @@ export default function ReferenceViewer({ referenceId, page, excerpt, markers = 
             className={`textLayer ${styles.textLayer}`}
           />
 
-          {/* Marker badges in left margin — PDF already shows its own highlights */}
+          {/* Numbered pin dots on page — positioned at highlight locations */}
           {hasMarkers && currentPageMarkers.length > 0 && (
             <div className={styles.evidenceOverlay}>
               {currentPageMarkers.map((marker) => {
@@ -361,18 +367,23 @@ export default function ReferenceViewer({ referenceId, page, excerpt, markers = 
                 const viewportRects = convertPdfRectsToViewport(
                   marker.rects, marker.page_height || pageHeightPts, fitScale
                 )
-                const topRect = viewportRects[0]
-                if (!topRect) return null
+                if (!viewportRects.length) return null
+                // Anchor to the first substantial rect (skip tiny fragments)
+                const maxW = Math.max(...viewportRects.map(r => r.width))
+                const substantial = viewportRects.filter(r => r.width >= maxW * 0.5)
+                const anchor = (substantial.length ? substantial : viewportRects)
+                  .reduce((best, r) => (r.top < best.top ? r : best))
                 return (
                   <div
                     key={marker.marker_id}
-                    className={`${styles.markerBadge} ${isActive ? styles.markerBadgeActive : styles.markerBadgeInactive}`}
-                    style={{ top: topRect.top }}
+                    className={`${styles.markerPin} ${isActive ? styles.markerPinActive : styles.markerPinInactive}`}
+                    style={{
+                      left: Math.max(0, anchor.left - (anchor.left > canvasSize.width * 0.4 ? 6 : 22)),
+                      top: anchor.top,
+                    }}
                     onClick={() => setActiveMarkerIndex(sortedMarkers.indexOf(marker))}
                     title={marker.text ? marker.text.slice(0, 120) : `Evidence ${marker.label}`}
-                  >
-                    {marker.label}
-                  </div>
+                  />
                 )
               })}
             </div>

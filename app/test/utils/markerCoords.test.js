@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { convertPdfRectsToViewport, sortMarkersForNavigation } from '../../src/utils/markerCoords.js'
 
 describe('convertPdfRectsToViewport', () => {
-  it('flips Y axis and applies scale', () => {
+  it('maps top-left coords and applies scale', () => {
     const rects = [{ x0: 72, y0: 680, x1: 540, y1: 695 }]
     const result = convertPdfRectsToViewport(rects, 792, 2.0)
     expect(result[0]).toEqual({
       left: 144,
-      top: 194,
+      top: 1360,
       width: 936,
       height: 30,
     })
@@ -20,8 +20,8 @@ describe('convertPdfRectsToViewport', () => {
     ]
     const result = convertPdfRectsToViewport(rects, 792, 1.5)
     expect(result).toHaveLength(2)
-    expect(result[0].top).toBe((792 - 512) * 1.5)
-    expect(result[1].top).toBe((792 - 500) * 1.5)
+    expect(result[0].top).toBe(500 * 1.5)
+    expect(result[1].top).toBe(488 * 1.5)
   })
 
   it('returns empty array for empty/null input', () => {
@@ -33,15 +33,15 @@ describe('convertPdfRectsToViewport', () => {
 describe('sortMarkersForNavigation', () => {
   it('sorts by page then visually top-to-bottom', () => {
     const markers = [
-      { page_number: 2, rects: [{ y1: 400 }] },
-      { page_number: 1, rects: [{ y1: 700 }] },
-      { page_number: 1, rects: [{ y1: 300 }] },
+      { page_number: 2, rects: [{ y0: 200 }] },
+      { page_number: 1, rects: [{ y0: 400 }] },
+      { page_number: 1, rects: [{ y0: 100 }] },
     ]
     const sorted = sortMarkersForNavigation(markers)
     expect(sorted[0].page_number).toBe(1)
-    expect(sorted[0].rects[0].y1).toBe(700)
+    expect(sorted[0].rects[0].y0).toBe(100)
     expect(sorted[1].page_number).toBe(1)
-    expect(sorted[1].rects[0].y1).toBe(300)
+    expect(sorted[1].rects[0].y0).toBe(400)
     expect(sorted[2].page_number).toBe(2)
   })
 

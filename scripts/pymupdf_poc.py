@@ -17,6 +17,7 @@ Usage:
 """
 
 import argparse
+from collections import Counter
 import json
 import re
 import sys
@@ -179,11 +180,10 @@ def find_slide_footnotes(spans, boundary_y):
 
 def _is_abbreviation_line(text):
     """Detect abbreviation legend lines like 'CMV, cytomegalovirus; EBV, ...'"""
-    # Abbreviation lines typically have multiple semicolons with short definitions
-    if text.count(";") >= 2 and not re.match(r"^\d", text):
-        return True
-    # Or start with known abbreviation patterns
-    if re.match(r"^[A-Z]{2,},\s", text):
+    # Look for actual abbreviation patterns: UPPERCASE, lowercase definition
+    # e.g., 'CMV, cytomegalovirus; EBV, Epstein-Barr virus'
+    abbrev_pairs = re.findall(r"\b[A-Z]{2,},\s+[a-z]", text)
+    if len(abbrev_pairs) >= 2:
         return True
     return False
 
@@ -207,10 +207,22 @@ def find_notes_references(spans, boundary_y):
     if ref_header_y is None:
         return {}
 
+    # Determine the dominant body font size in the notes region
+    notes_body_spans = [s for s in spans
+                        if s["y"] > boundary_y and not s["is_superscript"]
+                        and s["size"] >= 4.0]
+    if notes_body_spans:
+        # Use the most common font size as the body size
+        size_counts = Counter(round(s["size"], 1) for s in notes_body_spans)
+        dominant_size = size_counts.most_common(1)[0][0]
+        min_ref_size = max(dominant_size - 1.0, 4.0)
+    else:
+        min_ref_size = 8.0
+
     # Collect spans below the header, excluding page numbers and tiny text
     ref_spans = [s for s in spans
                  if s["y"] > ref_header_y and not s["is_superscript"]
-                 and s["size"] >= 8.0
+                 and s["size"] >= min_ref_size
                  and s["y"] < 95.0]  # exclude page numbers at very bottom
 
     ref_spans.sort(key=lambda s: (round(s["y"], 1), s["x"]))
@@ -271,9 +283,13 @@ def _parse_numbered_refs_inline(text):
     while i < len(parts) - 1:
         num = int(parts[i])
         ref_text = parts[i + 1].strip()
+        # Truncate at disclaimer/safety boilerplate that isn't part of the citation
+        ref_text = re.split(
+            r"\s*Please\s+see\s", ref_text, maxsplit=1
+        )[0].strip()
         # Skip false positives: ref text must start with an author name, not
         # P-values, symbols, or other non-citation content
-        if 1 <= num <= 50 and ref_text and re.match(r"^[A-Z][a-z]", ref_text):
+        if 1 <= num <= 50 and ref_text and re.match(r"^[A-Za-z]", ref_text):
             refs[num] = ref_text
         i += 2
 
@@ -375,6 +391,18 @@ def associate_superscripts(spans, boundary_y):
         parent_text = _find_parent_text(sup, body_spans, boundary_y, sup_spans)
 
         if parent_text:
+            # Skip scientific notation superscripts (e.g., '10^6' in '5x10⁶/L')
+            # Check if the body span immediately left of the superscript ends with '10'
+            y_tol = 0.9
+            left_neighbors = [bs for bs in body_spans
+                              if abs(bs['y'] - sup['y']) <= y_tol
+                              and bs['x'] < sup['x']
+                              and bs['x'] > sup['x'] - 15]
+            if left_neighbors:
+                nearest_left = max(left_neighbors, key=lambda s: s['x'])
+                if re.search(r'10\s*$', nearest_left['text']):
+                    continue
+
             claims.append({
                 "text": parent_text,
                 "superscripts": ref_nums,
@@ -523,6 +551,9 @@ def resolve_claims(claims, slide_footnotes, notes_references):
         for num in claim["superscripts"]:
             if num in pool:
                 refs.append({"number": num, "text": pool[num]})
+            elif len(pool) == 1 and 0 in pool:
+                # Single unnumbered reference — resolve any superscript against it
+                refs.append({"number": num, "text": pool[0]})
             else:
                 unresolved.append({
                     "region": claim["region"],

@@ -30,6 +30,9 @@ test-results/
 diagnostics-output.json
 *-diagnostics-output.json
 
+# Generated validation reports
+validation-report*.html
+
 # Tooling
 .serena/
 
