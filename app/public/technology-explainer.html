@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Technology Overview — Under the Hood</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #FEFDFB;
+    --card-bg: #FFFFFF;
+    --warm-50: #FDF8F0;
+    --warm-100: #FAF0E2;
+    --warm-200: #F0E0C8;
+    --warm-300: #D9C4A0;
+    --sand: #B8A07A;
+    --text: #2C2417;
+    --text-secondary: #6B5D4F;
+    --text-muted: #9A8D7F;
+    --teal-light: #E8F6F3;
+    --teal: #1A8A7D;
+    --teal-dark: #14695F;
+    --blue-light: #EBF3FA;
+    --blue: #2B6CB0;
+    --amber-light: #FFF8E7;
+    --amber: #B7791F;
+    --coral-light: #FFF0ED;
+    --coral: #C4463A;
+    --border: #EDE6DB;
+  }
+
+  body {
+    font-family: 'Outfit', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.6;
+  }
+
+  /* ===== HEADER ===== */
+  .header {
+    padding: 56px 64px 48px;
+    max-width: 940px;
+    margin: 0 auto;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .header-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--teal);
+    margin-bottom: 16px;
+  }
+
+  .header h1 {
+    font-family: 'Fraunces', serif;
+    font-size: 38px;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--text);
+    margin-bottom: 16px;
+    letter-spacing: -0.02em;
+  }
+
+  .header p {
+    font-size: 16px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+    max-width: 640px;
+  }
+
+  /* ===== MAIN ===== */
+  .main {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: 0 64px;
+  }
+
+  /* ===== CONCEPT BLOCK ===== */
+  .concept {
+    padding: 48px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .concept:last-child {
+    border-bottom: none;
+  }
+
+  .concept-grid {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 40px;
+    align-items: start;
+  }
+
+  .concept-label {
+    position: sticky;
+    top: 24px;
+  }
+
+  .concept-term {
+    font-family: 'Fraunces', serif;
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 6px;
+    line-height: 1.3;
+  }
+
+  .concept-aka {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-style: italic;
+    margin-bottom: 12px;
+  }
+
+  .concept-tag {
+    display: inline-flex;
+    padding: 3px 10px;
+    border-radius: 100px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  .tag-core { background: var(--teal-light); color: var(--teal-dark); }
+  .tag-context { background: var(--blue-light); color: var(--blue); }
+  .tag-comparison { background: var(--amber-light); color: var(--amber); }
+
+  .concept-body {
+    padding-top: 2px;
+  }
+
+  .plain-english {
+    font-size: 16px;
+    line-height: 1.75;
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+  }
+
+  .plain-english strong {
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  /* Analogy card */
+  .analogy {
+    display: flex;
+    gap: 16px;
+    padding: 18px 20px;
+    background: var(--warm-50);
+    border: 1px solid var(--warm-200);
+    border-radius: 10px;
+    margin-bottom: 20px;
+    align-items: flex-start;
+  }
+
+  .analogy-icon {
+    font-size: 22px;
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--warm-100);
+    border-radius: 8px;
+  }
+
+  .analogy-text {
+    font-size: 14px;
+    line-height: 1.65;
+    color: var(--text-secondary);
+  }
+
+  .analogy-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--sand);
+    margin-bottom: 4px;
+  }
+
+  /* Visual diagram within concept */
+  .diagram {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin: 20px 0;
+    padding: 20px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+
+  .diagram-box {
+    flex: 1;
+    padding: 14px 16px;
+    text-align: center;
+    border-radius: 8px;
+    position: relative;
+  }
+
+  .diagram-box-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .diagram-box-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  .diagram-arrow {
+    width: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: var(--warm-300);
+    font-size: 20px;
+  }
+
+  .box-input { background: var(--coral-light); }
+  .box-input .diagram-box-label { color: var(--coral); }
+
+  .box-process { background: var(--teal-light); }
+  .box-process .diagram-box-label { color: var(--teal); }
+
+  .box-output { background: var(--blue-light); }
+  .box-output .diagram-box-label { color: var(--blue); }
+
+  /* Comparison table */
+  .comparison {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 20px 0;
+  }
+
+  .comparison-header {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+  }
+
+  .comparison-col-header {
+    padding: 12px 20px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .comparison-col-header:first-child {
+    background: var(--coral-light);
+    color: var(--coral);
+    border-right: 1px solid var(--border);
+  }
+
+  .comparison-col-header:last-child {
+    background: var(--teal-light);
+    color: var(--teal-dark);
+  }
+
+  .comparison-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .comparison-row:last-child {
+    border-bottom: none;
+  }
+
+  .comparison-cell {
+    padding: 12px 20px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+  }
+
+  .comparison-cell:first-child {
+    border-right: 1px solid var(--border);
+  }
+
+  .comparison-cell .cell-icon {
+    margin-right: 4px;
+  }
+
+  /* Key takeaway */
+  .takeaway {
+    display: flex;
+    gap: 12px;
+    padding: 14px 18px;
+    background: var(--teal-light);
+    border-left: 3px solid var(--teal);
+    border-radius: 0 8px 8px 0;
+    align-items: flex-start;
+  }
+
+  .takeaway-icon {
+    flex-shrink: 0;
+    font-size: 16px;
+    margin-top: 1px;
+  }
+
+  .takeaway-text {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--teal-dark);
+    font-weight: 500;
+  }
+
+  /* ===== FOOTER SUMMARY ===== */
+  .summary {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: 48px 64px 64px;
+  }
+
+  .summary-card {
+    background: var(--text);
+    border-radius: 16px;
+    padding: 44px 48px;
+    color: #fff;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .summary-card::before {
+    content: '';
+    position: absolute;
+    top: -60px;
+    right: -60px;
+    width: 200px;
+    height: 200px;
+    background: radial-gradient(circle, rgba(26, 138, 125, 0.2) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .summary-card h2 {
+    font-family: 'Fraunces', serif;
+    font-size: 24px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    letter-spacing: -0.01em;
+  }
+
+  .summary-card p {
+    font-size: 15px;
+    line-height: 1.7;
+    color: rgba(255,255,255,0.6);
+    max-width: 560px;
+    margin-bottom: 28px;
+  }
+
+  .summary-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+
+  .summary-stat {
+    padding: 20px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    text-align: center;
+  }
+
+  .summary-stat-value {
+    font-family: 'Fraunces', serif;
+    font-size: 28px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 4px;
+  }
+
+  .summary-stat-label {
+    font-size: 12px;
+    color: rgba(255,255,255,0.45);
+  }
+
+  /* ===== ANIMATIONS ===== */
+  .concept {
+    opacity: 0;
+    transform: translateY(16px);
+    animation: fadeIn 0.5s ease forwards;
+  }
+
+  .concept:nth-child(1) { animation-delay: 0.05s; }
+  .concept:nth-child(2) { animation-delay: 0.15s; }
+  .concept:nth-child(3) { animation-delay: 0.25s; }
+  .concept:nth-child(4) { animation-delay: 0.35s; }
+  .concept:nth-child(5) { animation-delay: 0.45s; }
+
+  @keyframes fadeIn {
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .header {
+    opacity: 0;
+    animation: fadeIn 0.6s ease forwards;
+  }
+</style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-label">Technology Overview</div>
+    <h1>What's actually happening<br>inside the tool</h1>
+    <p>You don't need to be technical to understand this. Here's a plain-English guide to the technology behind the annotation engine — what each piece does, and why it matters for your review process.</p>
+  </div>
+
+  <div class="main">
+
+    <!-- PDF PARSING -->
+    <div class="concept">
+      <div class="concept-grid">
+        <div class="concept-label">
+          <div class="concept-term">PDF Parsing</div>
+          <div class="concept-aka">a.k.a. "reading the document"</div>
+          <span class="concept-tag tag-core">Core concept</span>
+        </div>
+        <div class="concept-body">
+          <p class="plain-english">
+            A PDF file isn't like a Word document. When you open a PDF, you see words on a page — but underneath, the file is actually a list of instructions: <strong>"draw this letter at position X, Y in this font at this size."</strong> There's no concept of a "sentence" or a "paragraph" built in.
+          </p>
+          <p class="plain-english">
+            <strong>Parsing</strong> is the process of reading those raw drawing instructions and reconstructing the text, positions, and formatting that you see on screen. Think of it as translating blueprint coordinates back into a readable floor plan.
+          </p>
+          <div class="analogy">
+            <div class="analogy-icon">&#x1f3e5;</div>
+            <div>
+              <div class="analogy-label">Think of it like</div>
+              <div class="analogy-text">A lab technician reading a pathology slide. The tissue sample is there, but someone needs to examine it, identify structures, and report what they see. Parsing is that examination step — taking raw material and identifying the meaningful content.</div>
+            </div>
+          </div>
+          <div class="diagram">
+            <div class="diagram-box box-input">
+              <div class="diagram-box-label">Raw PDF</div>
+              <div class="diagram-box-desc">Drawing instructions,<br>coordinates, font data</div>
+            </div>
+            <div class="diagram-arrow">&rarr;</div>
+            <div class="diagram-box box-process">
+              <div class="diagram-box-label">Parsing</div>
+              <div class="diagram-box-desc">Read positions,<br>reconstruct text</div>
+            </div>
+            <div class="diagram-arrow">&rarr;</div>
+            <div class="diagram-box box-output">
+              <div class="diagram-box-label">Structured data</div>
+              <div class="diagram-box-desc">Text, locations,<br>font sizes, formatting</div>
+            </div>
+          </div>
+          <div class="takeaway">
+            <div class="takeaway-icon">&#x2192;</div>
+            <div class="takeaway-text">Parsing reads what's already in the file. It doesn't generate, predict, or interpret anything — it just organizes what's there.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PyMuPDF -->
+    <div class="concept">
+      <div class="concept-grid">
+        <div class="concept-label">
+          <div class="concept-term">PyMuPDF</div>
+          <div class="concept-aka">the engine that reads your slides</div>
+          <span class="concept-tag tag-core">Core concept</span>
+        </div>
+        <div class="concept-body">
+          <p class="plain-english">
+            PyMuPDF is a well-established, open-source <strong>PDF reading library</strong> — think of it as the specific instrument we use to parse your documents. It's been in active development since 2012 and is used by thousands of organizations worldwide.
+          </p>
+          <p class="plain-english">
+            What makes it particularly useful for pharma slides: it can tell us not just <em>what</em> text says, but <strong>how it's formatted</strong> — including whether a character is a superscript. That's critical, because superscripts are how your slides link claims to references.
+          </p>
+          <div class="analogy">
+            <div class="analogy-icon">&#x1f52c;</div>
+            <div>
+              <div class="analogy-label">Think of it like</div>
+              <div class="analogy-text">A high-resolution microscope vs. a magnifying glass. Both let you see things, but the microscope gives you precise measurements — cell size, structure, characteristics. PyMuPDF gives us precise measurements of text: exact position, exact size, exact formatting flags.</div>
+            </div>
+          </div>
+          <p class="plain-english">
+            When PyMuPDF reads a page, it returns every piece of text along with its exact coordinates (where on the page), font size (how large), and formatting flags (is it superscript? bold? italic?). This is what allows the tool to <strong>distinguish a superscript "1" from a regular "1"</strong> — something your reviewers do instantly by eye, but software needs explicit data to do correctly.
+          </p>
+          <div class="takeaway">
+            <div class="takeaway-icon">&#x2192;</div>
+            <div class="takeaway-text">PyMuPDF is the reader. It opens the PDF and extracts text with all its formatting details. It's not AI — it's a precision text extraction tool.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SUPERSCRIPT DETECTION -->
+    <div class="concept">
+      <div class="concept-grid">
+        <div class="concept-label">
+          <div class="concept-term">Superscript Detection</div>
+          <div class="concept-aka">finding the reference markers</div>
+          <span class="concept-tag tag-core">Core concept</span>
+        </div>
+        <div class="concept-body">
+          <p class="plain-english">
+            In your slide decks, a superscript number like <strong>"<sup>1</sup>"</strong> after a statement means "this claim is backed by reference #1." Your reviewers spot these instantly. The tool spots them the same way — <strong>by looking at the font data</strong>.
+          </p>
+          <p class="plain-english">
+            When PowerPoint exports a PDF, each superscript character gets a formatting flag that says "I'm a superscript." PyMuPDF reads that flag directly. There's no guessing, no pattern matching, no AI trying to figure out if something "looks like" a superscript. The file itself says it is one.
+          </p>
+          <div class="analogy">
+            <div class="analogy-icon">&#x1f3f7;&#xfe0f;</div>
+            <div>
+              <div class="analogy-label">Think of it like</div>
+              <div class="analogy-text">Reading a barcode vs. trying to guess what a product is by looking at it. The superscript flag is the barcode — explicit, unambiguous, machine-readable. The tool reads the label, not the appearance.</div>
+            </div>
+          </div>
+          <p class="plain-english">
+            Once a superscript is found, the tool looks at what text it's attached to (the claim statement immediately to its left) and what number it contains. Then it looks in that page's footnote area or references section for the matching numbered citation.
+          </p>
+          <div class="takeaway">
+            <div class="takeaway-icon">&#x2192;</div>
+            <div class="takeaway-text">Superscripts aren't detected by appearance — the PDF file explicitly marks them. The tool reads the label, just like scanning a barcode.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DETERMINISTIC vs AI -->
+    <div class="concept">
+      <div class="concept-grid">
+        <div class="concept-label">
+          <div class="concept-term">Deterministic vs. AI</div>
+          <div class="concept-aka">why this matters for regulatory work</div>
+          <span class="concept-tag tag-comparison">Key distinction</span>
+        </div>
+        <div class="concept-body">
+          <p class="plain-english">
+            This is the most important technical concept for your review process. There are two fundamentally different ways software can analyze a document:
+          </p>
+          <div class="comparison">
+            <div class="comparison-header">
+              <div class="comparison-col-header">AI-Based Analysis</div>
+              <div class="comparison-col-header">Deterministic Analysis (this tool)</div>
+            </div>
+            <div class="comparison-row">
+              <div class="comparison-cell"><span class="cell-icon">&#x1f3b2;</span> Sends your document to an external AI model</div>
+              <div class="comparison-cell"><span class="cell-icon">&#x1f512;</span> Processes your document locally, on your system</div>
+            </div>
+            <div class="comparison-row">
+              <div class="comparison-cell"><span class="cell-icon">&#x1f3b2;</span> AI <em>interprets</em> what it sees — may produce different results each run</div>
+              <div class="comparison-cell"><span class="cell-icon">&#x1f512;</span> Reads exactly what the file contains — same input, same output, every time</div>
+            </div>
+            <div class="comparison-row">
+              <div class="comparison-cell"><span class="cell-icon">&#x1f3b2;</span> Can "hallucinate" — confidently state things that aren't true</div>
+              <div class="comparison-cell"><span class="cell-icon">&#x1f512;</span> Cannot hallucinate — only reports what exists in the document</div>
+            </div>
+            <div class="comparison-row">
+              <div class="comparison-cell"><span class="cell-icon">&#x1f3b2;</span> Results are probabilistic (AI's "best guess")</div>
+              <div class="comparison-cell"><span class="cell-icon">&#x1f512;</span> Results are factual (direct extraction)</div>
+            </div>
+            <div class="comparison-row">
+              <div class="comparison-cell"><span class="cell-icon">&#x1f3b2;</span> Requires internet connection and API access</div>
+              <div class="comparison-cell"><span class="cell-icon">&#x1f512;</span> Works entirely offline</div>
+            </div>
+          </div>
+          <div class="analogy">
+            <div class="analogy-icon">&#x2696;&#xfe0f;</div>
+            <div>
+              <div class="analogy-label">Think of it like</div>
+              <div class="analogy-text">The difference between asking someone to <em>summarize</em> a clinical trial report from memory vs. having someone <em>photocopy</em> the specific pages you need. The first person might get it mostly right but could mix up details. The second gives you exactly what's on the page — nothing added, nothing changed.</div>
+            </div>
+          </div>
+          <div class="takeaway">
+            <div class="takeaway-icon">&#x2192;</div>
+            <div class="takeaway-text">Deterministic means repeatable and auditable. Run the same deck through the tool ten times, you get the same result ten times. That's what regulatory work requires.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TEXT EXTRACTION -->
+    <div class="concept">
+      <div class="concept-grid">
+        <div class="concept-label">
+          <div class="concept-term">Text Extraction</div>
+          <div class="concept-aka">the overall approach</div>
+          <span class="concept-tag tag-context">How it all fits</span>
+        </div>
+        <div class="concept-body">
+          <p class="plain-english">
+            "Text extraction" is the umbrella term for what this tool does. Rather than asking an AI to <em>look at</em> your slides and <em>tell us what it thinks</em>, the tool <strong>extracts the text directly from the file data</strong> — reading the underlying structure of the PDF, not a visual interpretation of it.
+          </p>
+          <p class="plain-english">
+            This is the same fundamental technology that lets you search for a word in a PDF, or copy and paste text out of one. The tool simply does it more precisely — extracting not just the words, but their exact positions, sizes, and formatting, so it can identify which text is a superscript, which is a footnote, and which is body content.
+          </p>
+          <div class="diagram">
+            <div class="diagram-box box-input">
+              <div class="diagram-box-label">Your slide deck</div>
+              <div class="diagram-box-desc">Notes Page PDF<br>from PowerPoint</div>
+            </div>
+            <div class="diagram-arrow">&rarr;</div>
+            <div class="diagram-box box-process">
+              <div class="diagram-box-label">PyMuPDF extracts</div>
+              <div class="diagram-box-desc">All text + positions<br>+ formatting flags</div>
+            </div>
+            <div class="diagram-arrow">&rarr;</div>
+            <div class="diagram-box box-process" style="background: var(--amber-light);">
+              <div class="diagram-box-label" style="color: var(--amber);">Tool matches</div>
+              <div class="diagram-box-desc">Superscripts linked<br>to their references</div>
+            </div>
+            <div class="diagram-arrow">&rarr;</div>
+            <div class="diagram-box box-output">
+              <div class="diagram-box-label">Annotation report</div>
+              <div class="diagram-box-desc">Every claim with its<br>source citation</div>
+            </div>
+          </div>
+          <div class="takeaway">
+            <div class="takeaway-icon">&#x2192;</div>
+            <div class="takeaway-text">The tool reads your documents like a very fast, very thorough reviewer who never gets tired, never skips a page, and never guesses. It reads only what's there.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- SUMMARY -->
+  <div class="summary">
+    <div class="summary-card">
+      <h2>The bottom line</h2>
+      <p>No AI models are involved. No data is sent externally. The tool reads your PDF files directly, identifies superscripted references, and matches them to citations — using the same text that's already in your documents.</p>
+      <div class="summary-stats">
+        <div class="summary-stat">
+          <div class="summary-stat-value">0</div>
+          <div class="summary-stat-label">AI models used</div>
+        </div>
+        <div class="summary-stat">
+          <div class="summary-stat-value">0</div>
+          <div class="summary-stat-label">External API calls</div>
+        </div>
+        <div class="summary-stat">
+          <div class="summary-stat-value">&lt;1s</div>
+          <div class="summary-stat-label">Per 31-page deck</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
