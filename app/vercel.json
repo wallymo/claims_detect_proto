@@ -24,6 +24,10 @@
       "destination": "/index.html"
     },
     {
+      "source": "/validation",
+      "destination": "/index.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
