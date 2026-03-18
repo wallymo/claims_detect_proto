@@ -109,33 +109,37 @@
   z-index: 1;
 }
 
-.markerBadge {
+.markerPin {
   position: absolute;
-  left: -28px;
-  width: 22px;
-  height: 22px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 600;
   cursor: pointer;
   pointer-events: auto;
   z-index: 2;
-  transition: background-color 0.15s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.markerBadgeActive {
+.markerPinActive {
   background: var(--red-6);
-  color: var(--color-background-primary);
-  box-shadow: 0 0 0 2px var(--red-3);
+  box-shadow: 0 0 0 3px var(--red-3), 0 0 8px var(--red-4);
+  animation: pulse 1.8s ease-in-out infinite;
 }
 
-.markerBadgeInactive {
-  background: var(--red-2);
-  color: var(--red-8);
-  border: 1px solid var(--red-4);
+.markerPinInactive {
+  background: var(--red-3);
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.2);
+  opacity: 0.7;
+}
+
+.markerPinInactive:hover {
+  opacity: 1;
+  transform: scale(1.3);
+}
+
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 3px var(--red-3), 0 0 8px var(--red-4); }
+  50% { box-shadow: 0 0 0 5px var(--red-2), 0 0 14px var(--red-3); }
 }
 
 /* Marker navigation bar */
