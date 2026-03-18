@@ -75,16 +75,20 @@ node scripts/embed-references.js          # Batch passage embedding (--force, --
 node scripts/benchmark-passages-search.js # Search recall/latency benchmarks (--claims-file, --brand-id)
 ```
 
-**PyMuPDF script** (from project root):
+**PyMuPDF scripts** (from project root):
 ```bash
 # Setup (one-time)
 python3 -m venv scripts/.venv
 scripts/.venv/bin/pip install -r scripts/requirements.txt
 
-# Run standalone
+# Run annotation extraction standalone
 scripts/.venv/bin/python3 scripts/pymupdf_poc.py <pdf_path> --pretty
 scripts/.venv/bin/python3 scripts/pymupdf_poc.py <pdf_path> --debug    # stderr diagnostics
 scripts/.venv/bin/python3 scripts/pymupdf_poc.py <pdf_path> --page 2   # single page
+
+# Build reference index from filenames (no PDF parsing, just metadata from names)
+scripts/.venv/bin/python3 scripts/build_reference_index.py --pretty
+scripts/.venv/bin/python3 scripts/build_reference_index.py --output scripts/reference_index.json
 ```
 
 **Both servers required for development.** Vite proxies `/api` → `http://localhost:3001`.
@@ -133,15 +137,20 @@ claims_detector/
 │       └── middleware/           # errorHandler, upload (Multer)
 ├── scripts/                      # PyMuPDF parser + Python venv
 │   ├── pymupdf_poc.py            # Standalone annotation extraction script
+│   ├── build_reference_index.py  # Parse PDF filenames → structured JSON metadata
+│   ├── reference_index.json      # Generated index of 54 reference PDFs
 │   ├── requirements.txt          # PyMuPDF==1.27.2
 │   └── .venv/                    # Python virtual environment
+├── References/References/        # 55 source reference PDFs (loaded into brand library)
 ├── docs/                         # Plans and briefs
-└── MKG Knowledge Base/           # 54 source reference PDFs
+└── MKG Knowledge Base/           # Test documents for annotation validation
 ```
 
 ## Key Technical Details
 
 **PyMuPDF pipeline (primary):** `scripts/pymupdf_poc.py` is the sole annotation engine. Called from `backend/src/controllers/pymupdfController.js` via `child_process.execFile`. Frontend calls `POST /api/pymupdf-extract` with the PDF, receives JSON, transforms via `transformPyMuPDFResults()` in `MKG3ClaimsDetector.jsx`. Zero AI involvement — pure text extraction.
+
+**Citation-to-PDF matching:** During transform, each annotation's citation string (e.g., `"Leonhard SE et al. Nat Rev Neurol. 2019..."`) is matched against the brand's reference library using `matchCitationToLibrary()` from `app/src/utils/citationLibraryMatcher.js`. Scoring: DOI exact match (instant win) > first author + year > author tokens + title/journal overlap. When matched, `ref.id` is set on the reference object, and `MKGClaimCard` renders it as clickable with a fileSearch icon (line 280: `isLinked = !!ref.id`). No extra backend calls — uses `citationMetadata` already loaded on each `referenceDocuments` entry.
 
 **PyMuPDF superscript detection:** Uses `flags & 1` on each text span. This is reliable on PowerPoint PDF exports. Body text threshold is 6pt (catches callout box text at 7pt, skips 4pt footnotes). Y-tolerance for parent text association is 0.9% (accounts for superscripts sitting above baseline).
 

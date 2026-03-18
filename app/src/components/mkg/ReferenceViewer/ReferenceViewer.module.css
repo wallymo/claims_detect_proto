@@ -1,0 +1,158 @@
+.container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.excerptBanner {
+  padding: 10px 16px;
+  background: var(--gray-9);
+  border-bottom: 1px solid var(--gray-8);
+  font-size: 13px;
+  color: var(--gray-1);
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  line-height: 1.5;
+}
+
+.excerptLabel {
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.excerptText {
+  font-style: italic;
+}
+
+.scrollArea {
+  flex: 1;
+  overflow: auto;
+  background: var(--gray-3);
+  padding: 16px 40px 16px 16px;
+}
+
+.canvasWrapper {
+  position: relative;
+  margin: 0 auto;
+}
+
+.pdfCanvas {
+  display: block;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+}
+
+.textLayer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  opacity: 0.3;
+  line-height: 1;
+}
+
+.highlightOverlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.highlightRect {
+  position: absolute;
+  background: rgba(255, 193, 7, 0.28);
+  border: 1px solid rgba(255, 152, 0, 0.7);
+  border-radius: 2px;
+}
+
+.pinMarker {
+  position: absolute;
+  left: -30px;
+  width: 18px;
+  height: 18px;
+  background: var(--amber-5);
+  border: 2px solid var(--amber-7);
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  cursor: default;
+}
+
+.pageNav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--gray-3);
+  font-size: 13px;
+  color: var(--gray-8);
+}
+
+.loadingState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.errorState {
+  padding: 24px;
+  text-align: center;
+  color: var(--red-7);
+}
+
+/* Evidence marker overlay */
+.evidenceOverlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.markerBadge {
+  position: absolute;
+  left: -28px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  pointer-events: auto;
+  z-index: 2;
+  transition: background-color 0.15s ease;
+}
+
+.markerBadgeActive {
+  background: var(--red-6);
+  color: var(--color-background-primary);
+  box-shadow: 0 0 0 2px var(--red-3);
+}
+
+.markerBadgeInactive {
+  background: var(--red-2);
+  color: var(--red-8);
+  border: 1px solid var(--red-4);
+}
+
+/* Marker navigation bar */
+.markerNav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 6px 16px;
+  background: var(--red-1);
+  border-bottom: 1px solid var(--red-3);
+  font-size: 13px;
+  color: var(--red-8);
+}
+
+.markerNavLabel {
+  font-weight: 500;
+  min-width: 120px;
+  text-align: center;
+}

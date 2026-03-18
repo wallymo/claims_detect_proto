@@ -6,5 +6,6 @@ const router = Router()
 
 router.get('/references/:refId', validateIdParam('refId'), fileController.serve)
 router.get('/references/:refId/text', validateIdParam('refId'), fileController.getText)
+router.get('/references/:refId/markers', validateIdParam('refId'), fileController.getMarkers)
 
 export default router
