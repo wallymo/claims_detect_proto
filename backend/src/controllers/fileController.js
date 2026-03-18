@@ -3,6 +3,15 @@ import { AppError } from '../middleware/errorHandler.js'
 import { hydrateReferenceTextFromFile, shouldHydrateReferenceText } from '../services/referenceTextHydrator.js'
 import path from 'path'
 import fs from 'fs'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
+import { fileURLToPath } from 'url'
+
+const execFileAsync = promisify(execFile)
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const PROJECT_ROOT = path.resolve(__dirname, '../../..')
+const PYTHON_BIN = path.join(PROJECT_ROOT, 'scripts/.venv/bin/python3')
+const EXTRACT_MARKERS_SCRIPT = path.join(PROJECT_ROOT, 'scripts/extract_markers.py')
 
 const MIME_TYPES = {
   pdf: 'application/pdf',
@@ -70,6 +79,50 @@ export const fileController = {
         page_boundaries: ref.page_boundaries
       })
     } catch (err) {
+      next(err)
+    }
+  },
+
+  async getMarkers(req, res, next) {
+    try {
+      const ref = Reference._findByIdFull(req.params.refId)
+      if (!ref) throw new AppError('Reference not found', 404)
+
+      const fullPath = path.resolve(ref.file_path)
+      if (!fs.existsSync(fullPath)) {
+        throw new AppError('File not found on disk', 404)
+      }
+
+      if (ref.doc_type !== 'pdf') {
+        return res.json({ markers: [] })
+      }
+
+      if (!fs.existsSync(PYTHON_BIN)) {
+        throw new AppError('PyMuPDF virtual environment not found', 500)
+      }
+
+      const { stdout, stderr } = await execFileAsync(
+        PYTHON_BIN,
+        [EXTRACT_MARKERS_SCRIPT, fullPath],
+        { maxBuffer: 10 * 1024 * 1024, timeout: 30_000 }
+      )
+
+      if (stderr) {
+        console.warn('extract_markers stderr:', stderr)
+      }
+
+      const result = JSON.parse(stdout)
+      res.json(result)
+    } catch (err) {
+      if (err.killed) {
+        return next(new AppError('Marker extraction timed out', 504))
+      }
+      if (err instanceof SyntaxError) {
+        return next(new AppError('Marker extraction returned invalid JSON', 500))
+      }
+      if (err.stderr) {
+        return next(new AppError(`Marker extraction failed: ${err.stderr.slice(0, 500)}`, 500))
+      }
       next(err)
     }
   }

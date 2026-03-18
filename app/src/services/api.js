@@ -145,6 +145,10 @@ export async function fetchReferenceText(refId) {
   return request(`/files/references/${refId}/text`)
 }
 
+export async function fetchReferenceMarkers(refId) {
+  return request(`/files/references/${refId}/markers`)
+}
+
 // ========== Facts ==========
 
 export async function fetchFacts(brandId, refId) {
