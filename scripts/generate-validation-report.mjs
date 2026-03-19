@@ -243,7 +243,7 @@ function escapeHtml(text) {
 function renderClaim(claim, label) {
   const sups = (claim.superscripts || []).join(', ')
   const refs = (claim.references || []).map(r =>
-    `<span class="ref-num">${r.number}</span> ${escapeHtml(r.text).slice(0, 80)}…`
+    `<span class="ref-num">${r.number}</span> ${escapeHtml(r.text)}`
   ).join('<br>')
   const unresolvedSups = (claim.superscripts || []).filter(
     s => !(claim.references || []).some(r => r.number === s)
@@ -254,7 +254,7 @@ function renderClaim(claim, label) {
   return `
     <div class="claim ${unresolvedSups.length > 0 ? 'claim-partial' : ''}">
       <div class="claim-label">${label}</div>
-      <div class="claim-text">${escapeHtml(claim.text).slice(0, 120)}${claim.text.length > 120 ? '…' : ''}</div>
+      <div class="claim-text">${escapeHtml(claim.text)}</div>
       <div class="claim-sups">Superscripts: [${sups}] ${missTag}</div>
       ${refs ? `<div class="claim-refs">${refs}</div>` : ''}
     </div>
@@ -268,12 +268,12 @@ function renderAnnotation(ann) {
     : '<span class="tag-nomatch">unmatched</span>'
   const globalTag = ann.globalSpot ? '<span class="tag-global">global</span>' : ''
   const refs = ann.references.map(r =>
-    `<span class="ref-num">${r.number}</span> ${escapeHtml(r.text).slice(0, 80)}…`
+    `<span class="ref-num">${r.number}</span> ${escapeHtml(r.text)}`
   ).join('<br>')
   return `
     <div class="annotation ${ann.matched ? '' : 'ann-unmatched'}">
       <div class="ann-id">${ann.id} ${matchStatus} ${globalTag}</div>
-      <div class="ann-text">${escapeHtml(ann.text).slice(0, 120)}${ann.text.length > 120 ? '…' : ''}</div>
+      <div class="ann-text">${escapeHtml(ann.text)}</div>
       <div class="ann-sups">[${sups}] → ${ann.references.length} refs</div>
       ${refs ? `<div class="ann-refs">${refs}</div>` : ''}
     </div>
@@ -302,7 +302,7 @@ function renderPool(entries, title) {
 
   const content = items.map(([key, value]) => {
     const text = String(value || '')
-    return `<span class="ref-num">${key}</span> ${escapeHtml(text).slice(0, 80)}${text.length > 80 ? '…' : ''}`
+    return `<span class="ref-num">${key}</span> ${escapeHtml(text)}`
   }).join('<br>')
 
   return `
