@@ -369,9 +369,17 @@ function generateHTML(comparisons, fileName) {
     const cardClass = c.pass ? 'page-card-pass' : 'page-card-fail'
     const slideFrontend = c.frontend.regular.filter(a => a.region === 'slide')
     const notesFrontend = c.frontend.regular.filter(a => a.region === 'notes')
-    const hasAnyClaims = c.raw.slideClaims.length > 0
-      || c.raw.notesClaims.length > 0
-      || c.raw.globals.length > 0
+    // Merge globals into their respective regions
+    const slideGlobalsRaw = c.raw.globals.filter(g => (g.global_reason || '').includes('slide'))
+    const notesGlobalsRaw = c.raw.globals.filter(g => !(g.global_reason || '').includes('slide'))
+    const slideGlobalsFe = c.frontend.globals.filter(a => a.region === 'slide')
+    const notesGlobalsFe = c.frontend.globals.filter(a => a.region !== 'slide')
+    const slideRawAll = [...c.raw.slideClaims, ...slideGlobalsRaw]
+    const notesRawAll = [...c.raw.notesClaims, ...notesGlobalsRaw]
+    const slideFrontendAll = [...slideFrontend, ...slideGlobalsFe]
+    const notesFrontendAll = [...notesFrontend, ...notesGlobalsFe]
+    const hasAnyClaims = slideRawAll.length > 0
+      || notesRawAll.length > 0
       || c.frontend.annotations.length > 0
 
     if (!hasAnyClaims) {
@@ -387,18 +395,6 @@ function generateHTML(comparisons, fileName) {
         </article>
       `
     }
-
-    const globalBlock = (c.raw.globals.length > 0 || c.frontend.globals.length > 0)
-      ? renderRegionBlock({
-        title: 'Global Annotations',
-        theme: 'global',
-        rawClaims: c.raw.globals,
-        rawLabel: 'orphan ref',
-        frontendAnnotations: c.frontend.globals,
-        rawEmptyText: 'No orphan references in raw extraction.',
-        frontendEmptyText: 'No orphan references in frontend annotations.',
-      })
-      : ''
 
     const gapSection = c.gaps.length > 0
       ? `
@@ -423,9 +419,9 @@ function generateHTML(comparisons, fileName) {
             ${renderRegionBlock({
               title: 'Slide Region',
               theme: 'slide',
-              rawClaims: c.raw.slideClaims,
-              rawLabel: 'slide claim',
-              frontendAnnotations: slideFrontend,
+              rawClaims: slideRawAll,
+              rawLabel: 'slide',
+              frontendAnnotations: slideFrontendAll,
               rawEmptyText: 'No slide claims extracted for this page.',
               frontendEmptyText: 'No frontend annotations for the slide region.',
               poolTitle: 'Slide footnote pool',
@@ -434,16 +430,15 @@ function generateHTML(comparisons, fileName) {
             ${renderRegionBlock({
               title: 'Notes Region',
               theme: 'notes',
-              rawClaims: c.raw.notesClaims,
-              rawLabel: 'notes claim',
-              frontendAnnotations: notesFrontend,
+              rawClaims: notesRawAll,
+              rawLabel: 'notes',
+              frontendAnnotations: notesFrontendAll,
               rawEmptyText: 'No notes claims extracted for this page.',
               frontendEmptyText: 'No frontend annotations for the notes region.',
               poolTitle: 'Notes reference pool',
               poolEntries: c.raw.notesRefs,
             })}
           </div>
-          ${globalBlock}
           ${gapSection}
           <div class="page-stats">
             <span>Raw: ${c.raw.slideClaims.length + c.raw.notesClaims.length} claims, ${c.raw.totalSups} superscripts, ${c.raw.resolvedRefs} resolved, ${c.raw.missing} missing${c.raw.globals.length > 0 ? `, ${c.raw.globals.length} orphan refs` : ''}</span>
