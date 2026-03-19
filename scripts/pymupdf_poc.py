@@ -503,8 +503,10 @@ def _find_parent_text(sup_span, body_spans, boundary_y, all_sup_spans=None):
             above_line.append(bs)
 
     if above_line:
-        above_line.sort(key=lambda s: s["x"])
-        above_text = _join_line_spans(above_line)
+        # Group above spans into visual lines (by y) and join each separately,
+        # then concatenate in y-order to preserve multi-line reading order.
+        above_lines = _group_spans_into_lines(above_line, y_tolerance=0.8)
+        above_text = " ".join(above_lines)
         # Only prepend if it doesn't start with a bullet or heading marker
         if above_text and not re.match(r"^[•\-–—o]\s", above_text):
             line_text = above_text + " " + line_text
