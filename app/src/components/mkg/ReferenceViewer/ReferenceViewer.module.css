@@ -5,18 +5,6 @@
   overflow: hidden;
 }
 
-.excerptBanner {
-  padding: 10px 16px;
-  background: var(--gray-9);
-  border-bottom: 1px solid var(--gray-8);
-  font-size: 13px;
-  color: var(--gray-1);
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-  line-height: 1.5;
-}
-
 .excerptLabel {
   opacity: 0.7;
   flex-shrink: 0;
@@ -24,6 +12,9 @@
 
 .excerptText {
   font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .scrollArea {
@@ -86,6 +77,7 @@
   border-top: 1px solid var(--gray-3);
   font-size: 13px;
   color: var(--gray-8);
+  flex-shrink: 0;
 }
 
 .loadingState {
@@ -101,62 +93,279 @@
   color: var(--red-7);
 }
 
-/* Evidence marker overlay */
-.evidenceOverlay {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 1;
+/* Split-panel layout */
+.splitLayout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
 }
 
-.markerPin {
-  position: absolute;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  cursor: pointer;
-  pointer-events: auto;
-  z-index: 2;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+.pdfPanel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-.markerPinActive {
-  background: var(--red-6);
-  box-shadow: 0 0 0 3px var(--red-3), 0 0 8px var(--red-4);
-  animation: pulse 1.8s ease-in-out infinite;
-}
-
-.markerPinInactive {
-  background: var(--red-3);
-  box-shadow: 0 0 3px rgba(0, 0, 0, 0.2);
-  opacity: 0.7;
-}
-
-.markerPinInactive:hover {
-  opacity: 1;
-  transform: scale(1.3);
-}
-
-@keyframes pulse {
-  0%, 100% { box-shadow: 0 0 0 3px var(--red-3), 0 0 8px var(--red-4); }
-  50% { box-shadow: 0 0 0 5px var(--red-2), 0 0 14px var(--red-3); }
-}
-
-/* Marker navigation bar */
-.markerNav {
+/* Claim text header */
+.claimHeader {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 6px 16px;
-  background: var(--red-1);
-  border-bottom: 1px solid var(--red-3);
-  font-size: 13px;
-  color: var(--red-8);
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--blue-1);
+  border-bottom: 1px solid var(--blue-3);
+  min-height: 32px;
 }
 
-.markerNavLabel {
-  font-weight: 500;
-  min-width: 120px;
-  text-align: center;
+.claimHeaderContent {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.claimHeaderLabel {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--blue-8);
+  background: var(--blue-3);
+  padding: 1px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.claimHeaderText {
+  font-size: 12px;
+  color: var(--blue-9);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+
+/* Suggestion sidebar */
+.sidebar {
+  width: 320px;
+  border-left: 1px solid var(--gray-3);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-background-primary);
+}
+
+.sidebarHeader {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--gray-3);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sidebarCards {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Suggestion card */
+.suggestionCard {
+  border: 1px solid var(--gray-3);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--color-background-primary);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.suggestionCard:hover {
+  border-color: var(--gray-5);
+}
+
+.suggestionCardActive {
+  border-color: var(--red-5);
+  box-shadow: 0 0 0 1px var(--red-3);
+}
+
+.suggestionCardAccepted {
+  border-color: var(--green-5);
+  background: var(--green-1);
+}
+
+.suggestionCardRejected {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.suggestionSnippet {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+  margin-bottom: 8px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.suggestionMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.strengthBadge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.typeLabel {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: var(--gray-3);
+  color: var(--gray-8);
+}
+
+.strengthDirect {
+  background: var(--green-2);
+  color: var(--green-9);
+}
+
+.suggestionRationale {
+  font-size: 11px;
+  color: var(--gray-7);
+  font-style: italic;
+  margin-bottom: 8px;
+  line-height: 1.3;
+}
+
+.suggestionActions {
+  display: flex;
+  gap: 6px;
+}
+
+.pageLabel {
+  font-size: 11px;
+  color: var(--gray-6);
+}
+
+/* Red evidence boxes on PDF */
+.evidenceBox {
+  position: absolute;
+  border: 2px solid var(--red-6);
+  background: rgba(239, 68, 68, 0.08);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.evidenceBoxDashed {
+  border-style: dashed;
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.evidenceBoxEditing {
+  pointer-events: auto;
+  cursor: move;
+  border-color: var(--blue-6);
+  background: rgba(59, 130, 246, 0.08);
+  border-width: 2px;
+}
+
+.resizeHandle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: var(--blue-6);
+  border: 1px solid var(--color-background-primary);
+  border-radius: 2px;
+  cursor: nwse-resize;
+  pointer-events: auto;
+  z-index: 3;
+}
+
+.resizeHandle[data-edge="ne"],
+.resizeHandle[data-edge="sw"] {
+  cursor: nesw-resize;
+}
+
+.resizeEdge {
+  position: absolute;
+  pointer-events: auto;
+  z-index: 2;
+}
+
+.resizeEdge[data-edge="n"],
+.resizeEdge[data-edge="s"] {
+  cursor: ns-resize;
+}
+
+.resizeEdge[data-edge="w"],
+.resizeEdge[data-edge="e"] {
+  cursor: ew-resize;
+}
+
+/* Draw mode */
+.canvasWrapperDrawMode {
+  cursor: crosshair;
+}
+
+.drawingRect {
+  position: absolute;
+  border: 2px dashed var(--red-6);
+  background: rgba(239, 68, 68, 0.15);
+  pointer-events: none;
+}
+
+/* Accepted evidence in sidebar */
+.acceptedHeader {
+  padding: 8px 4px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--gray-6);
+  border-top: 1px solid var(--gray-3);
+  margin-top: 4px;
+}
+
+.acceptedCard {
+  border: 1px solid var(--green-3);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--green-1);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.acceptedCard:hover {
+  border-color: var(--green-5);
+}
+
+.strengthManual {
+  background: var(--blue-2);
+  color: var(--blue-9);
+}
+
+/* Draw box footer in sidebar */
+.sidebarFooter {
+  padding: 12px 16px;
+  border-top: 1px solid var(--gray-3);
 }

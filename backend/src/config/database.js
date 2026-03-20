@@ -137,6 +137,11 @@ export function initDb() {
   const migration015 = fs.readFileSync(migration015Path, 'utf-8')
   db.exec(migration015)
 
+  // 016: evidence suggestion pipeline tables
+  const migration016Path = path.resolve(__dirname, '../../migrations/016_evidence_suggestions.sql')
+  const migration016 = fs.readFileSync(migration016Path, 'utf-8')
+  db.exec(migration016)
+
   console.log('Database initialized:', env.DB_PATH)
   return db
 }

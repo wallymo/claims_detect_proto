@@ -395,3 +395,42 @@ export async function exportTrainingSessions(brandId) {
   a.click()
   document.body.removeChild(a)
 }
+
+// ========== Evidence Suggestions ==========
+
+export async function generateEvidenceSuggestions({ claim_text, claim_id, reference_id }) {
+  return request('/evidence/suggestions', {
+    method: 'POST',
+    body: JSON.stringify({ claim_text, claim_id, reference_id }),
+  })
+}
+
+export async function fetchAcceptedEvidence(claimId, referenceId) {
+  return request(`/evidence/accepted?claim_id=${encodeURIComponent(claimId)}&reference_id=${encodeURIComponent(referenceId)}`)
+}
+
+export async function updateEvidenceSuggestionStatus(suggestionId, status) {
+  return request(`/evidence/suggestions/${encodeURIComponent(suggestionId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  })
+}
+
+export async function createManualEvidence({ claim_id, reference_id, page_number, rects, text }) {
+  return request('/evidence/manual', {
+    method: 'POST',
+    body: JSON.stringify({ claim_id, reference_id, page_number, rects, text }),
+  })
+}
+
+export async function clearEvidenceSuggestions(claimId, referenceId) {
+  return request(`/evidence/suggestions?claim_id=${encodeURIComponent(claimId)}&reference_id=${encodeURIComponent(referenceId)}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function deleteAcceptedEvidence(evidenceId) {
+  return request(`/evidence/accepted/${encodeURIComponent(evidenceId)}`, {
+    method: 'DELETE',
+  })
+}

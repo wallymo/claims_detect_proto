@@ -328,7 +328,6 @@ export default function MKG3ClaimsDetector() {
 
   // Reference viewer overlay
   const [referenceViewerData, setReferenceViewerData] = useState(null)
-  const markerCacheRef = useRef(new Map())
 
   // Training data state
   const [trainingDocuments, setTrainingDocuments] = useState([])
@@ -1192,7 +1191,7 @@ export default function MKG3ClaimsDetector() {
     }
   }
 
-  const handleViewRef = async (ref, claimText) => {
+  const handleViewRef = async (ref, claimText, claimId) => {
     if (!ref.id) return
 
     let targetPage = 1
@@ -1311,29 +1310,13 @@ export default function MKG3ClaimsDetector() {
       }
     }
 
-    // Fetch highlight markers (parallel, non-blocking — cached after first load)
-    let markers = []
-    if (ref.id) {
-      if (markerCacheRef.current.has(ref.id)) {
-        markers = markerCacheRef.current.get(ref.id)
-      } else {
-        try {
-          const result = await api.fetchReferenceMarkers(ref.id)
-          markers = result?.markers || []
-          markerCacheRef.current.set(ref.id, markers)
-        } catch {
-          markers = []
-        }
-      }
-    }
-
     setReferenceViewerData({
       referenceId: ref.id,
-      page: markers.length > 0 ? markers[0].page_number : targetPage,
-      excerpt: markers.length > 0 ? null : (excerpt || (!resolvedPage ? claimText : null)),
+      page: targetPage,
+      excerpt: excerpt || (!resolvedPage ? claimText : null),
       pageResolution: resolutionReason,
-      citationPageLabel: ref.citationPageLabel || null,
-      markers,
+      claimId: claimId || null,
+      claimText: claimText || null,
     })
   }
 
@@ -2316,7 +2299,7 @@ export default function MKG3ClaimsDetector() {
                                     onApprove={handleClaimApprove}
                                     onReject={handleClaimReject}
                                     onSelect={() => handleClaimSelect(claim.id)}
-                                    onViewRef={handleViewRef}
+                                    onViewRef={(ref, statement) => handleViewRef(ref, statement, claim.id)}
                                     onDelete={handleClaimDelete}
                                     onUndo={handleClaimUndo}
                                     onRefChange={handleRefChange}
@@ -2339,7 +2322,7 @@ export default function MKG3ClaimsDetector() {
                           onApprove={handleClaimApprove}
                           onReject={handleClaimReject}
                           onSelect={() => handleClaimSelect(claim.id)}
-                          onViewRef={handleViewRef}
+                          onViewRef={(ref, statement) => handleViewRef(ref, statement, claim.id)}
                           onDelete={handleClaimDelete}
                                     onUndo={handleClaimUndo}
                           onRefChange={handleRefChange}
@@ -2420,6 +2403,7 @@ export default function MKG3ClaimsDetector() {
           <div className="modalContent" onClick={e => e.stopPropagation()} style={{ maxWidth: '90vw', width: '1100px', height: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div className="modalHeader">
               <h2>Reference Document</h2>
+              <div style={{ flex: 1 }} />
               <Button variant="ghost" size="small" onClick={() => setReferenceViewerData(null)}>
                 <Icon name="x" size={20} />
               </Button>
@@ -2429,7 +2413,8 @@ export default function MKG3ClaimsDetector() {
                 referenceId={referenceViewerData.referenceId}
                 page={referenceViewerData.page}
                 excerpt={referenceViewerData.excerpt}
-                markers={referenceViewerData.markers}
+                claimId={referenceViewerData.claimId}
+                claimText={referenceViewerData.claimText}
               />
             </div>
           </div>
