@@ -262,8 +262,8 @@ export const evidenceController = {
     try {
       const { suggestionId } = req.params
       const { status } = req.body
-      if (!['accepted', 'rejected'].includes(status)) {
-        throw new AppError('status must be "accepted" or "rejected"', 400)
+      if (!['accepted', 'rejected', 'suggested'].includes(status)) {
+        throw new AppError('status must be "accepted", "rejected", or "suggested"', 400)
       }
 
       const updated = EvidenceSuggestion.updateStatus(suggestionId, status)

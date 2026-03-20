@@ -359,6 +359,17 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
     }
   }
 
+  async function handleUndoReject(suggestion) {
+    try {
+      await api.updateEvidenceSuggestionStatus(suggestion.suggestion_id, 'suggested')
+      setSuggestions(prev => prev.map(s =>
+        s.suggestion_id === suggestion.suggestion_id ? { ...s, status: 'suggested' } : s
+      ))
+    } catch (err) {
+      logger.error('Failed to undo rejection:', err)
+    }
+  }
+
   async function handleRejectSuggestion(suggestion) {
     try {
       await api.updateEvidenceSuggestionStatus(suggestion.suggestion_id, 'rejected')
@@ -688,6 +699,11 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
                       )}
                       {s.status === 'accepted' && (
                         <span style={{ fontSize: '11px', color: 'var(--green-7)', fontWeight: 500 }}>Accepted</span>
+                      )}
+                      {s.status === 'rejected' && (
+                        <Button variant="ghost" size="small" onClick={(e) => { e.stopPropagation(); handleUndoReject(s) }}>
+                          <Icon name="refreshCw" size={12} /> Undo
+                        </Button>
                       )}
                     </div>
                   )

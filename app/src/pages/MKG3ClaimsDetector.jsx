@@ -887,6 +887,40 @@ export default function MKG3ClaimsDetector() {
     }
   }
 
+  // Pre-fetch evidence suggestions for all linked references after analysis completes
+  useEffect(() => {
+    if (!analysisComplete || claims.length === 0) return
+    // Collect unique (claim_id, claim_text, reference_id) tuples
+    const pairs = []
+    const seen = new Set()
+    for (const claim of claims) {
+      if (!claim.references) continue
+      for (const ref of claim.references) {
+        if (!ref.id) continue
+        const key = `${claim.id}:${ref.id}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        pairs.push({ claim_id: claim.id, claim_text: claim.statement || claim.text, reference_id: ref.id })
+      }
+    }
+    if (pairs.length === 0) return
+
+    // Throttled background pre-fetch (2 concurrent, silent failures)
+    let active = 0
+    let idx = 0
+    function runNext() {
+      while (active < 2 && idx < pairs.length) {
+        const p = pairs[idx++]
+        active++
+        api.generateEvidenceSuggestions(p)
+          .catch(() => {})
+          .finally(() => { active--; runNext() })
+      }
+    }
+    runNext()
+    logger.info({ event: 'evidence_prefetch_started', pairs: pairs.length })
+  }, [analysisComplete, claims])
+
   const handleSaveVersion = async () => {
     if (!documentHash || claims.length === 0) return
     try {
