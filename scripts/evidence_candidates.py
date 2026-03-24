@@ -192,7 +192,7 @@ def should_flag_for_vision(page, text_blocks):
     return text_coverage < 0.40
 
 
-def extract_printed_page_number(page, page_index):
+def extract_printed_page_number(page, page_index, page_dict_cache=None):
     try:
         label = page.get_label()
     except Exception:
@@ -203,7 +203,12 @@ def extract_printed_page_number(page, page_index):
 
     page_height = page.rect.height
     page_width = page.rect.width
-    page_dict = page.get_text("dict")
+    if page_dict_cache is not None and page_index in page_dict_cache:
+        page_dict = page_dict_cache[page_index]
+    else:
+        page_dict = page.get_text("dict")
+        if page_dict_cache is not None:
+            page_dict_cache[page_index] = page_dict
     numeric_candidates = []
 
     for block in page_dict.get("blocks", []):
@@ -383,16 +388,24 @@ def extract_figure_table_label(candidate_text):
     )
     if not match:
         return None
-    return re.sub(r"\s+", " ", match.group(1).lower().replace(".", "")).strip()
+    result = re.sub(r"\s+", " ", match.group(1).lower().replace(".", "")).strip()
+    result = re.sub(r"(fig|figure|table|box)(\d)", r"\1 \2", result)
+    return result
 
 
-def build_location_annotation(page, page_index, rect_dict, candidate_type, candidate_text, page_dict_cache):
-    printed_page = extract_printed_page_number(page, page_index)
+def build_location_annotation(page, page_index, rect_dict, candidate_type, candidate_text, page_dict_cache, layout_cache=None):
     if page_index not in page_dict_cache:
         page_dict_cache[page_index] = page.get_text("dict")
 
+    printed_page = extract_printed_page_number(page, page_index, page_dict_cache)
     page_dict = page_dict_cache[page_index]
-    layout = detect_column_layout(page_dict.get("blocks", []), page.rect.height)
+
+    if layout_cache is not None and page_index in layout_cache:
+        layout = layout_cache[page_index]
+    else:
+        layout = detect_column_layout(page_dict.get("blocks", []), page.rect.height)
+        if layout_cache is not None:
+            layout_cache[page_index] = layout
     col_num = determine_column(rect_dict["x0"], rect_dict["x1"], layout)
     location = f"/p{printed_page}/col{col_num}"
     candidate_kind = (candidate_type or "").lower()
@@ -428,6 +441,7 @@ def extract_candidate_regions(pdf_path, claim, top_k=30):
     claim_terms = extract_terms(claim)
     vision_pages = []
     page_dict_cache = {}
+    layout_cache = {}
 
     for page_number in range(len(doc)):
         page = doc[page_number]
@@ -460,6 +474,7 @@ def extract_candidate_regions(pdf_path, claim, top_k=30):
                     "structured_box",
                     group["text"],
                     page_dict_cache,
+                    layout_cache,
                 ),
             })
             region_index += 1
@@ -531,6 +546,7 @@ def extract_candidate_regions(pdf_path, claim, top_k=30):
                     "figure",
                     fig_text,
                     page_dict_cache,
+                    layout_cache,
                 ),
             })
             region_index += 1
@@ -561,6 +577,7 @@ def extract_candidate_regions(pdf_path, claim, top_k=30):
                         "figure",
                         None,
                         page_dict_cache,
+                        layout_cache,
                     ),
                 })
                 region_index += 1
@@ -593,6 +610,7 @@ def extract_candidate_regions(pdf_path, claim, top_k=30):
                     block_type_label,
                     text,
                     page_dict_cache,
+                    layout_cache,
                 ),
             })
             region_index += 1
