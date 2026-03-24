@@ -1,15 +1,15 @@
 import { getDb } from '../config/database.js'
 
 export const AcceptedEvidence = {
-  create({ evidence_id, claim_id, reference_id, page_number, type, rects, text, origin, suggestion_id }) {
+  create({ evidence_id, claim_id, reference_id, page_number, type, rects, text, origin, suggestion_id, location_annotation }) {
     const db = getDb()
     db.prepare(`
       INSERT INTO accepted_evidence
-        (evidence_id, claim_id, reference_id, page_number, type, rects, text, origin, suggestion_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (evidence_id, claim_id, reference_id, page_number, type, rects, text, origin, suggestion_id, location_annotation)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       evidence_id, claim_id, reference_id, page_number,
-      type, JSON.stringify(rects), text, origin, suggestion_id || null
+      type, JSON.stringify(rects), text, origin, suggestion_id || null, location_annotation || null
     )
     return db.prepare('SELECT * FROM accepted_evidence WHERE evidence_id = ?').get(evidence_id)
   },

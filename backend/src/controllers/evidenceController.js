@@ -148,6 +148,9 @@ export const evidenceController = {
 
       const ref = Reference._findByIdFull(reference_id)
       if (!ref) throw new AppError('Reference document not found', 404)
+      const shortCitation = ref.display_alias
+        || ref.filename?.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ')
+        || 'Reference'
       if (!ref.file_path || !fs.existsSync(ref.file_path)) {
         throw new AppError('Reference PDF file not found on disk', 404)
       }
@@ -194,6 +197,7 @@ export const evidenceController = {
                 }],
                 text: visual.description || null,
                 pre_score: 0.5,
+                location_annotation: `/p${vp}/${visual.type || 'fig'}`,
               })
               visIdx++
             }
@@ -229,6 +233,7 @@ export const evidenceController = {
           rationale: sel.rationale || null,
           status: 'suggested',
           origin: 'rules_plus_ai',
+          location_annotation: `${shortCitation}${cand.location_annotation || ''}`,
         }
       })
 
@@ -280,6 +285,7 @@ export const evidenceController = {
           text: updated.text,
           origin: 'suggestion_accepted',
           suggestion_id: suggestionId,
+          location_annotation: updated.location_annotation || null,
         })
       }
 
