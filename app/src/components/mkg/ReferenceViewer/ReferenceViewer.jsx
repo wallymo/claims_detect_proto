@@ -687,6 +687,12 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
                       {s.rationale && (
                         <div className={styles.suggestionRationale}>{s.rationale}</div>
                       )}
+                      {s.location_annotation && (
+                        <div className={styles.locationAnnotation}>
+                          <Icon name="fileText" size={11} />
+                          <span className={styles.locationAnnotationText}>{s.location_annotation}</span>
+                        </div>
+                      )}
                       {s.status === 'suggested' && (
                         <div className={styles.suggestionActions}>
                           <Button variant="secondary" size="small" onClick={(e) => { e.stopPropagation(); handleAcceptSuggestion(s) }}>
@@ -733,6 +739,12 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
                       <div className={styles.suggestionSnippet}>
                         {ev.text ? ev.text.slice(0, 80) + (ev.text.length > 80 ? '...' : '') : '(drawn region)'}
                       </div>
+                      {ev.location_annotation && (
+                        <div className={styles.locationAnnotation}>
+                          <Icon name="fileText" size={11} />
+                          <span className={styles.locationAnnotationText}>{ev.location_annotation}</span>
+                        </div>
+                      )}
                       <Button
                         variant="ghost"
                         size="small"
