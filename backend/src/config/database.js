@@ -142,6 +142,13 @@ export function initDb() {
   const migration016 = fs.readFileSync(migration016Path, 'utf-8')
   db.exec(migration016)
 
+  // 017: location_annotation column on evidence tables
+  const migration017Path = path.resolve(__dirname, '../../migrations/017_evidence_location_annotation.sql')
+  const migration017 = fs.readFileSync(migration017Path, 'utf-8')
+  for (const stmt of migration017.split(';').map(s => s.trim()).filter(Boolean)) {
+    try { db.exec(stmt) } catch (err) { if (!err.message.includes('duplicate column')) throw err }
+  }
+
   console.log('Database initialized:', env.DB_PATH)
   return db
 }

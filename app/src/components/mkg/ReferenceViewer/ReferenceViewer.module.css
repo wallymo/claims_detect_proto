@@ -272,7 +272,7 @@
   font-family: 'SF Mono', 'Consolas', monospace;
   color: var(--green-9);
   line-height: 1.3;
-  word-break: break-all;
+  overflow-wrap: break-word;
 }
 
 .suggestionActions {

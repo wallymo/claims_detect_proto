@@ -259,7 +259,8 @@ def detect_column_layout(page_dict_blocks, page_height):
         if not bbox or len(bbox) < 4:
             continue
         x0, y0, x1, y1 = bbox[:4]
-        if y0 < content_top or y1 > content_bottom:
+        y_center = (y0 + y1) / 2
+        if y_center < content_top or y_center > content_bottom:
             continue
         line_texts = []
         for line in block.get("lines", []):
@@ -280,14 +281,23 @@ def detect_column_layout(page_dict_blocks, page_height):
     if content_width <= 0:
         return {"columns": 1, "boundary_x": None}
 
+    # Filter out narrow blocks that may be captions/labels sitting between columns
+    min_block_width = content_width * 0.25
+    text_blocks = [block for block in text_blocks if (block["bbox"][2] - block["bbox"][0]) >= min_block_width]
+    if len(text_blocks) < 6:
+        return {"columns": 1, "boundary_x": None}
+
+    x_min = min(block["bbox"][0] for block in text_blocks)
+    x_max = max(block["bbox"][2] for block in text_blocks)
     midpoint = (x_min + x_max) / 2
+
     left_blocks = [block for block in text_blocks if block["x_center"] < midpoint]
     right_blocks = [block for block in text_blocks if block["x_center"] >= midpoint]
 
-    if len(left_blocks) >= 3 and len(right_blocks) >= 3:
+    if len(left_blocks) >= 2 and len(right_blocks) >= 2:
         left_edge = max(block["bbox"][2] for block in left_blocks)
         right_edge = min(block["bbox"][0] for block in right_blocks)
-        if right_edge - left_edge > content_width * 0.10:
+        if right_edge - left_edge > 5:
             return {"columns": 2, "boundary_x": (left_edge + right_edge) / 2}
 
     return {"columns": 1, "boundary_x": None}
@@ -442,6 +452,24 @@ def extract_candidate_regions(pdf_path, claim, top_k=30):
     vision_pages = []
     page_dict_cache = {}
     layout_cache = {}
+    # Detect document-level column layout (2+ pages detecting 2-col = whole doc is 2-col)
+    doc_layouts = []
+    for pi in range(len(doc)):
+        p = doc[pi]
+        pd = p.get_text("dict")
+        page_dict_cache[pi] = pd
+        layout_result = detect_column_layout(pd.get("blocks", []), p.rect.height)
+        doc_layouts.append(layout_result)
+
+    two_col_pages = [l for l in doc_layouts if l["columns"] == 2]
+    if len(two_col_pages) >= 2:
+        avg_boundary = sum(l["boundary_x"] for l in two_col_pages) / len(two_col_pages)
+        doc_layout = {"columns": 2, "boundary_x": avg_boundary}
+    else:
+        doc_layout = {"columns": 1, "boundary_x": None}
+
+    for pi in range(len(doc)):
+        layout_cache[pi] = doc_layout
 
     for page_number in range(len(doc)):
         page = doc[page_number]

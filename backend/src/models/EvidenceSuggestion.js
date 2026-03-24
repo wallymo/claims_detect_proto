@@ -4,7 +4,7 @@ export const EvidenceSuggestion = {
   bulkCreate(suggestions, debugData = {}) {
     const db = getDb()
     const stmt = db.prepare(`
-      INSERT INTO evidence_suggestions
+      INSERT OR REPLACE INTO evidence_suggestions
         (suggestion_id, claim_id, reference_id, page_number, type, rects, text,
          score, support_strength, rationale, status, origin, raw_shortlist, raw_gemini_response, location_annotation)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'suggested', 'rules_plus_ai', ?, ?, ?)
