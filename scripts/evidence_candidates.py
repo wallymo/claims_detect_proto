@@ -215,30 +215,47 @@ def extract_printed_page_number(page, page_index, page_dict_cache=None):
         if block.get("type") != 0:
             continue
         for line in block.get("lines", []):
-            spans = line.get("spans", [])
-            line_text = "".join((span.get("text") or "") for span in spans).strip()
-            if not re.fullmatch(r"\d+", line_text):
+            line_bbox = line.get("bbox") or block.get("bbox")
+            if not line_bbox or len(line_bbox) < 4:
                 continue
-            for span in spans:
-                span_text = (span.get("text") or "").strip()
-                if span_text != line_text:
-                    continue
-                bbox = span.get("bbox") or line.get("bbox") or block.get("bbox")
-                if not bbox or len(bbox) < 4:
-                    continue
-                sx0, sy0, sx1, sy1 = bbox[:4]
-                y_center = (sy0 + sy1) / 2
-                if y_center <= page_height * 0.05:
-                    region_rank = 1
-                elif y_center >= page_height * 0.95:
-                    region_rank = 0
-                else:
-                    continue
-                font_size = float(span.get("size") or max(sy1 - sy0, 0))
-                if font_size > 18:
-                    continue
-                center_distance = abs(((sx0 + sx1) / 2) - (page_width / 2))
-                numeric_candidates.append((region_rank, font_size, center_distance, line_text))
+            y_center = (line_bbox[1] + line_bbox[3]) / 2
+            if y_center > page_height * 0.05 and y_center < page_height * 0.92:
+                continue
+            region_rank = 0 if y_center >= page_height * 0.92 else 1
+            line_text = "".join((span.get("text") or "") for span in line.get("spans", [])).strip()
+            if not line_text:
+                continue
+            font_size = max(
+                (
+                    float(span.get("size") or 0)
+                    for span in line.get("spans", [])
+                    if span.get("text", "").strip()
+                ),
+                default=0,
+            )
+            if font_size > 18:
+                continue
+            # Try to extract a page number from the line
+            page_num = None
+            # Pattern 1: entire line is a number
+            if re.fullmatch(r"\d+", line_text):
+                page_num = line_text
+            # Pattern 2: 'Page N of M'
+            m = re.search(r"Page\s+(\d+)\s+of\s+\d+", line_text, re.IGNORECASE)
+            if m:
+                page_num = m.group(1)
+            # Pattern 3: number at start or end separated by pipe/space/tab
+            if not page_num:
+                m = re.match(r"^(\d{1,5})(?:\s*[|\t])", line_text)
+                if m:
+                    page_num = m.group(1)
+            if not page_num:
+                m = re.search(r"[|\t]\s*(\d{1,5})\s*$", line_text)
+                if m:
+                    page_num = m.group(1)
+            if page_num:
+                center_distance = abs(((line_bbox[0] + line_bbox[2]) / 2) - (page_width / 2))
+                numeric_candidates.append((region_rank, font_size, center_distance, page_num))
 
     if numeric_candidates:
         numeric_candidates.sort()
