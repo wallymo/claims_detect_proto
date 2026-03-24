@@ -192,21 +192,251 @@ def should_flag_for_vision(page, text_blocks):
     return text_coverage < 0.40
 
 
+def extract_printed_page_number(page, page_index):
+    try:
+        label = page.get_label()
+    except Exception:
+        label = None
+
+    if isinstance(label, str) and label.strip():
+        return label.strip()
+
+    page_height = page.rect.height
+    page_width = page.rect.width
+    page_dict = page.get_text("dict")
+    numeric_candidates = []
+
+    for block in page_dict.get("blocks", []):
+        if block.get("type") != 0:
+            continue
+        for line in block.get("lines", []):
+            spans = line.get("spans", [])
+            line_text = "".join((span.get("text") or "") for span in spans).strip()
+            if not re.fullmatch(r"\d+", line_text):
+                continue
+            for span in spans:
+                span_text = (span.get("text") or "").strip()
+                if span_text != line_text:
+                    continue
+                bbox = span.get("bbox") or line.get("bbox") or block.get("bbox")
+                if not bbox or len(bbox) < 4:
+                    continue
+                sx0, sy0, sx1, sy1 = bbox[:4]
+                y_center = (sy0 + sy1) / 2
+                if y_center <= page_height * 0.05:
+                    region_rank = 1
+                elif y_center >= page_height * 0.95:
+                    region_rank = 0
+                else:
+                    continue
+                font_size = float(span.get("size") or max(sy1 - sy0, 0))
+                if font_size > 18:
+                    continue
+                center_distance = abs(((sx0 + sx1) / 2) - (page_width / 2))
+                numeric_candidates.append((region_rank, font_size, center_distance, line_text))
+
+    if numeric_candidates:
+        numeric_candidates.sort()
+        return numeric_candidates[0][3]
+
+    return str(page_index + 1)
+
+
+def detect_column_layout(page_dict_blocks, page_height):
+    content_top = page_height * 0.08
+    content_bottom = page_height * 0.92
+    text_blocks = []
+
+    for block in page_dict_blocks:
+        if block.get("type") != 0:
+            continue
+        bbox = block.get("bbox")
+        if not bbox or len(bbox) < 4:
+            continue
+        x0, y0, x1, y1 = bbox[:4]
+        if y0 < content_top or y1 > content_bottom:
+            continue
+        line_texts = []
+        for line in block.get("lines", []):
+            span_text = "".join((span.get("text") or "") for span in line.get("spans", []))
+            if span_text.strip():
+                line_texts.append(span_text)
+        block_text = re.sub(r"\s+", " ", " ".join(line_texts)).strip()
+        if len(block_text) <= 20:
+            continue
+        text_blocks.append({"bbox": (x0, y0, x1, y1), "x_center": (x0 + x1) / 2})
+
+    if len(text_blocks) < 6:
+        return {"columns": 1, "boundary_x": None}
+
+    x_min = min(block["bbox"][0] for block in text_blocks)
+    x_max = max(block["bbox"][2] for block in text_blocks)
+    content_width = x_max - x_min
+    if content_width <= 0:
+        return {"columns": 1, "boundary_x": None}
+
+    midpoint = (x_min + x_max) / 2
+    left_blocks = [block for block in text_blocks if block["x_center"] < midpoint]
+    right_blocks = [block for block in text_blocks if block["x_center"] >= midpoint]
+
+    if len(left_blocks) >= 3 and len(right_blocks) >= 3:
+        left_edge = max(block["bbox"][2] for block in left_blocks)
+        right_edge = min(block["bbox"][0] for block in right_blocks)
+        if right_edge - left_edge > content_width * 0.10:
+            return {"columns": 2, "boundary_x": (left_edge + right_edge) / 2}
+
+    return {"columns": 1, "boundary_x": None}
+
+
+def determine_column(x0, x1, layout):
+    if layout.get("columns") != 2 or layout.get("boundary_x") is None:
+        return 1
+    if (x0 + x1) / 2 < layout["boundary_x"]:
+        return 1
+    return 2
+
+
+def compute_paragraph_and_lines(page_dict, target_rect, col_num, layout, page_height):
+    content_top = page_height * 0.08
+    content_bottom = page_height * 0.92
+    candidate_blocks = []
+
+    for block in page_dict.get("blocks", []):
+        if block.get("type") != 0:
+            continue
+        bbox = block.get("bbox")
+        if not bbox or len(bbox) < 4:
+            continue
+        x0, y0, x1, y1 = bbox[:4]
+        if y0 < content_top or y1 > content_bottom:
+            continue
+        if determine_column(x0, x1, layout) != col_num:
+            continue
+
+        line_texts = []
+        max_font_size = 0.0
+        for line in block.get("lines", []):
+            span_text = "".join((span.get("text") or "") for span in line.get("spans", []))
+            if span_text.strip():
+                line_texts.append(span_text)
+            for span in line.get("spans", []):
+                max_font_size = max(max_font_size, float(span.get("size") or 0))
+
+        block_text = re.sub(r"\s+", " ", " ".join(line_texts)).strip()
+        if len(block_text) <= 10:
+            continue
+
+        letters_only = re.sub(r"[^A-Za-z]+", "", block_text)
+        is_all_caps = bool(letters_only) and letters_only == letters_only.upper()
+        is_heading = (
+            is_all_caps
+            and len(block_text) <= 60
+            and len(block_text.split()) <= 10
+            and max_font_size >= 11
+        )
+        candidate_blocks.append({
+            "bbox": (x0, y0, x1, y1),
+            "block": block,
+            "is_paragraph": not is_heading,
+        })
+
+    candidate_blocks.sort(key=lambda block: (block["bbox"][1], block["bbox"][0]))
+
+    para_number = 0
+    target_height = max(target_rect["y1"] - target_rect["y0"], 1.0)
+    for block in candidate_blocks:
+        if not block["is_paragraph"]:
+            continue
+        para_number += 1
+
+        _, by0, _, by1 = block["bbox"]
+        overlap = max(0.0, min(by1, target_rect["y1"]) - max(by0, target_rect["y0"]))
+        if overlap <= target_height * 0.5:
+            continue
+
+        line_hits = []
+        for line_number, line in enumerate(block["block"].get("lines", []), start=1):
+            line_bbox = line.get("bbox")
+            if not line_bbox or len(line_bbox) < 4:
+                continue
+            _, ly0, _, ly1 = line_bbox[:4]
+            line_overlap = min(ly1, target_rect["y1"] + 2) - max(ly0, target_rect["y0"] - 2)
+            if line_overlap > 0:
+                line_hits.append(line_number)
+
+        result = {"para": para_number}
+        if line_hits:
+            result["line_start"] = min(line_hits)
+            result["line_end"] = max(line_hits)
+        return result
+
+    return None
+
+
+def extract_figure_table_label(candidate_text):
+    if not candidate_text:
+        return None
+    match = re.match(
+        r"^(fig\.?\s*\d+|figure\s*\d+|table\s*\d+|box\s*\d+)",
+        candidate_text.strip(),
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+    return re.sub(r"\s+", " ", match.group(1).lower().replace(".", "")).strip()
+
+
+def build_location_annotation(page, page_index, rect_dict, candidate_type, candidate_text, page_dict_cache):
+    printed_page = extract_printed_page_number(page, page_index)
+    if page_index not in page_dict_cache:
+        page_dict_cache[page_index] = page.get_text("dict")
+
+    page_dict = page_dict_cache[page_index]
+    layout = detect_column_layout(page_dict.get("blocks", []), page.rect.height)
+    col_num = determine_column(rect_dict["x0"], rect_dict["x1"], layout)
+    location = f"/p{printed_page}/col{col_num}"
+    candidate_kind = (candidate_type or "").lower()
+    label = extract_figure_table_label(candidate_text)
+
+    if candidate_kind in {"figure", "chart", "diagram"}:
+        return f"{location}/{label}" if label else f"{location}/fig"
+
+    if candidate_kind in {"structured_box", "table"}:
+        if label:
+            return f"{location}/{label}"
+        default_label = "box" if candidate_kind == "structured_box" else "table"
+        return f"{location}/{default_label}"
+
+    if candidate_kind in {"text", "heading", "caption"}:
+        para_info = compute_paragraph_and_lines(page_dict, rect_dict, col_num, layout, page.rect.height)
+        if not para_info:
+            return location
+        location = f"{location}/para{para_info['para']}"
+        if "line_start" in para_info and "line_end" in para_info:
+            if para_info["line_start"] == para_info["line_end"]:
+                return f"{location}/ln{para_info['line_start']}"
+            return f"{location}/ln{para_info['line_start']}-{para_info['line_end']}"
+        return location
+
+    return location
+
+
 def extract_candidate_regions(pdf_path, claim, top_k=30):
     doc = pymupdf.open(pdf_path)
     candidates = []
     region_index = 1
     claim_terms = extract_terms(claim)
     vision_pages = []
+    page_dict_cache = {}
 
     for page_number in range(len(doc)):
         page = doc[page_number]
         pw, ph = page.rect.width, page.rect.height
         blocks = page.get_text("blocks")
+        consumed_indices = set()
 
         # Phase 1: Rect grouping — find structured boxes
         groups = find_rect_groups(page, blocks)
-        consumed_indices = set()
         for group in groups:
             consumed_indices.update(group["block_indices"])
             pre_score = score_candidate(claim_terms, group["text"])
@@ -214,14 +444,23 @@ def extract_candidate_regions(pdf_path, claim, top_k=30):
             if pre_score > 0:
                 pre_score = min(pre_score * 1.25, 1.0)
             rx0, ry0, rx1, ry1 = group["rect"]
+            group_rect = {"x0": round(rx0, 1), "y0": round(ry0, 1),
+                          "x1": round(rx1, 1), "y1": round(ry1, 1)}
             candidates.append({
                 "candidate_id": f"cand_{region_index:04d}",
                 "page_number": page_number + 1,
                 "type": "structured_box",
-                "rects": [{"x0": round(rx0, 1), "y0": round(ry0, 1),
-                           "x1": round(rx1, 1), "y1": round(ry1, 1)}],
+                "rects": [group_rect],
                 "text": group["text"],
                 "pre_score": pre_score,
+                "location_annotation": build_location_annotation(
+                    page,
+                    page_number,
+                    group_rect,
+                    "structured_box",
+                    group["text"],
+                    page_dict_cache,
+                ),
             })
             region_index += 1
 
@@ -285,6 +524,14 @@ def extract_candidate_regions(pdf_path, claim, top_k=30):
                 "rects": [fig_rect],
                 "text": fig_text,
                 "pre_score": max(pre_score, 0.3),  # floor: figures always have some relevance
+                "location_annotation": build_location_annotation(
+                    page,
+                    page_number,
+                    fig_rect,
+                    "figure",
+                    fig_text,
+                    page_dict_cache,
+                ),
             })
             region_index += 1
             caption_consumed.add(i)
@@ -298,14 +545,23 @@ def extract_candidate_regions(pdf_path, claim, top_k=30):
 
             x0, y0, x1, y1, text, block_no, block_type = block
             if block_type == 1:
+                image_rect = {"x0": round(x0, 1), "y0": round(y0, 1),
+                              "x1": round(x1, 1), "y1": round(y1, 1)}
                 candidates.append({
                     "candidate_id": f"cand_{region_index:04d}",
                     "page_number": page_number + 1,
                     "type": "figure",
-                    "rects": [{"x0": round(x0, 1), "y0": round(y0, 1),
-                               "x1": round(x1, 1), "y1": round(y1, 1)}],
+                    "rects": [image_rect],
                     "text": None,
                     "pre_score": 0.0,
+                    "location_annotation": build_location_annotation(
+                        page,
+                        page_number,
+                        image_rect,
+                        "figure",
+                        None,
+                        page_dict_cache,
+                    ),
                 })
                 region_index += 1
                 continue
@@ -321,26 +577,36 @@ def extract_candidate_regions(pdf_path, claim, top_k=30):
             if block_type_label == "table" and pre_score > 0:
                 pre_score = min(pre_score * 1.25, 1.0)
 
+            text_rect = {"x0": round(x0, 1), "y0": round(y0, 1),
+                         "x1": round(x1, 1), "y1": round(y1, 1)}
             candidates.append({
                 "candidate_id": f"cand_{region_index:04d}",
                 "page_number": page_number + 1,
                 "type": block_type_label,
-                "rects": [{"x0": round(x0, 1), "y0": round(y0, 1),
-                           "x1": round(x1, 1), "y1": round(y1, 1)}],
+                "rects": [text_rect],
                 "text": text,
                 "pre_score": pre_score,
+                "location_annotation": build_location_annotation(
+                    page,
+                    page_number,
+                    text_rect,
+                    block_type_label,
+                    text,
+                    page_dict_cache,
+                ),
             })
             region_index += 1
 
     candidates.sort(key=lambda c: c["pre_score"], reverse=True)
     shortlisted = candidates[:top_k]
 
-    return {
+    result = {
         "candidates": shortlisted,
         "total_extracted": region_index - 1,
         "shortlisted": len(shortlisted),
         "vision_pages": vision_pages,
     }
+    return result
 
 
 def main():
