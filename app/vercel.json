@@ -7,7 +7,7 @@
   "redirects": [
     {
       "source": "/",
-      "destination": "/mkg2",
+      "destination": "/mkg3",
       "permanent": false
     }
   ],

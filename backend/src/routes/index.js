@@ -9,7 +9,6 @@ import trainingRoutes from './training.js'
 import analysisCacheRoutes from './analysis-cache.js'
 import { brandMatchingJobRoutes, matchingJobRoutes } from './matching-jobs.js'
 import analysisRunRoutes from './analysis-runs.js'
-import documentAiRoutes from './document-ai.js'
 import versionRoutes from './versions.js'
 import brandPatternRoutes from './brand-patterns.js'
 import documentLineageRoutes from './document-lineage.js'
@@ -36,7 +35,6 @@ export function registerRoutes(app) {
   app.use('/api/analysis-runs', analysisRunRoutes)
   app.use('/api/brands/:brandId', brandMatchingJobRoutes)
   app.use('/api/matching-jobs', matchingJobRoutes)
-  app.use('/api/document-ai', documentAiRoutes)
   app.use('/api/versions', versionRoutes)
   app.use('/api/brand-patterns', brandPatternRoutes)
   app.use('/api/document-lineage', documentLineageRoutes)
