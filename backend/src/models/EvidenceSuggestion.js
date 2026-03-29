@@ -1,5 +1,13 @@
 import { getDb } from '../config/database.js'
 
+function hydrateRow(row) {
+  if (!row) return null
+  return {
+    ...row,
+    rects: typeof row.rects === 'string' ? JSON.parse(row.rects) : row.rects,
+  }
+}
+
 export const EvidenceSuggestion = {
   bulkCreate(suggestions, debugData = {}) {
     const db = getDb()
@@ -32,7 +40,7 @@ export const EvidenceSuggestion = {
       WHERE claim_id = ? AND reference_id = ?
       ORDER BY score DESC
     `).all(claimId, referenceId)
-    return rows.map(r => ({ ...r, rects: JSON.parse(r.rects) }))
+    return rows.map(hydrateRow)
   },
 
   deleteByClaimAndRef(claimId, referenceId) {
@@ -41,11 +49,35 @@ export const EvidenceSuggestion = {
       .run(claimId, referenceId)
   },
 
-  updateStatus(suggestionId, status) {
+  update(suggestionId, fields) {
     const db = getDb()
+    const updates = []
+    const values = []
+
+    if (fields.status !== undefined) {
+      updates.push('status = ?')
+      values.push(fields.status)
+    }
+
+    if (fields.location_annotation !== undefined) {
+      updates.push('location_annotation = ?')
+      values.push(fields.location_annotation)
+    }
+
+    if (updates.length === 0) {
+      return hydrateRow(
+        db.prepare('SELECT * FROM evidence_suggestions WHERE suggestion_id = ?').get(suggestionId)
+      )
+    }
+
     db.prepare(`
-      UPDATE evidence_suggestions SET status = ? WHERE suggestion_id = ?
-    `).run(status, suggestionId)
-    return db.prepare('SELECT * FROM evidence_suggestions WHERE suggestion_id = ?').get(suggestionId)
+      UPDATE evidence_suggestions
+      SET ${updates.join(', ')}
+      WHERE suggestion_id = ?
+    `).run(...values, suggestionId)
+
+    return hydrateRow(
+      db.prepare('SELECT * FROM evidence_suggestions WHERE suggestion_id = ?').get(suggestionId)
+    )
   }
 }

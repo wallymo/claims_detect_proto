@@ -16,6 +16,19 @@ const PYTHON_BIN = path.join(PROJECT_ROOT, 'scripts/.venv/bin/python3')
 const CANDIDATES_SCRIPT = path.join(PROJECT_ROOT, 'scripts/evidence_candidates.py')
 const RENDER_SCRIPT = path.join(PROJECT_ROOT, 'scripts/render_page.py')
 
+function normalizeLocationAnnotation(value) {
+  if (typeof value !== 'string') {
+    throw new AppError('location_annotation must be a string', 400)
+  }
+
+  const normalized = value.trim()
+  if (!normalized) {
+    throw new AppError('location_annotation cannot be empty', 400)
+  }
+
+  return normalized
+}
+
 function getGeminiClient() {
   const apiKey = process.env.VITE_GEMINI_API_KEY
   if (!apiKey) throw new AppError('VITE_GEMINI_API_KEY not set', 500)
@@ -266,22 +279,38 @@ export const evidenceController = {
   async updateSuggestionStatus(req, res, next) {
     try {
       const { suggestionId } = req.params
-      const { status } = req.body
-      if (!['accepted', 'rejected', 'suggested'].includes(status)) {
-        throw new AppError('status must be "accepted", "rejected", or "suggested"', 400)
+      const { status, location_annotation } = req.body
+      const updates = {}
+      const hasStatus = status !== undefined
+      const hasLocation = location_annotation !== undefined
+
+      if (!hasStatus && !hasLocation) {
+        throw new AppError('status or location_annotation is required', 400)
       }
 
-      const updated = EvidenceSuggestion.updateStatus(suggestionId, status)
+      if (hasStatus) {
+        if (!['accepted', 'rejected', 'suggested'].includes(status)) {
+          throw new AppError('status must be "accepted", "rejected", or "suggested"', 400)
+        }
+        updates.status = status
+      }
+
+      if (hasLocation) {
+        updates.location_annotation = normalizeLocationAnnotation(location_annotation)
+      }
+
+      const updated = EvidenceSuggestion.update(suggestionId, updates)
       if (!updated) throw new AppError('Suggestion not found', 404)
 
-      if (status === 'accepted') {
-        AcceptedEvidence.create({
+      let acceptedEvidence = null
+      if (hasStatus && status === 'accepted') {
+        acceptedEvidence = AcceptedEvidence.create({
           evidence_id: `ae_${suggestionId}`,
           claim_id: updated.claim_id,
           reference_id: updated.reference_id,
           page_number: updated.page_number,
           type: updated.type,
-          rects: JSON.parse(updated.rects),
+          rects: updated.rects,
           text: updated.text,
           origin: 'suggestion_accepted',
           suggestion_id: suggestionId,
@@ -289,7 +318,10 @@ export const evidenceController = {
         })
       }
 
-      res.json({ suggestion: updated })
+      res.json({
+        suggestion: updated,
+        accepted_evidence: acceptedEvidence,
+      })
     } catch (err) {
       next(err)
     }
@@ -315,6 +347,27 @@ export const evidenceController = {
       })
 
       res.status(201).json({ evidence: created })
+    } catch (err) {
+      next(err)
+    }
+  },
+
+  async updateAcceptedEvidence(req, res, next) {
+    try {
+      const { evidenceId } = req.params
+      const { location_annotation } = req.body
+
+      if (location_annotation === undefined) {
+        throw new AppError('location_annotation is required', 400)
+      }
+
+      const updated = AcceptedEvidence.updateLocationAnnotation(
+        evidenceId,
+        normalizeLocationAnnotation(location_annotation)
+      )
+      if (!updated) throw new AppError('Accepted evidence not found', 404)
+
+      res.json({ evidence: updated })
     } catch (err) {
       next(err)
     }

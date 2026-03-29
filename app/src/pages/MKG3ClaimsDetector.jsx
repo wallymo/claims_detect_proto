@@ -24,7 +24,6 @@ import Alert from '@/components/molecules/Alert/Alert'
 import ReferenceViewer from '@/components/mkg/ReferenceViewer/ReferenceViewer'
 
 // Services
-import { MEDICATION_PROMPT_USER, getDocTypeInstructions, GEMINI_MODEL, MODEL_DISPLAY_NAMES, AI_QA_PROMPT_USER } from '@/services/gemini'
 import * as api from '@/services/api'
 
 // Utils
@@ -38,43 +37,6 @@ import { summarizeAnnotationClaims } from '@/utils/annotationSummary'
 import { logger } from '@/utils/logger'
 import { charOffsetToPage, resolveCitationPdfPage } from '@/utils/referenceViewerHints'
 import { matchCitationToLibrary } from '@/utils/citationLibraryMatcher'
-
-const ACTIVE_MODEL_LABEL = MODEL_DISPLAY_NAMES[GEMINI_MODEL] || GEMINI_MODEL
-
-const PROMPT_OPTIONS = [
-  { id: 'all-claims', label: 'All Claims', promptKey: 'all' },
-  { id: 'disease-state', label: 'Disease State', promptKey: 'disease' },
-  { id: 'medication', label: 'Medication', promptKey: 'drug' }
-]
-
-const ANNOTATION_POSITIONING_DISPLAY = `--- PYMUPDF ANNOTATION ENGINE ---
-
-Step 1: PyMuPDF extracts text spans, superscripts, and coordinates from the PDF (deterministic, no AI)
-Step 2: Parser splits each page into slide and speaker-notes regions and builds page-local reference pools:
-  - Slide footnotes at the bottom of the slide
-  - Notes references after the "References" header
-Step 3: Each superscript-backed statement resolves only against its own region's pool
-  - Slide candidates → same-page slide footnotes
-  - Notes candidates → same-page notes references
-Step 4: Orphan references become global annotations for that page and region
-Step 5: Sort (page → region → y → x), re-index, return
-
-No AI call for annotation positioning. Instant, free, deterministic.
-
-[Pre-identified annotations are inserted here dynamically from PyMuPDF extraction]
-[Reference pools are inserted here dynamically]
-
-CRITICAL: Include ALL annotations listed above. If you cannot locate one visually, use your best estimate for position. NEVER drop an annotation.
-
---- AI QA PROMPT (optional, when enabled) ---
-
-${AI_QA_PROMPT_USER}`
-
-const PROMPT_DISPLAY_TEXT = {
-  'all': ANNOTATION_POSITIONING_DISPLAY,
-  'disease': ANNOTATION_POSITIONING_DISPLAY,
-  'drug': MEDICATION_PROMPT_USER
-}
 
 const fileShaPromiseCache = new WeakMap()
 
@@ -243,9 +205,6 @@ export default function MKG3ClaimsDetector() {
   const fileInputRef = useRef(null)
 
   // Settings state
-  const [selectedPrompt, _setSelectedPrompt] = useState('all-claims')
-  const [editablePrompt, setEditablePrompt] = useState('')
-  const [isEditingPrompt, setIsEditingPrompt] = useState(false)
   const [selectedDocType, setSelectedDocType] = useState('speaker-notes')
 
   // Brand state
@@ -333,8 +292,6 @@ export default function MKG3ClaimsDetector() {
   const [trainingDocuments, setTrainingDocuments] = useState([])
   const [ecosystemTrainingExamples, setEcosystemTrainingExamples] = useState([])
   const [showTrainingOverlay, setShowTrainingOverlay] = useState(false)
-  const [enableAiQa, setEnableAiQa] = useState(false)
-
   const claimsListRef = useRef(null)
   const claimsPanelRef = useRef(null)
 
@@ -455,21 +412,6 @@ export default function MKG3ClaimsDetector() {
       cancelled = true
     }
   }, [selectedBrandId, brands])
-
-  // Sync editable prompt — annotation prompts are self-contained (no doc-type scaffold needed)
-  useEffect(() => {
-    const promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
-    const basePrompt = PROMPT_DISPLAY_TEXT[promptKey] || PROMPT_DISPLAY_TEXT['all']
-    if (promptKey === 'drug') {
-      // Claims detection mode — prepend doc-type structure + position rules
-      const { structure, position } = getDocTypeInstructions(selectedDocType || 'speaker-notes')
-      setEditablePrompt(structure.trim() + '\n\n' + basePrompt + '\n' + position.trim())
-    } else {
-      // Annotation mode — prompts are self-contained with region-specific instructions
-      setEditablePrompt(basePrompt)
-    }
-    setIsEditingPrompt(false)
-  }, [selectedPrompt, selectedDocType])
 
   // Track elapsed time during analysis
   useEffect(() => {
@@ -766,18 +708,6 @@ export default function MKG3ClaimsDetector() {
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
-  // ===== Prompt Editing =====
-
-  const getDefaultPrompt = () => {
-    const promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
-    return PROMPT_DISPLAY_TEXT[promptKey] || PROMPT_DISPLAY_TEXT['all']
-  }
-
-  const handleCancelEdit = () => {
-    setEditablePrompt(getDefaultPrompt())
-    setIsEditingPrompt(false)
-  }
-
   // ===== Analysis =====
 
   const handleAnalyze = async () => {
@@ -1006,7 +936,7 @@ export default function MKG3ClaimsDetector() {
 
       setTrainingDocuments(prev => prev.map(doc => (
         doc.document_key === documentKey
-          ? { ...doc, approved_claims: normalizedClaims, prompt_text: editablePrompt || doc.prompt_text }
+          ? { ...doc, approved_claims: normalizedClaims, prompt_text: doc.prompt_text }
           : doc
       )))
       return
@@ -1017,7 +947,7 @@ export default function MKG3ClaimsDetector() {
       label: documentName,
       document_name: documentName,
       approved_claims: normalizedClaims,
-      prompt_text: editablePrompt
+      prompt_text: null
     })
 
     const createdRecord = toTrainingDocumentRecord(created)
@@ -1894,74 +1824,9 @@ export default function MKG3ClaimsDetector() {
                       onTypeSelect={setSelectedDocType}
                     />
 
-                    {/* AI Analysis Toggle */}
-                    <div className="settingItem">
-                      <label className="settingLabel">AI Analysis</label>
-                      <div className="settingControl">
-                        <label className="switchLabel">
-                          <input
-                            type="checkbox"
-                            className="switchInput"
-                            checked={enableAiQa}
-                            onChange={(e) => setEnableAiQa(e.target.checked)}
-                          />
-                          <span className="switchTrack" />
-                          <span className="switchStatus">{enableAiQa ? 'On' : 'Off'}</span>
-                        </label>
-                      </div>
-                    </div>
-
-                    {/* AI Model — only when AI Analysis is on */}
-                    {enableAiQa && (
-                      <div className="settingItem">
-                        <label className="settingLabel">AI Model</label>
-                        <span className="settingValue">{ACTIVE_MODEL_LABEL}</span>
-                      </div>
-                    )}
                   </div>
                 }
               />
-
-              {enableAiQa && (
-                <AccordionItem
-                  title="Master Prompt"
-                  defaultOpen={false}
-                  size="small"
-                  content={
-                    <div className="masterPromptContent">
-                      <div className="promptHeader">
-                        {!isEditingPrompt ? (
-                          <button className="promptIconBtn" onClick={() => setIsEditingPrompt(true)} title="Edit prompt">
-                            <Icon name="edit" size={14} />
-                          </button>
-                        ) : (
-                          <div className="promptEditActions">
-                            <button className="promptIconBtn promptSaveBtn" onClick={() => setIsEditingPrompt(false)} title="Save">
-                              <Icon name="check" size={14} />
-                            </button>
-                            <button className="promptIconBtn promptCancelBtn" onClick={handleCancelEdit} title="Cancel">
-                              <Icon name="x" size={14} />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                      <div className="promptBody">
-                        {isEditingPrompt ? (
-                          <textarea
-                            className="promptTextarea"
-                            value={editablePrompt}
-                            onChange={(e) => setEditablePrompt(e.target.value)}
-                            rows={16}
-                            autoFocus
-                          />
-                        ) : (
-                          <pre className="promptPreview">{editablePrompt}</pre>
-                        )}
-                      </div>
-                    </div>
-                  }
-                />
-              )}
 
               <Button
                 variant="primary"

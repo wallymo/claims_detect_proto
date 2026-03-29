@@ -416,6 +416,13 @@ export async function updateEvidenceSuggestionStatus(suggestionId, status) {
   })
 }
 
+export async function updateEvidenceSuggestionLocation(suggestionId, location_annotation) {
+  return request(`/evidence/suggestions/${encodeURIComponent(suggestionId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ location_annotation }),
+  })
+}
+
 export async function createManualEvidence({ claim_id, reference_id, page_number, rects, text }) {
   return request('/evidence/manual', {
     method: 'POST',
@@ -432,5 +439,12 @@ export async function clearEvidenceSuggestions(claimId, referenceId) {
 export async function deleteAcceptedEvidence(evidenceId) {
   return request(`/evidence/accepted/${encodeURIComponent(evidenceId)}`, {
     method: 'DELETE',
+  })
+}
+
+export async function updateAcceptedEvidenceLocation(evidenceId, location_annotation) {
+  return request(`/evidence/accepted/${encodeURIComponent(evidenceId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ location_annotation }),
   })
 }
