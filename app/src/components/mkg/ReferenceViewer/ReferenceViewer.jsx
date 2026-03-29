@@ -33,7 +33,6 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
   const [pinY, setPinY] = useState(null)
   const [highlightRects, setHighlightRects] = useState([])
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
-  const [pageHeightPts, setPageHeightPts] = useState(0)
   const [fitScale, setFitScale] = useState(1)
 
   // Evidence suggestion state
@@ -47,10 +46,13 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
   const [drawingRect, setDrawingRect] = useState(null)
   const [editingBoxId, setEditingBoxId] = useState(null)
   const [resizing, setResizing] = useState(null) // { evidenceId, edge, startX, startY, originalRect }
+  const [expandedReasons, setExpandedReasons] = useState({})
+  const [locationEdit, setLocationEdit] = useState(null)
 
   const canvasRef = useRef(null)
   const textLayerRef = useRef(null)
   const containerRef = useRef(null)
+  const cancelLocationBlurRef = useRef(false)
 
   function normalizeForSearch(text) {
     return String(text || '')
@@ -67,6 +69,168 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
       .replace(/\s+/g, ' ')
       .trim()
       .toLowerCase()
+  }
+
+  function buildLocationEditKey(kind, id) {
+    return `${kind}:${id}`
+  }
+
+  function normalizeLocationInput(value) {
+    return String(value || '').trim()
+  }
+
+  function toggleReason(suggestionId) {
+    setExpandedReasons(prev => ({
+      ...prev,
+      [suggestionId]: !prev[suggestionId],
+    }))
+  }
+
+  function beginLocationEdit(kind, item) {
+    const locationValue = item.location_annotation || ''
+    setLocationEdit({
+      key: buildLocationEditKey(kind, kind === 'suggestion' ? item.suggestion_id : item.evidence_id),
+      kind,
+      id: kind === 'suggestion' ? item.suggestion_id : item.evidence_id,
+      value: locationValue,
+      initialValue: locationValue,
+      error: '',
+      saving: false,
+    })
+  }
+
+  function cancelLocationEdit() {
+    setLocationEdit(null)
+  }
+
+  async function saveLocationEdit() {
+    const currentEdit = locationEdit
+    if (!currentEdit || currentEdit.saving) return
+
+    const nextLocation = normalizeLocationInput(currentEdit.value)
+    const originalLocation = normalizeLocationInput(currentEdit.initialValue)
+
+    if (!nextLocation) {
+      setLocationEdit(prev => prev && prev.key === currentEdit.key
+        ? { ...prev, error: 'Location cannot be empty' }
+        : prev
+      )
+      return
+    }
+
+    if (nextLocation === originalLocation) {
+      setLocationEdit(null)
+      return
+    }
+
+    setLocationEdit(prev => prev && prev.key === currentEdit.key
+      ? { ...prev, value: nextLocation, error: '', saving: true }
+      : prev
+    )
+
+    try {
+      if (currentEdit.kind === 'suggestion') {
+        const data = await api.updateEvidenceSuggestionLocation(currentEdit.id, nextLocation)
+        if (data.suggestion) {
+          setSuggestions(prev => prev.map(s =>
+            s.suggestion_id === currentEdit.id ? { ...s, ...data.suggestion } : s
+          ))
+        }
+      } else {
+        const data = await api.updateAcceptedEvidenceLocation(currentEdit.id, nextLocation)
+        if (data.evidence) {
+          setAcceptedEvidence(prev => prev.map(ev =>
+            ev.evidence_id === currentEdit.id ? { ...ev, ...data.evidence } : ev
+          ))
+        }
+      }
+      setLocationEdit(null)
+    } catch (err) {
+      setLocationEdit(prev => prev && prev.key === currentEdit.key
+        ? { ...prev, saving: false, error: err.message || 'Failed to save location' }
+        : prev
+      )
+    }
+  }
+
+  function renderLocationAnnotation(item, kind, editable = true) {
+    const itemId = kind === 'suggestion' ? item.suggestion_id : item.evidence_id
+    const editKey = buildLocationEditKey(kind, itemId)
+    const isEditing = locationEdit?.key === editKey
+    const displayLocation = normalizeLocationInput(item.location_annotation)
+    const canEdit = editable && (!item.status || item.status !== 'accepted')
+
+    return (
+      <div
+        className={styles.locationAnnotation}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className={styles.locationAnnotationMain}>
+          <Icon name="fileText" size={11} />
+          {isEditing ? (
+            <div className={styles.locationEditor}>
+              <input
+                type="text"
+                className={styles.locationInput}
+                value={locationEdit.value}
+                onChange={(e) => {
+                  const nextValue = e.target.value
+                  setLocationEdit(prev => prev && prev.key === editKey
+                    ? { ...prev, value: nextValue, error: '' }
+                    : prev
+                  )
+                }}
+                onKeyDown={(e) => {
+                  e.stopPropagation()
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    e.currentTarget.blur()
+                  } else if (e.key === 'Escape') {
+                    cancelLocationBlurRef.current = true
+                    cancelLocationEdit()
+                  }
+                }}
+                onBlur={() => {
+                  if (cancelLocationBlurRef.current) {
+                    cancelLocationBlurRef.current = false
+                    return
+                  }
+                  saveLocationEdit()
+                }}
+                autoFocus
+                aria-label="Edit evidence location"
+              />
+              {locationEdit.error && (
+                <span className={styles.locationEditorError}>{locationEdit.error}</span>
+              )}
+              {locationEdit.saving && (
+                <span className={styles.locationEditorStatus}>Saving...</span>
+              )}
+            </div>
+          ) : (
+            <span
+              className={displayLocation ? styles.locationAnnotationText : styles.locationAnnotationPlaceholder}
+            >
+              {displayLocation || 'Add location'}
+            </span>
+          )}
+        </div>
+        {!isEditing && canEdit && (
+          <button
+            type="button"
+            className={styles.locationEditButton}
+            onClick={(e) => {
+              e.stopPropagation()
+              beginLocationEdit(kind, item)
+            }}
+            aria-label="Edit evidence location"
+            title="Edit location"
+          >
+            <Icon name="pencil" size={12} />
+          </button>
+        )}
+      </div>
+    )
   }
 
   useEffect(() => {
@@ -133,7 +297,6 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
         const computedFitScale = Math.min(fitWidth, fitHeight, 2.0)
         const viewport = pdfPage.getViewport({ scale: computedFitScale })
         if (!cancelled) {
-          setPageHeightPts(baseViewport.height)
           setFitScale(computedFitScale)
         }
 
@@ -340,20 +503,20 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
 
   async function handleAcceptSuggestion(suggestion) {
     try {
-      await api.updateEvidenceSuggestionStatus(suggestion.suggestion_id, 'accepted')
-      setSuggestions(prev => prev.map(s =>
-        s.suggestion_id === suggestion.suggestion_id ? { ...s, status: 'accepted' } : s
-      ))
-      setAcceptedEvidence(prev => [...prev, {
-        evidence_id: `ae_${suggestion.suggestion_id}`,
-        claim_id: suggestion.claim_id,
-        reference_id: suggestion.reference_id,
-        page_number: suggestion.page_number,
-        type: suggestion.type,
-        rects: suggestion.rects,
-        text: suggestion.text,
-        origin: 'suggestion_accepted',
-      }])
+      const data = await api.updateEvidenceSuggestionStatus(suggestion.suggestion_id, 'accepted')
+      if (data.suggestion) {
+        setSuggestions(prev => prev.map(s =>
+          s.suggestion_id === suggestion.suggestion_id ? { ...s, ...data.suggestion } : s
+        ))
+      }
+      if (data.accepted_evidence) {
+        setAcceptedEvidence(prev => {
+          if (prev.some(ev => ev.evidence_id === data.accepted_evidence.evidence_id)) {
+            return prev
+          }
+          return [...prev, data.accepted_evidence]
+        })
+      }
     } catch (err) {
       logger.error('Failed to accept suggestion:', err)
     }
@@ -361,10 +524,12 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
 
   async function handleUndoReject(suggestion) {
     try {
-      await api.updateEvidenceSuggestionStatus(suggestion.suggestion_id, 'suggested')
-      setSuggestions(prev => prev.map(s =>
-        s.suggestion_id === suggestion.suggestion_id ? { ...s, status: 'suggested' } : s
-      ))
+      const data = await api.updateEvidenceSuggestionStatus(suggestion.suggestion_id, 'suggested')
+      if (data.suggestion) {
+        setSuggestions(prev => prev.map(s =>
+          s.suggestion_id === suggestion.suggestion_id ? { ...s, ...data.suggestion } : s
+        ))
+      }
     } catch (err) {
       logger.error('Failed to undo rejection:', err)
     }
@@ -372,10 +537,12 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
 
   async function handleRejectSuggestion(suggestion) {
     try {
-      await api.updateEvidenceSuggestionStatus(suggestion.suggestion_id, 'rejected')
-      setSuggestions(prev => prev.map(s =>
-        s.suggestion_id === suggestion.suggestion_id ? { ...s, status: 'rejected' } : s
-      ))
+      const data = await api.updateEvidenceSuggestionStatus(suggestion.suggestion_id, 'rejected')
+      if (data.suggestion) {
+        setSuggestions(prev => prev.map(s =>
+          s.suggestion_id === suggestion.suggestion_id ? { ...s, ...data.suggestion } : s
+        ))
+      }
     } catch (err) {
       logger.error('Failed to reject suggestion:', err)
     }
@@ -426,7 +593,7 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
         text: null,
       })
       if (data.evidence) {
-        setAcceptedEvidence(prev => [...prev, { ...data.evidence, rects: [pdfRect] }])
+        setAcceptedEvidence(prev => [...prev, data.evidence])
       }
     } catch (err) {
       logger.error('Failed to save manual evidence:', err)
@@ -514,8 +681,6 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
   }
 
   const currentPageAccepted = acceptedEvidence.filter(e => e.page_number === currentPage)
-  const activeSuggestion = suggestions.find(s => s.suggestion_id === activeSuggestionId)
-  const showActiveSuggestionPreview = activeSuggestion && activeSuggestion.page_number === currentPage && activeSuggestion.status !== 'accepted'
 
   return (
     <div className={styles.container}>
@@ -677,39 +842,52 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
 
                   return (
                     <div key={s.suggestion_id} className={cardClass} onClick={() => handleClickSuggestion(s)}>
-                      <div className={styles.suggestionMeta}>
-                        <span className={styles.typeLabel}>{s.type === 'structured_box' || s.type === 'table' ? 'Data' : s.type === 'figure' || s.type === 'chart' || s.type === 'diagram' ? 'Visual' : 'Text'}</span>
-                        <span className={styles.pageLabel}>p.{s.page_number}</span>
-                      </div>
-                      <div className={styles.suggestionSnippet}>
-                        {s.text ? s.text.slice(0, 120) + (s.text.length > 120 ? '...' : '') : '(figure/image region)'}
+                      <div className={styles.suggestionPrimaryBlock}>
+                        <div className={styles.suggestionMeta}>
+                          <span className={styles.typeLabel}>{s.type === 'structured_box' || s.type === 'table' ? 'Data' : s.type === 'figure' || s.type === 'chart' || s.type === 'diagram' ? 'Visual' : 'Text'}</span>
+                          <span className={styles.pageLabel}>p.{s.page_number}</span>
+                        </div>
+                        <div className={styles.suggestionSnippet}>
+                          {s.text ? s.text.slice(0, 120) + (s.text.length > 120 ? '...' : '') : '(figure/image region)'}
+                        </div>
+                        {renderLocationAnnotation(s, 'suggestion')}
+                        {s.status === 'suggested' && (
+                          <div className={styles.suggestionActions}>
+                            <Button variant="secondary" size="small" onClick={(e) => { e.stopPropagation(); handleAcceptSuggestion(s) }}>
+                              <Icon name="check" size={12} /> Accept
+                            </Button>
+                            <Button variant="ghost" size="small" onClick={(e) => { e.stopPropagation(); handleRejectSuggestion(s) }}>
+                              <Icon name="x" size={12} /> Reject
+                            </Button>
+                          </div>
+                        )}
+                        {s.status === 'accepted' && (
+                          <span style={{ fontSize: '11px', color: 'var(--green-7)', fontWeight: 500 }}>Accepted</span>
+                        )}
+                        {s.status === 'rejected' && (
+                          <Button variant="ghost" size="small" onClick={(e) => { e.stopPropagation(); handleUndoReject(s) }}>
+                            <Icon name="refreshCw" size={12} /> Undo
+                          </Button>
+                        )}
                       </div>
                       {s.rationale && (
-                        <div className={styles.suggestionRationale}>{s.rationale}</div>
-                      )}
-                      {s.location_annotation && (
-                        <div className={styles.locationAnnotation}>
-                          <Icon name="fileText" size={11} />
-                          <span className={styles.locationAnnotationText}>{s.location_annotation}</span>
+                        <div className={styles.reasonDisclosure}>
+                          <button
+                            type="button"
+                            className={styles.reasonToggle}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              toggleReason(s.suggestion_id)
+                            }}
+                            aria-expanded={Boolean(expandedReasons[s.suggestion_id])}
+                          >
+                            <span>Why this match?</span>
+                            <Icon name={expandedReasons[s.suggestion_id] ? 'chevronUp' : 'chevronDown'} size={12} />
+                          </button>
+                          {expandedReasons[s.suggestion_id] && (
+                            <div className={styles.suggestionRationale}>{s.rationale}</div>
+                          )}
                         </div>
-                      )}
-                      {s.status === 'suggested' && (
-                        <div className={styles.suggestionActions}>
-                          <Button variant="secondary" size="small" onClick={(e) => { e.stopPropagation(); handleAcceptSuggestion(s) }}>
-                            <Icon name="check" size={12} /> Accept
-                          </Button>
-                          <Button variant="ghost" size="small" onClick={(e) => { e.stopPropagation(); handleRejectSuggestion(s) }}>
-                            <Icon name="x" size={12} /> Reject
-                          </Button>
-                        </div>
-                      )}
-                      {s.status === 'accepted' && (
-                        <span style={{ fontSize: '11px', color: 'var(--green-7)', fontWeight: 500 }}>Accepted</span>
-                      )}
-                      {s.status === 'rejected' && (
-                        <Button variant="ghost" size="small" onClick={(e) => { e.stopPropagation(); handleUndoReject(s) }}>
-                          <Icon name="refreshCw" size={12} /> Undo
-                        </Button>
                       )}
                     </div>
                   )
@@ -739,20 +917,16 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
                       <div className={styles.suggestionSnippet}>
                         {ev.text ? ev.text.slice(0, 80) + (ev.text.length > 80 ? '...' : '') : '(drawn region)'}
                       </div>
-                      {ev.location_annotation && (
-                        <div className={styles.locationAnnotation}>
-                          <Icon name="fileText" size={11} />
-                          <span className={styles.locationAnnotationText}>{ev.location_annotation}</span>
-                        </div>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="small"
-                        onClick={(e) => { e.stopPropagation(); handleDeleteEvidence(ev.evidence_id) }}
-                        style={{ marginTop: '4px' }}
-                      >
-                        <Icon name="trash" size={12} /> Remove
-                      </Button>
+                      {renderLocationAnnotation(ev, 'accepted')}
+                      <div className={styles.acceptedActions}>
+                        <Button
+                          variant="ghost"
+                          size="small"
+                          onClick={(e) => { e.stopPropagation(); handleDeleteEvidence(ev.evidence_id) }}
+                        >
+                          <Icon name="trash" size={12} /> Remove
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </>
@@ -767,15 +941,16 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
 
             {claimId && (
               <div className={styles.sidebarFooter}>
-                <Button
-                  variant={drawMode ? 'primary' : 'secondary'}
-                  size="small"
-                  onClick={() => setDrawMode(d => !d)}
-                  style={{ width: '100%' }}
-                >
-                  <Icon name="edit" size={14} />
-                  {drawMode ? 'Cancel Draw' : 'Draw Manual Box'}
-                </Button>
+                <div className={styles.sidebarFooterInner}>
+                  <Button
+                    variant={drawMode ? 'primary' : 'secondary'}
+                    size="small"
+                    onClick={() => setDrawMode(d => !d)}
+                  >
+                    <Icon name="edit" size={14} />
+                    {drawMode ? 'Cancel Draw' : 'Draw Manual Box'}
+                  </Button>
+                </div>
               </div>
             )}
           </div>

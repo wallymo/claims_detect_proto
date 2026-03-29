@@ -7,6 +7,7 @@ router.post('/suggestions', evidenceController.generateSuggestions)
 router.delete('/suggestions', evidenceController.clearSuggestions)
 router.get('/accepted', evidenceController.getAccepted)
 router.patch('/suggestions/:suggestionId', evidenceController.updateSuggestionStatus)
+router.patch('/accepted/:evidenceId', evidenceController.updateAcceptedEvidence)
 router.post('/manual', evidenceController.createManualEvidence)
 router.delete('/accepted/:evidenceId', evidenceController.deleteAcceptedEvidence)
 
