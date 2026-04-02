@@ -278,13 +278,15 @@ export default function MKGClaimCard({
         <div className={styles.refCallouts}>
           {claim.references.map((ref, i) => {
             const isLinked = !!ref.id
-            const refText = String(ref.text || '').trim() || `Reference ${ref.number} not found on page`
+            const refText = ref.locator?.location_annotation
+              ? ref.locator.location_annotation.replace(/\//g, ' · ')
+              : (String(ref.text || '').trim() || `Reference ${ref.number} not found on page`)
             return (
               <div
                 key={i}
                 className={`${styles.refCallout} ${isLinked ? styles.refCalloutClickable : styles.refCalloutDimmed}`}
                 onClick={isLinked ? (e) => { e.stopPropagation(); onViewRef?.(ref, displayStatement) } : undefined}
-                title={isLinked ? 'View source document' : 'Source document not in library'}
+                title={isLinked ? (ref.locator ? String(ref.text || '') : 'View source document') : 'Source document not in library'}
               >
                 <span className={styles.refNumber}>{ref.number}.</span>
                 <span className={styles.refText}>{refText}</span>

@@ -1,0 +1,582 @@
+[
+  {
+    "filename": "AJOVY PI-PPI-IFU_Rev. 1.2019.pdf",
+    "first_author": "ajovy",
+    "year": "2019",
+    "journal_tokens": [
+      "pi",
+      "ppi",
+      "ifu",
+      "rev"
+    ],
+    "type": "prescribing_info"
+  },
+  {
+    "filename": "Akanuwe_Health Expectations_2020.pdf",
+    "first_author": "akanuwe",
+    "year": "2020",
+    "journal_tokens": [
+      "health",
+      "expectations"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Bragazzi NL_J Neuroinflammation_2021.pdf",
+    "first_author": "bragazzi",
+    "year": "2021",
+    "journal_tokens": [
+      "nl",
+      "neuroinflammation"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Cho BC_N Engle J Med_2024.pdf",
+    "first_author": "cho",
+    "year": "2024",
+    "journal_tokens": [
+      "bc",
+      "engle",
+      "med"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Cho BC_N Engle J Med_2024_suppl.pdf",
+    "first_author": "cho",
+    "year": "2024",
+    "journal_tokens": [
+      "bc",
+      "engle",
+      "med",
+      "suppl"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Cochen V_Brain_2005.pdf",
+    "first_author": "cochen",
+    "year": "2005",
+    "journal_tokens": [
+      "brain"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "DOF Goadsby 2019 AAN annot.pdf",
+    "first_author": "dof",
+    "year": "2019",
+    "journal_tokens": [
+      "goadsby",
+      "aan",
+      "annot"
+    ],
+    "type": "data_on_file"
+  },
+  {
+    "filename": "Dalakas MC_Nat Rev Neurol_2020.pdf",
+    "first_author": "dalakas",
+    "year": "2020",
+    "journal_tokens": [
+      "mc",
+      "nat",
+      "rev",
+      "neurol"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Dhar R_J Neurol Sci_2008.pdf",
+    "first_author": "dhar",
+    "year": "2008",
+    "journal_tokens": [
+      "neurol",
+      "sci"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Dodick JAMA 2018 HALO-EM.pdf",
+    "first_author": "dodick",
+    "year": "2018",
+    "journal_tokens": [
+      "jama",
+      "halo",
+      "em"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Doets AY_Ann Neurol_2022.pdf",
+    "first_author": "doets",
+    "year": "2022",
+    "journal_tokens": [
+      "ay",
+      "ann",
+      "neurol"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Doets AY_Brain_2018.pdf",
+    "first_author": "doets",
+    "year": "2018",
+    "journal_tokens": [
+      "ay",
+      "brain"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Douillard JY_Br J Cancer_2014.pdf",
+    "first_author": "douillard",
+    "year": "2014",
+    "journal_tokens": [
+      "jy",
+      "br",
+      "cancer"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Drory VE_J Neurol Sci_2012.pdf",
+    "first_author": "drory",
+    "year": "2012",
+    "journal_tokens": [
+      "ve",
+      "neurol",
+      "sci"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Dubey D_Muscle Nerve_2016.pdf",
+    "first_author": "dubey",
+    "year": "2016",
+    "journal_tokens": [
+      "muscle",
+      "nerve"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Fletcher DD_Neurology_2000.pdf",
+    "first_author": "fletcher",
+    "year": "2000",
+    "journal_tokens": [
+      "dd",
+      "neurology"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Forsberg A_J Neurol Sci_2012.pdf",
+    "first_author": "forsberg",
+    "year": "2012",
+    "journal_tokens": [
+      "neurol",
+      "sci"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "GBS CIDP Found Int_about mission_5-10-2024.pdf",
+    "first_author": "gbs",
+    "year": "2024",
+    "journal_tokens": [
+      "cidp",
+      "found",
+      "int",
+      "about",
+      "mission",
+      "10"
+    ],
+    "type": "organization"
+  },
+  {
+    "filename": "Goldberg J Thorac Oncol 2025.pdf",
+    "first_author": "goldberg",
+    "year": "2025",
+    "journal_tokens": [
+      "thorac",
+      "oncol"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "González-Suárez_BMC Neurol_2013.pdf",
+    "first_author": "gonzález-suárez",
+    "year": "2013",
+    "journal_tokens": [
+      "bmc",
+      "neurol"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Hafer-Macko C_Ann Neurol_1996.pdf",
+    "first_author": "hafer-macko",
+    "year": "1996",
+    "journal_tokens": [
+      "ann",
+      "neurol"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Harms M_Neurohospitalist_2011.pdf",
+    "first_author": "harms",
+    "year": "2011",
+    "journal_tokens": [
+      "neurohospitalist"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Hughes RAC_Cochrane Database Syst Rev_2014.pdf",
+    "first_author": "hughes",
+    "year": "2014",
+    "journal_tokens": [
+      "rac",
+      "cochrane",
+      "database",
+      "syst",
+      "rev"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Kawashima Y_Lancet Respir Med_2022.pdf",
+    "first_author": "kawashima",
+    "year": "2022",
+    "journal_tokens": [
+      "lancet",
+      "respir",
+      "med"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Kleyweg RP_Muscle Nerve_1991.pdf",
+    "first_author": "kleyweg",
+    "year": "1991",
+    "journal_tokens": [
+      "rp",
+      "muscle",
+      "nerve"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Lansita JA_Int J Toxicol_2017.pdf",
+    "first_author": "lansita",
+    "year": "2017",
+    "journal_tokens": [
+      "ja",
+      "int",
+      "toxicol"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Leonhard 2019 Nat Rev Neurology.pdf",
+    "first_author": "leonhard",
+    "year": "2019",
+    "journal_tokens": [
+      "nat",
+      "rev",
+      "neurology"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Levison LS_Muscle Nerve_2023.pdf",
+    "first_author": "levison",
+    "year": "2023",
+    "journal_tokens": [
+      "ls",
+      "muscle",
+      "nerve"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Martic V_Can J Neurol Sci_2018.pdf",
+    "first_author": "martic",
+    "year": "2018",
+    "journal_tokens": [
+      "can",
+      "neurol",
+      "sci"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Martín-Aguilar L_J Neurol Neurosurg Psych_2020.pdf",
+    "first_author": "martín-aguilar",
+    "year": "2020",
+    "journal_tokens": [
+      "neurol",
+      "neurosurg",
+      "psych"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Misawa 2020 Clin Exp Neuroimmunol.pdf",
+    "first_author": "misawa",
+    "year": "2020",
+    "journal_tokens": [
+      "clin",
+      "exp",
+      "neuroimmunol"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Mok TS_NEJM_2009.pdf",
+    "first_author": "mok",
+    "year": "2009",
+    "journal_tokens": [
+      "ts",
+      "nejm"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Mok TS_NEJM_2017.pdf",
+    "first_author": "mok",
+    "year": "2017",
+    "journal_tokens": [
+      "ts",
+      "nejm"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "NCCN_CNS_v.2.2025.pdf",
+    "first_author": "nccn",
+    "year": "2025",
+    "journal_tokens": [
+      "cns"
+    ],
+    "type": "guideline"
+  },
+  {
+    "filename": "Nakagawa K_Lancet_2019.pdf",
+    "first_author": "nakagawa",
+    "year": "2019",
+    "journal_tokens": [
+      "lancet"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Netto AB_Ann Indian Acad Neurol_2011.pdf",
+    "first_author": "netto",
+    "year": "2011",
+    "journal_tokens": [
+      "ab",
+      "ann",
+      "indian",
+      "acad",
+      "neurol"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Planchard NEJM 2023.pdf",
+    "first_author": "planchard",
+    "year": "2023",
+    "journal_tokens": [
+      "nejm"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Plasma Exchange group_Lancet_1997.pdf",
+    "first_author": "plasma",
+    "year": "1997",
+    "journal_tokens": [
+      "exchange",
+      "group",
+      "lancet"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Rosell R_Lancet_2012.pdf",
+    "first_author": "rosell",
+    "year": "2012",
+    "journal_tokens": [
+      "lancet"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Sejvar JJ_Neuro Epidemiol_2011.pdf",
+    "first_author": "sejvar",
+    "year": "2011",
+    "journal_tokens": [
+      "jj",
+      "neuro",
+      "epidemiol"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Shang 2021 Frontiers in Pharmacology.pdf",
+    "first_author": "shang",
+    "year": "2021",
+    "journal_tokens": [
+      "frontiers",
+      "pharmacology"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Silberstein NEJM 2017.pdf",
+    "first_author": "silberstein",
+    "year": "2017",
+    "journal_tokens": [
+      "nejm"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Soria JC_N Engl J Med_2018.pdf",
+    "first_author": "soria",
+    "year": "2018",
+    "journal_tokens": [
+      "jc",
+      "engl",
+      "med"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Tzeng NS_J Neurol Sci_2017.pdf",
+    "first_author": "tzeng",
+    "year": "2017",
+    "journal_tokens": [
+      "ns",
+      "neurol",
+      "sci"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Uz FB_Malawi Med J_2023.pdf",
+    "first_author": "uz",
+    "year": "2023",
+    "journal_tokens": [
+      "fb",
+      "malawi",
+      "med"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Walgaard C_Neurology_2011.pdf",
+    "first_author": "walgaard",
+    "year": "2011",
+    "journal_tokens": [
+      "neurology"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Wu Y-L_Lancet_2017.pdf",
+    "first_author": "wu",
+    "year": "2017",
+    "journal_tokens": [
+      "lancet"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Yang J CH. et al, ELCC, 2025 (Final OS MARIPOSA) Oral Presentation_March 2025_(RF-459052).pdf",
+    "first_author": "yang",
+    "year": "2025",
+    "journal_tokens": [
+      "ch",
+      "elcc",
+      "final",
+      "os",
+      "mariposa",
+      "oral",
+      "presentation",
+      "march",
+      "rf"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "Yang JC_Lancet Oncol_2015.pdf",
+    "first_author": "yang",
+    "year": "2015",
+    "journal_tokens": [
+      "jc",
+      "lancet",
+      "oncol"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "amivantamabSC_USPI_20251014_BLA_Clean_copy.pdf",
+    "first_author": "amivantamabsc",
+    "year": null,
+    "journal_tokens": [
+      "uspi",
+      "bla",
+      "clean",
+      "copy"
+    ],
+    "type": "prescribing_info"
+  },
+  {
+    "filename": "cp-204152v20 RYBREVANT Prescribing Information 9.9_Copy.pdf",
+    "first_author": "cp-204152v20",
+    "year": null,
+    "journal_tokens": [
+      "rybrevant",
+      "prescribing",
+      "information",
+      "copy"
+    ],
+    "type": "prescribing_info"
+  },
+  {
+    "filename": "van Doorn PA_Eur J Neurol_2023.pdf",
+    "first_author": "van doorn",
+    "year": "2023",
+    "journal_tokens": [
+      "pa",
+      "eur",
+      "neurol"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "van Koningsveld R_Lancet Neurol_2007.pdf",
+    "first_author": "van koningsveld",
+    "year": "2007",
+    "journal_tokens": [
+      "lancet",
+      "neurol"
+    ],
+    "type": "paper"
+  },
+  {
+    "filename": "van den Berg B__Nat Rev Neurol_2014.pdf",
+    "first_author": "van den berg",
+    "year": "2014",
+    "journal_tokens": [
+      "nat",
+      "rev",
+      "neurol"
+    ],
+    "type": "paper"
+  }
+]

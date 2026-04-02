@@ -1,0 +1,1729 @@
+{
+  "file": "Marissa_SYN slides for AI testing_V3_no annos.pdf",
+  "total_pages": 31,
+  "pages": [
+    {
+      "page": 1,
+      "slide_claims": [],
+      "notes_claims": [],
+      "slide_footnotes": {},
+      "notes_references": {},
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 2,
+      "slide_claims": [
+        {
+          "text": "Most common cause of acute flaccid paralysis worldwide— sporadic and unpredictable",
+          "superscripts": [
+            1,
+            2
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "Leonhard SE et al. Nat Rev Neurol . 2019;15(11):671-683."
+            },
+            {
+              "number": 2,
+              "text": "van den Berg B et al. Nat Rev Neurol . 2014;10(8):469-482."
+            }
+          ],
+          "position": {
+            "x": 44.9,
+            "y": 24.9
+          }
+        },
+        {
+          "text": "potential serious long-term physical and mental health consequences or death",
+          "superscripts": [
+            1,
+            3,
+            4
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "Leonhard SE et al. Nat Rev Neurol . 2019;15(11):671-683."
+            },
+            {
+              "number": 3,
+              "text": "Doets AY et al. Brain . 2018;141(10):2866-2877."
+            },
+            {
+              "number": 4,
+              "text": "Sejvar JJ et al. Neuroepidemiology . 2011;36(2):123-133."
+            }
+          ],
+          "position": {
+            "x": 36.0,
+            "y": 32.6
+          }
+        },
+        {
+          "text": "≈7,000 cases per year",
+          "superscripts": [
+            5
+          ],
+          "references": [
+            {
+              "number": 5,
+              "text": "Data on file. Annexon Biosciences. 2024."
+            }
+          ],
+          "position": {
+            "x": 67.7,
+            "y": 29.2
+          }
+        },
+        {
+          "text": "≈150,000 cases per year",
+          "superscripts": [
+            1,
+            6
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "Leonhard SE et al. Nat Rev Neurol . 2019;15(11):671-683."
+            },
+            {
+              "number": 6,
+              "text": "Bragazzi NL et al. J Neuroinflammation. 2021;18(1):264."
+            }
+          ],
+          "position": {
+            "x": 77.7,
+            "y": 38.2
+          }
+        },
+        {
+          "text": "Infections include Campylobacter infections",
+          "superscripts": [
+            1,
+            2
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "Leonhard SE et al. Nat Rev Neurol . 2019;15(11):671-683."
+            },
+            {
+              "number": 2,
+              "text": "van den Berg B et al. Nat Rev Neurol . 2014;10(8):469-482."
+            }
+          ],
+          "position": {
+            "x": 29.0,
+            "y": 39.8
+          }
+        }
+      ],
+      "notes_claims": [
+        {
+          "text": "Guillain-Barré syndrome (GBS) is the most common cause of acute flaccid paralysis globally, characterized by its sporadic and unpredictable nature",
+          "superscripts": [
+            1,
+            2
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "Leonhard SE, Mandarakas MR, Gondim FAA, et al. Diagnosis and management of Guillain–Barré syndrome in ten steps. Nat Rev Neurol . 2019;15(11):671-683. doi:10.1038/s41582-019-0250-9"
+            },
+            {
+              "number": 2,
+              "text": "van den Berg B, Walgaard C, Drenthen J, Fokke C, Jacobs BC, van Doorn PA . Guillain–Barré syndrome: pathogenesis, diagnosis, treatment and prognosis. Nat Rev Neurol . 2014;10(8):469- 482. doi:10.1038/nrneurol.2014.121"
+            }
+          ],
+          "position": {
+            "x": 54.3,
+            "y": 52.8
+          }
+        },
+        {
+          "text": "GBS knows no boundaries—it can strike individuals of any age, anywhere, potentially leading to serious long-term physical and mental health consequences or even death",
+          "superscripts": [
+            1,
+            3,
+            4
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "Leonhard SE, Mandarakas MR, Gondim FAA, et al. Diagnosis and management of Guillain–Barré syndrome in ten steps. Nat Rev Neurol . 2019;15(11):671-683. doi:10.1038/s41582-019-0250-9"
+            },
+            {
+              "number": 3,
+              "text": "Doets AY, Verboon C, van den Berg B, et al. Regional variation of Guillain-Barre´ syndrome. Brain . 2018;141(10):2866-2877. doi:10.1093/brain/awy232"
+            },
+            {
+              "number": 4,
+              "text": "Sejvar JJ, Baughman AL, Wise M, Morgan OW. Population incidence of Guillain-Barré syndrome: A systematic review and meta-analysis. Neuroepidemiology . 2011;36(2):123-133. doi:10.1159/000324710"
+            }
+          ],
+          "position": {
+            "x": 68.5,
+            "y": 56.1
+          }
+        },
+        {
+          "text": "GBS is classified as a post-infectious autoimmune peripheral nerve disease, often triggered by preceding infections such as Campylobacter enteritis and respiratory infections",
+          "superscripts": [
+            1,
+            2
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "Leonhard SE, Mandarakas MR, Gondim FAA, et al. Diagnosis and management of Guillain–Barré syndrome in ten steps. Nat Rev Neurol . 2019;15(11):671-683. doi:10.1038/s41582-019-0250-9"
+            },
+            {
+              "number": 2,
+              "text": "van den Berg B, Walgaard C, Drenthen J, Fokke C, Jacobs BC, van Doorn PA . Guillain–Barré syndrome: pathogenesis, diagnosis, treatment and prognosis. Nat Rev Neurol . 2014;10(8):469- 482. doi:10.1038/nrneurol.2014.121"
+            }
+          ],
+          "position": {
+            "x": 71.7,
+            "y": 59.4
+          }
+        },
+        {
+          "text": "In the United States alone, the incidence of GBS amounts to about 7,000 cases per year, highlighting its significance in public health",
+          "superscripts": [
+            5
+          ],
+          "references": [
+            {
+              "number": 5,
+              "text": "Data on file. Annexon Biosciences. 2024."
+            }
+          ],
+          "position": {
+            "x": 46.1,
+            "y": 62.7
+          }
+        },
+        {
+          "text": "highlighting its significance in public health Globally, approximately 150,000 cases of GBS are reported annually",
+          "superscripts": [
+            1,
+            6
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "Leonhard SE, Mandarakas MR, Gondim FAA, et al. Diagnosis and management of Guillain–Barré syndrome in ten steps. Nat Rev Neurol . 2019;15(11):671-683. doi:10.1038/s41582-019-0250-9"
+            },
+            {
+              "number": 6,
+              "text": "Bragazzi NL, Kolahi AA, Nejadghaderi SA, et al. Global, regional, and national burden of Guillain– Barré syndrome and its underlying causes from 1990 to 2019. J Neuroinflammation . 2021;18(1):264. doi:10.1186/s12974-021-02319-4"
+            }
+          ],
+          "position": {
+            "x": 63.7,
+            "y": 64.3
+          }
+        }
+      ],
+      "slide_footnotes": {
+        "1": "Leonhard SE et al. Nat Rev Neurol . 2019;15(11):671-683.",
+        "2": "van den Berg B et al. Nat Rev Neurol . 2014;10(8):469-482.",
+        "3": "Doets AY et al. Brain . 2018;141(10):2866-2877.",
+        "4": "Sejvar JJ et al. Neuroepidemiology . 2011;36(2):123-133.",
+        "5": "Data on file. Annexon Biosciences. 2024.",
+        "6": "Bragazzi NL et al. J Neuroinflammation. 2021;18(1):264."
+      },
+      "notes_references": {
+        "1": "Leonhard SE, Mandarakas MR, Gondim FAA, et al. Diagnosis and management of Guillain–Barré syndrome in ten steps. Nat Rev Neurol . 2019;15(11):671-683. doi:10.1038/s41582-019-0250-9",
+        "2": "van den Berg B, Walgaard C, Drenthen J, Fokke C, Jacobs BC, van Doorn PA . Guillain–Barré syndrome: pathogenesis, diagnosis, treatment and prognosis. Nat Rev Neurol . 2014;10(8):469- 482. doi:10.1038/nrneurol.2014.121",
+        "3": "Doets AY, Verboon C, van den Berg B, et al. Regional variation of Guillain-Barre´ syndrome. Brain . 2018;141(10):2866-2877. doi:10.1093/brain/awy232",
+        "4": "Sejvar JJ, Baughman AL, Wise M, Morgan OW. Population incidence of Guillain-Barré syndrome: A systematic review and meta-analysis. Neuroepidemiology . 2011;36(2):123-133. doi:10.1159/000324710",
+        "5": "Data on file. Annexon Biosciences. 2024.",
+        "6": "Bragazzi NL, Kolahi AA, Nejadghaderi SA, et al. Global, regional, and national burden of Guillain– Barré syndrome and its underlying causes from 1990 to 2019. J Neuroinflammation . 2021;18(1):264. doi:10.1186/s12974-021-02319-4"
+      },
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 3,
+      "slide_claims": [
+        {
+          "text": "GBS-DS GRADES",
+          "superscripts": [
+            1
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "van Koningsveld R et al. Lancet Neurol . 2007;6(7):589-594."
+            }
+          ],
+          "position": {
+            "x": 56.0,
+            "y": 22.1
+          }
+        },
+        {
+          "text": "Lower muscle strength, as evaluated by the MRC sum score, correlates with higher GBS-DS grade.",
+          "superscripts": [
+            1,
+            2
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "van Koningsveld R et al. Lancet Neurol . 2007;6(7):589-594."
+            },
+            {
+              "number": 2,
+              "text": "Kleyweg RP et al. Muscle Nerve . 1991;14(11):1103-1109."
+            }
+          ],
+          "position": {
+            "x": 80.6,
+            "y": 41.5
+          }
+        }
+      ],
+      "notes_claims": [],
+      "slide_footnotes": {
+        "1": "van Koningsveld R et al. Lancet Neurol . 2007;6(7):589-594.",
+        "2": "Kleyweg RP et al. Muscle Nerve . 1991;14(11):1103-1109."
+      },
+      "notes_references": {},
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 4,
+      "slide_claims": [
+        {
+          "text": "Average hospitalization time for moderate or severe GBS",
+          "superscripts": [
+            1
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "Harms M. Neurohospitalist . 2011;1(2):78–84."
+            }
+          ],
+          "position": {
+            "x": 42.1,
+            "y": 25.9
+          }
+        },
+        {
+          "text": "requires mechanical ventilation",
+          "superscripts": [
+            2
+          ],
+          "references": [
+            {
+              "number": 2,
+              "text": "van den Berg B et al. Nat Rev Neurol. 2014;10: 469–482."
+            }
+          ],
+          "position": {
+            "x": 32.3,
+            "y": 32.6
+          }
+        },
+        {
+          "text": "1 TO 2 MONTHS Average hospitalization time RANGE GEOGRAPHICALLY",
+          "superscripts": [
+            4
+          ],
+          "references": [
+            {
+              "number": 4,
+              "text": "Doets AY et al. Brain . 2018;141(10):2866-2877."
+            }
+          ],
+          "position": {
+            "x": 78.3,
+            "y": 24.8
+          }
+        },
+        {
+          "text": "Up to 20 on ventilation",
+          "superscripts": [
+            5,
+            6
+          ],
+          "references": [
+            {
+              "number": 5,
+              "text": "Fletcher DD et al. Neurology . 2000;54:2311-2315."
+            },
+            {
+              "number": 6,
+              "text": "Netto AB et al. Ann Indian Acad Neurol . 2011;14(4):262-266."
+            }
+          ],
+          "position": {
+            "x": 75.9,
+            "y": 39.7
+          }
+        }
+      ],
+      "notes_claims": [
+        {
+          "text": "months",
+          "superscripts": [
+            1
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "Harms M. Inpatient management of Guillain-Barré syndrome. Neurohospitalist . 2011;1(2):78-84. doi:10.1177/1941875210396379"
+            }
+          ],
+          "position": {
+            "x": 24.2,
+            "y": 56.1
+          }
+        },
+        {
+          "text": "months o Approximately 1 in 4 GBS patients necessitates mechanical ventilation",
+          "superscripts": [
+            2
+          ],
+          "references": [
+            {
+              "number": 2,
+              "text": "van den Berg B, Walgaard C, Drenthen J, Fokke C, Jacobs BC, van Doorn PA. Guillain–Barré syndrome: pathogenesis, diagnosis, treatment and prognosis. Nat Rev Neurol . 2014;10(8):469- 482. doi:10.1038/nrneurol.2014.121"
+            }
+          ],
+          "position": {
+            "x": 68.6,
+            "y": 57.7
+          }
+        },
+        {
+          "text": "those requiring ventilation spending a median of 28 days in the ICU",
+          "superscripts": [
+            3
+          ],
+          "references": [
+            {
+              "number": 3,
+              "text": "Dhar R, Sitt L, Hahn AF. The morbidity and outcome of patients with Guillain-Barré syndrome admitted to the intensive care unit. J Neurol Sci . 2008;264(1-2):121-128. doi:10.1016/j.jns.2007.08.005"
+            }
+          ],
+          "position": {
+            "x": 66.6,
+            "y": 61.0
+          }
+        },
+        {
+          "text": "and Europe to 2% to 17% worldwide",
+          "superscripts": [
+            4
+          ],
+          "references": [
+            {
+              "number": 4,
+              "text": "Doets AY, Verboon C, van den Berg B, et al. Regional variation of Guillain-Barre´ syndrome. Brain . 2018;141(10):2866-2877. doi:10.1093/brain/awy232"
+            }
+          ],
+          "position": {
+            "x": 44.7,
+            "y": 64.3
+          }
+        },
+        {
+          "text": "mortality rate observed in this subgroup",
+          "superscripts": [
+            5,
+            6
+          ],
+          "references": [
+            {
+              "number": 5,
+              "text": "Fletcher DD, Lawn ND, Wolter TD, Wijdicks EF. Long-term outcome in patients with Guillain-Barré syndrome requiring mechanical ventilation. Neurology . 2000;54:2311-2315."
+            },
+            {
+              "number": 6,
+              "text": "Netto AB, Taly AB, Kulkarni GB, Rao UGS, Rao S. Mortality in mechanically ventilated patients of Guillain Barré Syndrome. Ann Indian Acad Neurol . 2011;14(4):262-266. doi:10.4103/0972-"
+            }
+          ],
+          "position": {
+            "x": 47.4,
+            "y": 67.6
+          }
+        }
+      ],
+      "slide_footnotes": {
+        "1": "Harms M. Neurohospitalist . 2011;1(2):78–84.",
+        "2": "van den Berg B et al. Nat Rev Neurol. 2014;10: 469–482.",
+        "3": "Dhar R et al. J Neurol Sci . 2008;264(1-2):121-128.",
+        "4": "Doets AY et al. Brain . 2018;141(10):2866-2877.",
+        "5": "Fletcher DD et al. Neurology . 2000;54:2311-2315.",
+        "6": "Netto AB et al. Ann Indian Acad Neurol . 2011;14(4):262-266."
+      },
+      "notes_references": {
+        "1": "Harms M. Inpatient management of Guillain-Barré syndrome. Neurohospitalist . 2011;1(2):78-84. doi:10.1177/1941875210396379",
+        "2": "van den Berg B, Walgaard C, Drenthen J, Fokke C, Jacobs BC, van Doorn PA. Guillain–Barré syndrome: pathogenesis, diagnosis, treatment and prognosis. Nat Rev Neurol . 2014;10(8):469- 482. doi:10.1038/nrneurol.2014.121",
+        "3": "Dhar R, Sitt L, Hahn AF. The morbidity and outcome of patients with Guillain-Barré syndrome admitted to the intensive care unit. J Neurol Sci . 2008;264(1-2):121-128. doi:10.1016/j.jns.2007.08.005",
+        "4": "Doets AY, Verboon C, van den Berg B, et al. Regional variation of Guillain-Barre´ syndrome. Brain . 2018;141(10):2866-2877. doi:10.1093/brain/awy232",
+        "5": "Fletcher DD, Lawn ND, Wolter TD, Wijdicks EF. Long-term outcome in patients with Guillain-Barré syndrome requiring mechanical ventilation. Neurology . 2000;54:2311-2315.",
+        "6": "Netto AB, Taly AB, Kulkarni GB, Rao UGS, Rao S. Mortality in mechanically ventilated patients of Guillain Barré Syndrome. Ann Indian Acad Neurol . 2011;14(4):262-266. doi:10.4103/0972-"
+      },
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 5,
+      "slide_claims": [],
+      "notes_claims": [
+        {
+          "text": "important prognostic indicators o As shown on the slide, a single-center study in Spain (N=106) demonstrated that",
+          "superscripts": [
+            1
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "González-Suárez I, Sanz-Gallego I, de Rivera FJR, Arpaet J. Guillain-Barré syndrome: Natural history and prognostic factors: a retrospective review of 106 cases. BMC Neurol . 2013;13:95. doi:10.1186/1471-2377-13-95"
+            }
+          ],
+          "position": {
+            "x": 81.5,
+            "y": 54.9
+          }
+        },
+        {
+          "text": "Research Council (MRC) sum score at admission as predictive factors correlating with the inability to walk at 4 weeks, 3 months, and 6 months post-onset ( P ≤0.05)",
+          "superscripts": [
+            2
+          ],
+          "references": [
+            {
+              "number": 2,
+              "text": "Walgaard C, Lingsma HF, Ruts L, et al. Early recognition of poor prognosis in Guillain- Barr é syndrome. Neurology . 2011;76(11):968-975. doi:10.1212/WNL.0b013e3182104407"
+            }
+          ],
+          "position": {
+            "x": 78.7,
+            "y": 76.7
+          }
+        }
+      ],
+      "slide_footnotes": {
+        "2": "P <0.001. P =0.001. P =0.003. González-Suárez I et al. BMC Neurol . 2013;13:95."
+      },
+      "notes_references": {
+        "1": "González-Suárez I, Sanz-Gallego I, de Rivera FJR, Arpaet J. Guillain-Barré syndrome: Natural history and prognostic factors: a retrospective review of 106 cases. BMC Neurol . 2013;13:95. doi:10.1186/1471-2377-13-95",
+        "2": "Walgaard C, Lingsma HF, Ruts L, et al. Early recognition of poor prognosis in Guillain- Barr é syndrome. Neurology . 2011;76(11):968-975. doi:10.1212/WNL.0b013e3182104407"
+      },
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 6,
+      "slide_claims": [
+        {
+          "text": "IRREVERSIBLE DISABILITY CAN HAVE AN IMPACT ON SOCIAL LIFE AND ABILITY TO PERFORM ACTIVITIES OF DAILY LIFE",
+          "superscripts": [
+            3
+          ],
+          "references": [
+            {
+              "number": 3,
+              "text": "Forsberg A et al. J Neurol Sci . 2012;317(1-2):74-79."
+            }
+          ],
+          "position": {
+            "x": 83.8,
+            "y": 38.2
+          }
+        },
+        {
+          "text": "AT 3 YEARS",
+          "superscripts": [
+            1,
+            2
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "Uz FB et al. Malawi Med J . 2023;35(3):156-162."
+            },
+            {
+              "number": 2,
+              "text": "Martic V et al. Can J Neurol Sci . 2018;45(3):269-274."
+            }
+          ],
+          "position": {
+            "x": 38.6,
+            "y": 23.0
+          }
+        },
+        {
+          "text": "AT 3 YEARS AT 10 YEARS",
+          "superscripts": [
+            3
+          ],
+          "references": [
+            {
+              "number": 3,
+              "text": "Forsberg A et al. J Neurol Sci . 2012;317(1-2):74-79."
+            }
+          ],
+          "position": {
+            "x": 68.0,
+            "y": 23.2
+          }
+        },
+        {
+          "text": "AT 3 YEARS AT 10 YEARS AT 20 YEARS",
+          "superscripts": [
+            4
+          ],
+          "references": [
+            {
+              "number": 4,
+              "text": "Drory VE et al. J Neurol Sci . 2012;316(1-2):72-75."
+            }
+          ],
+          "position": {
+            "x": 83.7,
+            "y": 23.4
+          }
+        }
+      ],
+      "notes_claims": [
+        {
+          "text": "autonomic dysfunction, 4% are unable to walk unassisted, while 2% become bedridden",
+          "superscripts": [
+            1,
+            2
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "Uz FB, Uz C, Karaahmet OZ. Three-year follow-up outcomes of adult patients with Guillain-Barré Syndrome after rehabilitation. Malawi Med J . 2023;35(3):156-162. doi:10.4314/mmj.v35i3.4"
+            },
+            {
+              "number": 2,
+              "text": "Martic V, Bozovic I, Berisavac I, et al. Three-year follow-up study in patients with Guillain-Barré Syndrome. Can J Neurol Sci . 2018;45(3):269-274. doi:10.1017/cjn.2018.12"
+            }
+          ],
+          "position": {
+            "x": 27.6,
+            "y": 59.5
+          }
+        },
+        {
+          "text": "bedridden o At 10 years post-onset, up to 52% of individuals may still experience disability",
+          "superscripts": [
+            3
+          ],
+          "references": [
+            {
+              "number": 3,
+              "text": "Forsberg A, Press R, Holmqvist LW. Residual disability 10 years after falling ill in Guillain–Barré syndrome: A prospective follow-up study. J Neurol Sci. 2012;317(1- 2):74-79. doi:10.1016/j.jns.2012.02.026"
+            }
+          ],
+          "position": {
+            "x": 85.0,
+            "y": 61.5
+          }
+        },
+        {
+          "text": "compromise daily functioning and quality of life",
+          "superscripts": [
+            4
+          ],
+          "references": [
+            {
+              "number": 4,
+              "text": "Drory VE, Bronipolsky T, Bluvshtein V, Catz A, Korczyn AD. Occurrence of fatigue"
+            }
+          ],
+          "position": {
+            "x": 59.5,
+            "y": 65.4
+          }
+        },
+        {
+          "text": "The persistence of irreversible disability stemming from GBS can profoundly affect individuals' social lives and their ability to carry out activities of daily living",
+          "superscripts": [
+            3
+          ],
+          "references": [
+            {
+              "number": 3,
+              "text": "Forsberg A, Press R, Holmqvist LW. Residual disability 10 years after falling ill in Guillain–Barré syndrome: A prospective follow-up study. J Neurol Sci. 2012;317(1- 2):74-79. doi:10.1016/j.jns.2012.02.026"
+            }
+          ],
+          "position": {
+            "x": 79.1,
+            "y": 69.3
+          }
+        }
+      ],
+      "slide_footnotes": {
+        "1": "Uz FB et al. Malawi Med J . 2023;35(3):156-162.",
+        "2": "Martic V et al. Can J Neurol Sci . 2018;45(3):269-274.",
+        "3": "Forsberg A et al. J Neurol Sci . 2012;317(1-2):74-79.",
+        "4": "Drory VE et al. J Neurol Sci . 2012;316(1-2):72-75."
+      },
+      "notes_references": {
+        "1": "Uz FB, Uz C, Karaahmet OZ. Three-year follow-up outcomes of adult patients with Guillain-Barré Syndrome after rehabilitation. Malawi Med J . 2023;35(3):156-162. doi:10.4314/mmj.v35i3.4",
+        "2": "Martic V, Bozovic I, Berisavac I, et al. Three-year follow-up study in patients with Guillain-Barré Syndrome. Can J Neurol Sci . 2018;45(3):269-274. doi:10.1017/cjn.2018.12",
+        "3": "Forsberg A, Press R, Holmqvist LW. Residual disability 10 years after falling ill in Guillain–Barré syndrome: A prospective follow-up study. J Neurol Sci. 2012;317(1- 2):74-79. doi:10.1016/j.jns.2012.02.026",
+        "4": "Drory VE, Bronipolsky T, Bluvshtein V, Catz A, Korczyn AD. Occurrence of fatigue"
+      },
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 7,
+      "slide_claims": [
+        {
+          "text": "MENTAL HEALTH PROBLEMS CAN IMPACT RECOVERY AND PERSIST AFTER PHYSICAL SYMPTOMS IMPROVE",
+          "superscripts": [
+            1,
+            2
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "Leonhard SE et al. Nat Rev Neurol . 2019;15(11):671-683."
+            },
+            {
+              "number": 2,
+              "text": "Tzeng NS et al. J Neurological Sci . 2017;381:88-94."
+            }
+          ],
+          "position": {
+            "x": 80.5,
+            "y": 21.7
+          }
+        },
+        {
+          "text": "Patients may be distressed by changes in occupation, lifestyle, and interpersonal relationships stemming from disability",
+          "superscripts": [
+            5
+          ],
+          "references": [
+            {
+              "number": 5,
+              "text": "Akanuwe JNA et al. Health Expect . 2020; 23(5):1338-1349."
+            }
+          ],
+          "position": {
+            "x": 66.4,
+            "y": 34.6
+          }
+        },
+        {
+          "text": "0 to 4 MONTHS",
+          "superscripts": [
+            3
+          ],
+          "references": [
+            {
+              "number": 3,
+              "text": "Cochen V et al. Brain . 2005;128:2535-2545."
+            }
+          ],
+          "position": {
+            "x": 35.2,
+            "y": 25.7
+          }
+        },
+        {
+          "text": "0 to 4 MONTHS AT 2 YEARS",
+          "superscripts": [
+            4
+          ],
+          "references": [
+            {
+              "number": 4,
+              "text": "Levison LS et al. Muscle Nerve . 2023;67(6):497-505."
+            }
+          ],
+          "position": {
+            "x": 72.6,
+            "y": 25.7
+          }
+        },
+        {
+          "text": "Organizations, such as the caregivers through research, education, and advocacy",
+          "superscripts": [
+            6
+          ],
+          "references": [
+            {
+              "number": 6,
+              "text": "GBS | CIDP Foundation International. Accessed May 10, 2024. https://www.gbs-cidp.org/about/mission/"
+            }
+          ],
+          "position": {
+            "x": 57.4,
+            "y": 39.7
+          }
+        }
+      ],
+      "notes_claims": [
+        {
+          "text": "Mental health problems can significantly impact recovery and persist even after physical symptoms improve, highlighting the enduring challenges faced by patients",
+          "superscripts": [
+            1,
+            2
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "Leonhard SE, Mandarakas MR, Gondim FAA, et al. Diagnosis and management of Guillain–Barré syndrome in ten steps. Nat Rev Neurol . 2019;15(11):671-683. doi:10.1038/s41582-019-0250-9"
+            },
+            {
+              "number": 2,
+              "text": "Tzeng NS, Chang HA, Chung CH, et al. Risk of psychiatric disorders in Guillain-Barré syndrome: A nationwide, population-based, cohort study. J Neurological Sci . 2017;381:88-94. doi:10.1016/j.jns.2017.08.022"
+            }
+          ],
+          "position": {
+            "x": 60.8,
+            "y": 52.8
+          }
+        },
+        {
+          "text": "Changes in occupation, lifestyle, and interpersonal relationships stemming from disability can cause distress and affect the overall well-being of individuals recovering from GBS",
+          "superscripts": [
+            3
+          ],
+          "references": [
+            {
+              "number": 3,
+              "text": "Akanuwe JNA, Laparidou D, Curtis F, Jackson J, Hodgson TL, Siriwardena AN. Exploring the experiences of having Guillain-Barré Syndrome: A qualitative interview study. Health Expect . 2020; 23(5):1338-1349. doi:10.1111/hex.13116"
+            }
+          ],
+          "position": {
+            "x": 69.2,
+            "y": 56.1
+          }
+        },
+        {
+          "text": "Organizations like the GBS/CIDP Foundation International play a crucial role in giving voice to patients and caregivers",
+          "superscripts": [
+            4
+          ],
+          "references": [
+            {
+              "number": 4,
+              "text": "GBS | CIDP Foundation International. Our mission and vision. Accessed May 10, 2024. https://www.gbs-cidp.org/about/mission/"
+            }
+          ],
+          "position": {
+            "x": 32.1,
+            "y": 59.4
+          }
+        }
+      ],
+      "slide_footnotes": {
+        "1": "Leonhard SE et al. Nat Rev Neurol . 2019;15(11):671-683.",
+        "2": "Tzeng NS et al. J Neurological Sci . 2017;381:88-94.",
+        "3": "Cochen V et al. Brain . 2005;128:2535-2545.",
+        "4": "Levison LS et al. Muscle Nerve . 2023;67(6):497-505.",
+        "5": "Akanuwe JNA et al. Health Expect . 2020; 23(5):1338-1349.",
+        "6": "GBS | CIDP Foundation International. Accessed May 10, 2024. https://www.gbs-cidp.org/about/mission/"
+      },
+      "notes_references": {
+        "1": "Leonhard SE, Mandarakas MR, Gondim FAA, et al. Diagnosis and management of Guillain–Barré syndrome in ten steps. Nat Rev Neurol . 2019;15(11):671-683. doi:10.1038/s41582-019-0250-9",
+        "2": "Tzeng NS, Chang HA, Chung CH, et al. Risk of psychiatric disorders in Guillain-Barré syndrome: A nationwide, population-based, cohort study. J Neurological Sci . 2017;381:88-94. doi:10.1016/j.jns.2017.08.022",
+        "3": "Akanuwe JNA, Laparidou D, Curtis F, Jackson J, Hodgson TL, Siriwardena AN. Exploring the experiences of having Guillain-Barré Syndrome: A qualitative interview study. Health Expect . 2020; 23(5):1338-1349. doi:10.1111/hex.13116",
+        "4": "GBS | CIDP Foundation International. Our mission and vision. Accessed May 10, 2024. https://www.gbs-cidp.org/about/mission/"
+      },
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 8,
+      "slide_claims": [],
+      "notes_claims": [],
+      "slide_footnotes": {},
+      "notes_references": {},
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 9,
+      "slide_claims": [
+        {
+          "text": "Complement-Driven Immune Cell Recruitment and Attack on Nerves",
+          "superscripts": [
+            1,
+            2,
+            3
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "Dalakas MC et al. Nat Rev Neurol . 2020;16(11):601-617."
+            },
+            {
+              "number": 2,
+              "text": "Lansita JA et al. Int J Toxicol . 2017;36(6):449-462."
+            },
+            {
+              "number": 3,
+              "text": "Hafer-Macko C et al. Ann Neurol . 1996;40(4):635-644."
+            }
+          ],
+          "position": {
+            "x": 81.3,
+            "y": 16.4
+          }
+        }
+      ],
+      "notes_claims": [
+        {
+          "text": "Dysregulation of the complement system, specifically the classical pathway, has been implicated in the pathogenesis of GBS",
+          "superscripts": [
+            1
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "Dalakas MC, Alexopoulos H, Spaeth PJ. Complement in neurological disorders and emerging complement-targeted therapeutics. Nat Rev Neurol . 2020;16(11):601- 617. doi:10.1038/s41582-020-0400-0"
+            }
+          ],
+          "position": {
+            "x": 52.8,
+            "y": 53.6
+          }
+        },
+        {
+          "text": "The complement system plays a crucial role in the immune response, with C1q serving as a pivotal component",
+          "superscripts": [
+            1,
+            2
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "Dalakas MC, Alexopoulos H, Spaeth PJ. Complement in neurological disorders and emerging complement-targeted therapeutics. Nat Rev Neurol . 2020;16(11):601- 617. doi:10.1038/s41582-020-0400-0"
+            },
+            {
+              "number": 2,
+              "text": "Lansita JA, Mease KM, Qiu H, Yednock T, Sankaranarayanan S, Kramer S. Nonclinical development of ANX005: A humanized anti-C1q antibody for treatment of autoimmune and neurodegenerative diseases. Int J Toxicol . 2017;36(6):449-462. doi:10.1177/1091581817740873"
+            }
+          ],
+          "position": {
+            "x": 42.2,
+            "y": 57.6
+          }
+        }
+      ],
+      "slide_footnotes": {
+        "1": "Dalakas MC et al. Nat Rev Neurol . 2020;16(11):601-617.",
+        "2": "Lansita JA et al. Int J Toxicol . 2017;36(6):449-462.",
+        "3": "Hafer-Macko C et al. Ann Neurol . 1996;40(4):635-644."
+      },
+      "notes_references": {
+        "1": "Dalakas MC, Alexopoulos H, Spaeth PJ. Complement in neurological disorders and emerging complement-targeted therapeutics. Nat Rev Neurol . 2020;16(11):601- 617. doi:10.1038/s41582-020-0400-0",
+        "2": "Lansita JA, Mease KM, Qiu H, Yednock T, Sankaranarayanan S, Kramer S. Nonclinical development of ANX005: A humanized anti-C1q antibody for treatment of autoimmune and neurodegenerative diseases. Int J Toxicol . 2017;36(6):449-462. doi:10.1177/1091581817740873"
+      },
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 10,
+      "slide_claims": [
+        {
+          "text": "Complement Is a Key Mediator of Nerve Destruction in GBS",
+          "superscripts": [
+            1,
+            2
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "Misawa S, Suichi T. Clin Exp Neuroimmunol . 2020;11(2):90-93."
+            },
+            {
+              "number": 2,
+              "text": "Dalakas MC et al. Nat Rev Neurol . 2020;16(11):601-617."
+            }
+          ],
+          "position": {
+            "x": 77.0,
+            "y": 16.6
+          }
+        }
+      ],
+      "notes_claims": [
+        {
+          "text": "enzymatic reactions that lead to the activation of the classical complement pathway and recruitment of immune cells",
+          "superscripts": [
+            1,
+            2
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "Dalakas MC, Alexopoulos H, Spaeth PJ. Complement in neurological disorders and emerging complement-targeted therapeutics. Nat Rev Neurol . 2020;16(11):601- 617. doi:10.1038/s41582-020-0400-0"
+            },
+            {
+              "number": 2,
+              "text": "Misawa S, Suichi T. Guillain-Barré syndrome: Novel treatment by complement inhibition. Clin Exp Neuroimmunol . 2020;11(2):90-93."
+            }
+          ],
+          "position": {
+            "x": 51.4,
+            "y": 55.6
+          }
+        }
+      ],
+      "slide_footnotes": {
+        "1": "Misawa S, Suichi T. Clin Exp Neuroimmunol . 2020;11(2):90-93.",
+        "2": "Dalakas MC et al. Nat Rev Neurol . 2020;16(11):601-617."
+      },
+      "notes_references": {
+        "1": "Dalakas MC, Alexopoulos H, Spaeth PJ. Complement in neurological disorders and emerging complement-targeted therapeutics. Nat Rev Neurol . 2020;16(11):601- 617. doi:10.1038/s41582-020-0400-0",
+        "2": "Misawa S, Suichi T. Guillain-Barré syndrome: Novel treatment by complement inhibition. Clin Exp Neuroimmunol . 2020;11(2):90-93."
+      },
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 11,
+      "slide_claims": [],
+      "notes_claims": [],
+      "slide_footnotes": {
+        "1": "van den Berg B et al. Nat Rev Neurol . 2014;10(8):469-482.",
+        "2": "Dubey D et al. Muscle Nerve . 2016;53(3):384-387.",
+        "3": "Shang P et al. Front Pharmacol . 2021;12:608130."
+      },
+      "notes_references": {
+        "1": "van den Berg B, Walgaard C, Drenthen J, et al. Guillain–Barré syndrome: pathogenesis, diagnosis, treatment and prognosis. Nat Rev Neurol . 2014;10(8):469-482. doi:10.1038/nrneurol.2014.121",
+        "2": "Dubey D, Kapotic M, Freeman M, et al. Factors contributing to delay in diagnosis of Guillain-Barré syndrome and impact on clinical outcome. Muscle Nerve ."
+      },
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 12,
+      "slide_claims": [],
+      "notes_claims": [],
+      "slide_footnotes": {},
+      "notes_references": {},
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 13,
+      "slide_claims": [],
+      "notes_claims": [],
+      "slide_footnotes": {},
+      "notes_references": {},
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 14,
+      "slide_claims": [],
+      "notes_claims": [],
+      "slide_footnotes": {},
+      "notes_references": {},
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 15,
+      "slide_claims": [],
+      "notes_claims": [],
+      "slide_footnotes": {},
+      "notes_references": {},
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 16,
+      "slide_claims": [],
+      "notes_claims": [],
+      "slide_footnotes": {},
+      "notes_references": {},
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 17,
+      "slide_claims": [],
+      "notes_claims": [],
+      "slide_footnotes": {},
+      "notes_references": {},
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 18,
+      "slide_claims": [],
+      "notes_claims": [],
+      "slide_footnotes": {
+        "1": "Leonhard SE et al. Nat Rev Neurol . 2019;15(11):671-683.",
+        "2": "van den Berg B et al. Nat Rev Neurol . 2014;10(8):469-482.",
+        "3": "Harms M. Neurohospitalist . 2011;1(2):78–84.",
+        "4": "Dhar R et al. J Neurol Sci . 2008;264(1- 2):121-128.",
+        "5": "Uz FB et al. Malawi Med J . 2023;35(3):156-162.",
+        "6": "Martic V et al. Can J Neurol Sci . 2018;45(3):269-274.",
+        "7": "Forsberg A et al. J Neurol Sci . 2012;317(1-2):74-79.",
+        "8": "Drory VE et al. J Neurol Sci . 2012;316(1-2):72-75.",
+        "9": "Tzeng NS et al. J Neurological Sci . 2017;381:88-94.",
+        "10": "Cochen V et al. Brain . 2005;128:2535-2545.",
+        "11": "Levison LS et al. Muscle Nerve . 2023;67(6):497-505.",
+        "12": "Akanuwe JNA et al. Health Expect . 2020; 23(5):1338-1349."
+      },
+      "notes_references": {},
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 19,
+      "slide_claims": [],
+      "notes_claims": [
+        {
+          "text": "IVIg has several advantages, including being infused via peripheral veins rather than a central line, making it easier to initiate and typically available at the point of care",
+          "superscripts": [
+            1
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "Shang P, Feng J, Wu W, Zhang HL. Intensive care and treatment of severe Guillain-Barré syndrome. Front Pharmacol . 2021;12:608130. doi:10.3389/fphar.2021.608130"
+            }
+          ],
+          "position": {
+            "x": 79.0,
+            "y": 54.9
+          }
+        },
+        {
+          "text": "with contraindications for IVIg, such as IVIg allergy or selective IgA deficiency, providing an alternative treatment option for these individuals",
+          "superscripts": [
+            1
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "Shang P, Feng J, Wu W, Zhang HL. Intensive care and treatment of severe Guillain-Barré syndrome. Front Pharmacol . 2021;12:608130. doi:10.3389/fphar.2021.608130"
+            }
+          ],
+          "position": {
+            "x": 54.5,
+            "y": 60.4
+          }
+        },
+        {
+          "text": "When IVIg and plasma exchange are initiated within 2 weeks of GBS symptom onset in severe cases, they are considered equally effective",
+          "superscripts": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "Shang P, Feng J, Wu W, Zhang HL. Intensive care and treatment of severe Guillain-Barré syndrome. Front Pharmacol . 2021;12:608130. doi:10.3389/fphar.2021.608130"
+            },
+            {
+              "number": 2,
+              "text": "Plasma Exchange/Immunoglobulin GBS Trial Group. Randomised trial of plasma exchange, intravenous immunoglobulin, and combined treatments in Guillain-Barré syndrome. Lancet . 1997;349(9047):225-230."
+            },
+            {
+              "number": 3,
+              "text": "Hughes RAC, Swan AV, van Doorn PA. Intravenous immunoglobulin for Guillain-Barré syndrome. Cochrane Database Syst Rev . 2014;2014(9):CD002063. doi:10.1002/14651858.CD002063.pub6"
+            },
+            {
+              "number": 4,
+              "text": "Leonhard SE, Mandarakas MR, Gondim FAA, et al. Diagnosis and management of Guillain– Barré syndrome in ten steps. Nat Rev Neurol . 2019;15(11):671-683. doi:10.1038/s41582- 019-0250-9"
+            }
+          ],
+          "position": {
+            "x": 55.5,
+            "y": 64.0
+          }
+        },
+        {
+          "text": "IVIg is more likely to be completed and is used more frequently due to availability and ease of administration",
+          "superscripts": [
+            1,
+            4
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "Shang P, Feng J, Wu W, Zhang HL. Intensive care and treatment of severe Guillain-Barré syndrome. Front Pharmacol . 2021;12:608130. doi:10.3389/fphar.2021.608130"
+            },
+            {
+              "number": 4,
+              "text": "Leonhard SE, Mandarakas MR, Gondim FAA, et al. Diagnosis and management of Guillain– Barré syndrome in ten steps. Nat Rev Neurol . 2019;15(11):671-683. doi:10.1038/s41582- 019-0250-9"
+            }
+          ],
+          "position": {
+            "x": 33.2,
+            "y": 67.6
+          }
+        }
+      ],
+      "slide_footnotes": {},
+      "notes_references": {
+        "1": "Shang P, Feng J, Wu W, Zhang HL. Intensive care and treatment of severe Guillain-Barré syndrome. Front Pharmacol . 2021;12:608130. doi:10.3389/fphar.2021.608130",
+        "2": "Plasma Exchange/Immunoglobulin GBS Trial Group. Randomised trial of plasma exchange, intravenous immunoglobulin, and combined treatments in Guillain-Barré syndrome. Lancet . 1997;349(9047):225-230.",
+        "3": "Hughes RAC, Swan AV, van Doorn PA. Intravenous immunoglobulin for Guillain-Barré syndrome. Cochrane Database Syst Rev . 2014;2014(9):CD002063. doi:10.1002/14651858.CD002063.pub6",
+        "4": "Leonhard SE, Mandarakas MR, Gondim FAA, et al. Diagnosis and management of Guillain– Barré syndrome in ten steps. Nat Rev Neurol . 2019;15(11):671-683. doi:10.1038/s41582- 019-0250-9"
+      },
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 20,
+      "slide_claims": [],
+      "notes_claims": [],
+      "slide_footnotes": {},
+      "notes_references": {},
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 21,
+      "slide_claims": [
+        {
+          "text": "long-term disability and emotional distress for patients",
+          "superscripts": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "Leonhard SE et al. Nat Rev Neurol . 2019;15(11):671-683."
+            },
+            {
+              "number": 2,
+              "text": "van den Berg B et al. Nat Rev Neurol . 2014;10(8):469-482."
+            },
+            {
+              "number": 3,
+              "text": "Uz FB et al. Malawi Med J . 2023;35(3):156-162."
+            },
+            {
+              "number": 4,
+              "text": "Martic V et al. Can J Neurol Sci . 2018;45(3):269-274."
+            },
+            {
+              "number": 5,
+              "text": "Forsberg A et al. J Neurol Sci . 2012;317(1-2):74-79."
+            },
+            {
+              "number": 6,
+              "text": "Drory VE et al. J Neurol Sci . 2012;316(1-2):72-75."
+            },
+            {
+              "number": 7,
+              "text": "Tzeng NS et al. J Neurological Sci . 2017;381:88-94."
+            },
+            {
+              "number": 8,
+              "text": "Akanuwe JNA et al. Health Suichi T. Clin Exp Neuroimmunol . 2020;11(2):90-93."
+            }
+          ],
+          "position": {
+            "x": 34.4,
+            "y": 36.7
+          }
+        },
+        {
+          "text": "long-term disability and emotional distress for patients and safety challenges",
+          "superscripts": [
+            9
+          ],
+          "references": [],
+          "position": {
+            "x": 52.6,
+            "y": 36.7
+          }
+        },
+        {
+          "text": "in severe short-term and long-term disability and associated with administration patients with GBS",
+          "superscripts": [
+            10,
+            11,
+            12
+          ],
+          "references": [],
+          "position": {
+            "x": 73.8,
+            "y": 36.1
+          }
+        }
+      ],
+      "notes_claims": [
+        {
+          "text": "In summary, GBS represents a significant neurological emergency with the potential for life-threatening complications and profound short-term and long-term disability",
+          "superscripts": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "Leonhard SE, Mandarakas MR, Gondim FAA, et al. Diagnosis and management of Guillain–Barré syndrome in ten steps. Nat Rev Neurol . 2019;15(11):671-683. doi:10.1038/s41582-019-0250-9"
+            },
+            {
+              "number": 2,
+              "text": "van den Berg B, Walgaard C, Drenthen J, et al. Guillain–Barré syndrome: pathogenesis, diagnosis, treatment and prognosis. Nat Rev Neurol . 2014;10(8):469-482. doi:10.1038/nrneurol.2014.121"
+            },
+            {
+              "number": 3,
+              "text": "Uz FB, Uz C, Karaahmet OZ. Three-year follow-up outcomes of adult patients with Guillain-Barré Syndrome after rehabilitation. Malawi Med J . 2023;35(3):156-162. doi:10.4314/mmj.v35i3.4"
+            },
+            {
+              "number": 4,
+              "text": "Martic V, Bozovic I, Berisavac I, et al. Three-year follow-up study in patients with Guillain-Barré Syndrome. Can J Neurol Sci . 2018;45(3):269-274. doi:10.1017/cjn.2018.12"
+            },
+            {
+              "number": 5,
+              "text": "Forsberg A, Press R, Holmqvist LW. Residual disability 10 years after falling ill in Guillain–Barré syndrome: A prospective follow-up study. J Neurol Sci. 2012;317(1-2):74-79. doi:10.1016/j.jns.2012.02.026"
+            },
+            {
+              "number": 6,
+              "text": "Drory VE, Bronipolsky T, Bluvshtein V, Catz A, Korczyn AD. Occurrence of fatigue over 20 years after recovery from Guillain– Barré syndrome. J Neurol Sci . 2012;316(1-2):72-75. doi: 10.1016/j.jns.2012.01.024"
+            },
+            {
+              "number": 7,
+              "text": "Tzeng NS, Chang HA, Chung CH, et al. Risk of psychiatric disorders in Guillain-Barré syndrome: A nationwide, population- based, cohort study. J Neurological Sci . 2017;381:88-94. doi:10.1016/j.jns.2017.08.022"
+            },
+            {
+              "number": 8,
+              "text": "Akanuwe JNA, Laparidou D, Curtis F, Jackson J, Hodgson TL, Siriwardena AN . Exploring the experiences of having Guillain- Barré Syndrome: A qualitative interview study. Health Expect . 2020; 23(5):1338-1349. doi:10.1111/hex.13116"
+            },
+            {
+              "number": 9,
+              "text": "Dalakas MC, Alexopoulos H, Spaeth PJ. Complement in neurological disorders and emerging complement-targeted therapeutics. Nat Rev Neurol . 2020;16(11):601-617. doi:10.1038/s41582-020-0400-0"
+            },
+            {
+              "number": 10,
+              "text": "Lansita JA, Mease KM, Qiu H, Yednock T, Sankaranarayanan S, Kramer S. Nonclinical development of ANX005: A humanized anti-C1q antibody for treatment of autoimmune and neurodegenerative diseases. Int J Toxicol . 2017;36(6):449-462. doi:10.1177/1091581817740873"
+            }
+          ],
+          "position": {
+            "x": 41.5,
+            "y": 51.9
+          }
+        },
+        {
+          "text": "Despite current treatments, GBS management often falls short in achieving optimal efficacy, reducing hospitalization time, and alleviating disease burden, leading to emotional distress for patients",
+          "superscripts": [
+            10
+          ],
+          "references": [
+            {
+              "number": 10,
+              "text": "Lansita JA, Mease KM, Qiu H, Yednock T, Sankaranarayanan S, Kramer S. Nonclinical development of ANX005: A humanized anti-C1q antibody for treatment of autoimmune and neurodegenerative diseases. Int J Toxicol . 2017;36(6):449-462. doi:10.1177/1091581817740873"
+            }
+          ],
+          "position": {
+            "x": 57.3,
+            "y": 54.6
+          }
+        },
+        {
+          "text": "and alleviating disease burden, leading to emotional distress for patients Moreover, existing treatment options are associated with challenges related to administration and safety",
+          "superscripts": [
+            10
+          ],
+          "references": [
+            {
+              "number": 10,
+              "text": "Lansita JA, Mease KM, Qiu H, Yednock T, Sankaranarayanan S, Kramer S. Nonclinical development of ANX005: A humanized anti-C1q antibody for treatment of autoimmune and neurodegenerative diseases. Int J Toxicol . 2017;36(6):449-462. doi:10.1177/1091581817740873"
+            }
+          ],
+          "position": {
+            "x": 75.9,
+            "y": 55.9
+          }
+        }
+      ],
+      "slide_footnotes": {
+        "1": "Leonhard SE et al. Nat Rev Neurol . 2019;15(11):671-683.",
+        "2": "van den Berg B et al. Nat Rev Neurol . 2014;10(8):469-482.",
+        "3": "Uz FB et al. Malawi Med J . 2023;35(3):156-162.",
+        "4": "Martic V et al. Can J Neurol Sci . 2018;45(3):269-274.",
+        "5": "Forsberg A et al. J Neurol Sci . 2012;317(1-2):74-79.",
+        "6": "Drory VE et al. J Neurol Sci . 2012;316(1-2):72-75.",
+        "7": "Tzeng NS et al. J Neurological Sci . 2017;381:88-94.",
+        "8": "Akanuwe JNA et al. Health Suichi T. Clin Exp Neuroimmunol . 2020;11(2):90-93."
+      },
+      "notes_references": {
+        "1": "Leonhard SE, Mandarakas MR, Gondim FAA, et al. Diagnosis and management of Guillain–Barré syndrome in ten steps. Nat Rev Neurol . 2019;15(11):671-683. doi:10.1038/s41582-019-0250-9",
+        "2": "van den Berg B, Walgaard C, Drenthen J, et al. Guillain–Barré syndrome: pathogenesis, diagnosis, treatment and prognosis. Nat Rev Neurol . 2014;10(8):469-482. doi:10.1038/nrneurol.2014.121",
+        "3": "Uz FB, Uz C, Karaahmet OZ. Three-year follow-up outcomes of adult patients with Guillain-Barré Syndrome after rehabilitation. Malawi Med J . 2023;35(3):156-162. doi:10.4314/mmj.v35i3.4",
+        "4": "Martic V, Bozovic I, Berisavac I, et al. Three-year follow-up study in patients with Guillain-Barré Syndrome. Can J Neurol Sci . 2018;45(3):269-274. doi:10.1017/cjn.2018.12",
+        "5": "Forsberg A, Press R, Holmqvist LW. Residual disability 10 years after falling ill in Guillain–Barré syndrome: A prospective follow-up study. J Neurol Sci. 2012;317(1-2):74-79. doi:10.1016/j.jns.2012.02.026",
+        "6": "Drory VE, Bronipolsky T, Bluvshtein V, Catz A, Korczyn AD. Occurrence of fatigue over 20 years after recovery from Guillain– Barré syndrome. J Neurol Sci . 2012;316(1-2):72-75. doi: 10.1016/j.jns.2012.01.024",
+        "7": "Tzeng NS, Chang HA, Chung CH, et al. Risk of psychiatric disorders in Guillain-Barré syndrome: A nationwide, population- based, cohort study. J Neurological Sci . 2017;381:88-94. doi:10.1016/j.jns.2017.08.022",
+        "8": "Akanuwe JNA, Laparidou D, Curtis F, Jackson J, Hodgson TL, Siriwardena AN . Exploring the experiences of having Guillain- Barré Syndrome: A qualitative interview study. Health Expect . 2020; 23(5):1338-1349. doi:10.1111/hex.13116",
+        "9": "Dalakas MC, Alexopoulos H, Spaeth PJ. Complement in neurological disorders and emerging complement-targeted therapeutics. Nat Rev Neurol . 2020;16(11):601-617. doi:10.1038/s41582-020-0400-0",
+        "10": "Lansita JA, Mease KM, Qiu H, Yednock T, Sankaranarayanan S, Kramer S. Nonclinical development of ANX005: A humanized anti-C1q antibody for treatment of autoimmune and neurodegenerative diseases. Int J Toxicol . 2017;36(6):449-462. doi:10.1177/1091581817740873",
+        "11": "Misawa S, Suichi T. Guillain-Barré syndrome: Novel treatment by complement inhibition. Clin Exp Neuroimmunol . 2020;11(2):90-93."
+      },
+      "unresolved_superscripts": [
+        {
+          "region": "slide",
+          "superscript": 9,
+          "claim_text": "long-term disability and emotional distress for patients and"
+        },
+        {
+          "region": "slide",
+          "superscript": 10,
+          "claim_text": "in severe short-term and long-term disability and associated"
+        },
+        {
+          "region": "slide",
+          "superscript": 11,
+          "claim_text": "in severe short-term and long-term disability and associated"
+        },
+        {
+          "region": "slide",
+          "superscript": 12,
+          "claim_text": "in severe short-term and long-term disability and associated"
+        }
+      ]
+    },
+    {
+      "page": 22,
+      "slide_claims": [
+        {
+          "text": "Pattern of Symptoms in GBS Variants",
+          "superscripts": [
+            1
+          ],
+          "references": [],
+          "position": {
+            "x": 61.8,
+            "y": 20.8
+          }
+        }
+      ],
+      "notes_claims": [],
+      "slide_footnotes": {},
+      "notes_references": {},
+      "unresolved_superscripts": [
+        {
+          "region": "slide",
+          "superscript": 1,
+          "claim_text": "Pattern of Symptoms in GBS Variants"
+        }
+      ]
+    },
+    {
+      "page": 23,
+      "slide_claims": [
+        {
+          "text": "Pattern of Symptoms in GBS Variants",
+          "superscripts": [
+            1
+          ],
+          "references": [],
+          "position": {
+            "x": 61.8,
+            "y": 20.8
+          }
+        }
+      ],
+      "notes_claims": [],
+      "slide_footnotes": {},
+      "notes_references": {},
+      "unresolved_superscripts": [
+        {
+          "region": "slide",
+          "superscript": 1,
+          "claim_text": "Pattern of Symptoms in GBS Variants"
+        }
+      ]
+    },
+    {
+      "page": 24,
+      "slide_claims": [],
+      "notes_claims": [],
+      "slide_footnotes": {},
+      "notes_references": {},
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 25,
+      "slide_claims": [],
+      "notes_claims": [],
+      "slide_footnotes": {},
+      "notes_references": {},
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 26,
+      "slide_claims": [],
+      "notes_claims": [],
+      "slide_footnotes": {},
+      "notes_references": {},
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 27,
+      "slide_claims": [],
+      "notes_claims": [],
+      "slide_footnotes": {},
+      "notes_references": {},
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 28,
+      "slide_claims": [],
+      "notes_claims": [],
+      "slide_footnotes": {
+        "1": "Lansita JA et al. Int J Toxicol . 2017;36(6):449-462.",
+        "2": "Misawa S, Suichi T. Clin Exp Neuroimmunol . 2020;11(2):90-93.",
+        "3": "Dalakas MC et al. Nat Rev Neurol . 2020;16(11):601-617."
+      },
+      "notes_references": {},
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 29,
+      "slide_claims": [
+        {
+          "text": "MARIPOSA: Evaluating the first and only 1L multitargeted combination in EGFR + mNSCLC vs osimertinib",
+          "superscripts": [
+            1,
+            2
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "RYBREVANT FASPRO ™ [Prescribing Information]. Horsham, PA: Janssen Biotech, Inc."
+            },
+            {
+              "number": 2,
+              "text": "Cho BC et al; MARIPOSA Investigators. N Engl J Med . 2024;391(16):1486-1498."
+            }
+          ],
+          "position": {
+            "x": 69.3,
+            "y": 16.1
+          }
+        },
+        {
+          "text": "MARIPOSA was a randomized, active-controlled, multicenter study and the largest phase 3 trial of patients with EGFR + disease *",
+          "superscripts": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "RYBREVANT FASPRO ™ [Prescribing Information]. Horsham, PA: Janssen Biotech, Inc."
+            },
+            {
+              "number": 2,
+              "text": "Cho BC et al; MARIPOSA Investigators. N Engl J Med . 2024;391(16):1486-1498."
+            },
+            {
+              "number": 3,
+              "text": "Yang JC-H et al. Lancet Oncol . 2015;16(2):141-151."
+            },
+            {
+              "number": 4,
+              "text": "Wu YL et al. Lancet Oncol . 2017;18(11):1454-1466."
+            },
+            {
+              "number": 5,
+              "text": "Rosell R et al. Lancet Oncol . 2012;13(3):239-246."
+            },
+            {
+              "number": 6,
+              "text": "Nakagawa K et al. Lancet Oncol . 2019;20(12):1655-1669."
+            },
+            {
+              "number": 7,
+              "text": "Kawashima Y et al. Lancet Respir 2023;389(21):1935-1948."
+            },
+            {
+              "number": 12,
+              "text": "Mok TS et al. N Engl J Med . 2017;376(7):629-640."
+            },
+            {
+              "number": 13,
+              "text": "Goldberg SB et al. J Thorac Oncol . 2025;20(suppl1):S86-S87. Please see Important Safety Information in this presentation. Please see the full Prescribing Information for RYBREVANT FASPRO ™, RYBREVANT , and LAZCLUZE available at this presentation. • MARIPOSA was a phase 3, randomized, open-label, multicenter study in 1,074 patients assessing the efficacy and safety of RYBREVANT (amivantamab-vmjw) in combination with LAZCLUZE compared with osimertinib in patients with treatment-naive, locally advanced or mNSCLC with EGFR exon 19 deletions or L858R substitution mutations"
+            }
+          ],
+          "position": {
+            "x": 60.7,
+            "y": 20.2
+          }
+        }
+      ],
+      "notes_claims": [],
+      "slide_footnotes": {
+        "1": "RYBREVANT FASPRO ™ [Prescribing Information]. Horsham, PA: Janssen Biotech, Inc.",
+        "2": "Cho BC et al; MARIPOSA Investigators. N Engl J Med . 2024;391(16):1486-1498.",
+        "3": "Yang JC-H et al. Lancet Oncol . 2015;16(2):141-151.",
+        "4": "Wu YL et al. Lancet Oncol . 2017;18(11):1454-1466.",
+        "5": "Rosell R et al. Lancet Oncol . 2012;13(3):239-246.",
+        "6": "Nakagawa K et al. Lancet Oncol . 2019;20(12):1655-1669.",
+        "7": "Kawashima Y et al. Lancet Respir 2023;389(21):1935-1948.",
+        "12": "Mok TS et al. N Engl J Med . 2017;376(7):629-640.",
+        "13": "Goldberg SB et al. J Thorac Oncol . 2025;20(suppl1):S86-S87. Please see Important Safety Information in this presentation. Please see the full Prescribing Information for RYBREVANT FASPRO ™, RYBREVANT , and LAZCLUZE available at this presentation. • MARIPOSA was a phase 3, randomized, open-label, multicenter study in 1,074 patients assessing the efficacy and safety of RYBREVANT (amivantamab-vmjw) in combination with LAZCLUZE compared with osimertinib in patients with treatment-naive, locally advanced or mNSCLC with EGFR exon 19 deletions or L858R substitution mutations"
+      },
+      "notes_references": {},
+      "unresolved_superscripts": [
+        {
+          "region": "slide",
+          "superscript": 8,
+          "claim_text": "MARIPOSA was a randomized, active-controlled, multicenter st"
+        },
+        {
+          "region": "slide",
+          "superscript": 9,
+          "claim_text": "MARIPOSA was a randomized, active-controlled, multicenter st"
+        },
+        {
+          "region": "slide",
+          "superscript": 10,
+          "claim_text": "MARIPOSA was a randomized, active-controlled, multicenter st"
+        },
+        {
+          "region": "slide",
+          "superscript": 11,
+          "claim_text": "MARIPOSA was a randomized, active-controlled, multicenter st"
+        }
+      ]
+    },
+    {
+      "page": 30,
+      "slide_claims": [
+        {
+          "text": "RYBREVANT (amivantamab-vmjw) + LAZCLUZE significant reduction in the risk of progression or death by 30% vs osimertinib",
+          "superscripts": [
+            1,
+            2
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "RYBREVANT FASPRO ™ [Prescribing Information]. Horsham, PA: Janssen Biotech, Inc."
+            },
+            {
+              "number": 2,
+              "text": "Cho BC et al; MARIPOSA Investigators. N Engl J Med . 2024;391(16):1486-1498. Please see Important Safety Information in this presentation. Please see the full Prescribing Information for RYBREVANT FASPRO ™, RYBREVANT , and LAZCLUZE available at this presentation."
+            }
+          ],
+          "position": {
+            "x": 83.6,
+            "y": 16.1
+          }
+        }
+      ],
+      "notes_claims": [
+        {
+          "text": "osimertinib (hazard ratio [HR]: 0.70 [95% confidence interval (CI): 0.58, 0.85; P =0.0002])",
+          "superscripts": [
+            1,
+            2
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "RYBREVANT FASPRO ™ [Prescribing Information]. Horsham, PA: Janssen Biotech, Inc."
+            },
+            {
+              "number": 2,
+              "text": "Cho BC, Lu S, Felip E, et al; MARIPOSA Investigators. Amivantamab plus lazertinib in previously untreated EGFR -mutated advanced NSCLC. N Engl J Med . 2024;391(16):1486-1498. doi:10.1056/NEJMoa2403614"
+            }
+          ],
+          "position": {
+            "x": 31.3,
+            "y": 55.6
+          }
+        },
+        {
+          "text": "(mPFS) with 23.7 months (95% CI: 19.1, 27.7) with RYBREVANT LAZCLUZE vs 16.6 months (95% CI: 14.8, 18.5) with osimertinib",
+          "superscripts": [
+            1
+          ],
+          "references": [
+            {
+              "number": 1,
+              "text": "RYBREVANT FASPRO ™ [Prescribing Information]. Horsham, PA: Janssen Biotech, Inc."
+            }
+          ],
+          "position": {
+            "x": 80.1,
+            "y": 61.5
+          }
+        },
+        {
+          "text": "In the nonregistrational LAZCLUZE CI: 14.8, 20.1)",
+          "superscripts": [
+            2
+          ],
+          "references": [
+            {
+              "number": 2,
+              "text": "Cho BC, Lu S, Felip E, et al; MARIPOSA Investigators. Amivantamab plus lazertinib in previously untreated EGFR -mutated advanced NSCLC. N Engl J Med . 2024;391(16):1486-1498. doi:10.1056/NEJMoa2403614"
+            }
+          ],
+          "position": {
+            "x": 32.2,
+            "y": 65.4
+          }
+        },
+        {
+          "text": "CI: 14.8, 20.1) Median follow-up was 22.0 months",
+          "superscripts": [
+            2
+          ],
+          "references": [
+            {
+              "number": 2,
+              "text": "Cho BC, Lu S, Felip E, et al; MARIPOSA Investigators. Amivantamab plus lazertinib in previously untreated EGFR -mutated advanced NSCLC. N Engl J Med . 2024;391(16):1486-1498. doi:10.1056/NEJMoa2403614"
+            }
+          ],
+          "position": {
+            "x": 48.0,
+            "y": 67.5
+          }
+        }
+      ],
+      "slide_footnotes": {
+        "1": "RYBREVANT FASPRO ™ [Prescribing Information]. Horsham, PA: Janssen Biotech, Inc.",
+        "2": "Cho BC et al; MARIPOSA Investigators. N Engl J Med . 2024;391(16):1486-1498. Please see Important Safety Information in this presentation. Please see the full Prescribing Information for RYBREVANT FASPRO ™, RYBREVANT , and LAZCLUZE available at this presentation."
+      },
+      "notes_references": {
+        "1": "RYBREVANT FASPRO ™ [Prescribing Information]. Horsham, PA: Janssen Biotech, Inc.",
+        "2": "Cho BC, Lu S, Felip E, et al; MARIPOSA Investigators. Amivantamab plus lazertinib in previously untreated EGFR -mutated advanced NSCLC. N Engl J Med . 2024;391(16):1486-1498. doi:10.1056/NEJMoa2403614"
+      },
+      "unresolved_superscripts": []
+    },
+    {
+      "page": 31,
+      "slide_claims": [],
+      "notes_claims": [],
+      "slide_footnotes": {
+        "1": "RYBREVANT FASPRO ™ [Prescribing Information]. Horsham, PA: Janssen Biotech, Inc.",
+        "2": "Cho BC et al; MARIPOSA Investigators. N Engl J Med . 2024;391(16):1486-1498. Please see Important Safety Information in this presentation. Please see the full Prescribing Information for RYBREVANT FASPRO ™, RYBREVANT , and LAZCLUZE available at this presentation."
+      },
+      "notes_references": {},
+      "unresolved_superscripts": []
+    }
+  ]
+}

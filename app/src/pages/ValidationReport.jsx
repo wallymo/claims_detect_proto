@@ -528,6 +528,7 @@ export default function ValidationReport() {
       return {
         comparisons: [],
         indexedAnnotations: [],
+        totalAnnotations: 0,
         passCount: 0,
         failCount: 0,
         totalGaps: 0,
@@ -552,6 +553,7 @@ export default function ValidationReport() {
     return {
       comparisons,
       indexedAnnotations,
+      totalAnnotations: indexedAnnotations.length,
       passCount,
       failCount,
       totalGaps,
@@ -563,6 +565,7 @@ export default function ValidationReport() {
 
   const reportFileName = rawPyMuPDFData?.file || uploadedFile?.name || 'Validation Report'
   const summaryStats = [
+    { label: 'Annotations', value: report.totalAnnotations, tone: 'neutral' },
     { label: 'Pages', value: report.comparisons.length, tone: 'neutral' },
     { label: 'Pass', value: report.passCount, tone: 'pass' },
     { label: 'Fail', value: report.failCount, tone: 'fail' },
@@ -716,9 +719,9 @@ export default function ValidationReport() {
         <>
           <section className={styles.headline}>
             <div className={joinClasses(styles.headlineNumber, getHeadlineTone(report.resolutionRate))}>
-              {report.totalRawResolved} / {report.totalRawSups} {REPORT_SEPARATOR} {report.resolutionRate === null ? 'N/A' : `${report.resolutionRate}%`}
+              {report.totalAnnotations} Annotations
             </div>
-            <div className={styles.headlineLabel}>Superscripts Resolved to Reference</div>
+            <div className={styles.headlineLabel}>{report.totalRawResolved} / {report.totalRawSups} superscripts resolved to reference</div>
             <div className={styles.headlineSub}>
               {report.passCount} of {report.comparisons.length} pages fully correct
             </div>

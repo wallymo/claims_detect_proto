@@ -582,6 +582,132 @@ def resolve_claims(claims, slide_footnotes, notes_references):
 # Main: process one page
 # ---------------------------------------------------------------------------
 
+def detect_slide_content_elements(page, spans, boundary_y, pw, ph, slide_footnotes):
+    """Detect text blocks and visual areas in the slide region for global reference fragmentation.
+
+    Returns list of {text, position, content_type} — one entry per meaningful content element.
+    Used when a reference is orphan/global: creates one pin per element instead of one generic pin.
+    """
+    elements = []
+
+    slide_max_y_abs = boundary_y / 100.0 * ph
+    footnote_zone_y_abs = slide_max_y_abs * 0.85
+    slide_area = pw * slide_max_y_abs
+    if slide_area <= 0:
+        return elements
+
+    # Step A: Visual areas via page.get_drawings()
+    visual_rects = []
+    seen = []
+    for d in page.get_drawings():
+        r = d.get("rect")
+        if r is None:
+            continue
+        rx0, ry0, rx1, ry1 = r
+        if ry1 > slide_max_y_abs:
+            continue
+        if ry0 > footnote_zone_y_abs:
+            continue
+        rect_area = (rx1 - rx0) * (ry1 - ry0)
+        area_ratio = rect_area / slide_area
+        if not (0.02 < area_ratio < 0.70):
+            continue
+        is_dup = False
+        for s in seen:
+            if all(abs(r[i] - s[i]) < 10 for i in range(4)):
+                is_dup = True
+                break
+        if is_dup:
+            continue
+        seen.append((rx0, ry0, rx1, ry1))
+        visual_rects.append((rx0, ry0, rx1, ry1))
+
+    # Remove container rects (rects that fully enclose 2+ other rects — e.g. the outer slide border)
+    def _is_container(r, all_r):
+        count = sum(
+            1 for o in all_r
+            if o is not r and r[0] <= o[0] and r[1] <= o[1] and r[2] >= o[2] and r[3] >= o[3]
+        )
+        return count >= 2
+
+    visual_rects = [r for r in visual_rects if not _is_container(r, visual_rects)]
+
+    def _label_for_rect(rect, spans):
+        rx0, ry0, rx1, ry1 = rect
+        best_text = "Visual area"
+        best_dist = float('inf')
+        for span in spans:
+            if span['y_abs'] >= ry0:
+                continue
+            dist = ry0 - span['y_abs']
+            if dist > 30:
+                continue
+            if not (rx0 <= span['x_abs'] <= rx1):
+                continue
+            t = span['text'].strip()
+            if len(t) < 5 or span['is_superscript'] or span['size'] < 6.0:
+                continue
+            if dist < best_dist:
+                best_dist = dist
+                best_text = t[:80]
+        return best_text
+
+    for rx0, ry0, rx1, ry1 in visual_rects:
+        cx = (rx0 + rx1) / 2.0 / pw * 100.0
+        cy = (ry0 + ry1) / 2.0 / ph * 100.0
+        elements.append({
+            "text": _label_for_rect((rx0, ry0, rx1, ry1), spans),
+            "position": {"x": cx, "y": cy},
+            "content_type": "visual_area",
+        })
+
+    # Step B: Text blocks grouped by block_id
+    footnote_values = set(slide_footnotes.values())
+    blocks = {}
+    for span in spans:
+        if span["y"] >= boundary_y:
+            continue
+        if span["is_superscript"]:
+            continue
+        if span["size"] < 6.0:
+            continue
+        if span["y"] >= boundary_y * 0.85:
+            continue
+        if span["text"].strip() in footnote_values:
+            continue
+        bid = span["block_id"]
+        if bid not in blocks:
+            blocks[bid] = {"spans": [], "min_x": span["x_abs"], "max_x": span["x_abs"],
+                           "min_y": span["y_abs"], "max_y": span["y_abs"]}
+        blocks[bid]["spans"].append(span)
+        blocks[bid]["min_x"] = min(blocks[bid]["min_x"], span["x_abs"])
+        blocks[bid]["max_x"] = max(blocks[bid]["max_x"], span["x_abs"])
+        blocks[bid]["min_y"] = min(blocks[bid]["min_y"], span["y_abs"])
+        blocks[bid]["max_y"] = max(blocks[bid]["max_y"], span["y_abs"])
+
+    for bid, bdata in blocks.items():
+        combined = " ".join(s["text"].strip() for s in bdata["spans"])
+        if len(combined) < 10:
+            continue
+        cx_abs = (bdata["min_x"] + bdata["max_x"]) / 2.0
+        cy_abs = (bdata["min_y"] + bdata["max_y"]) / 2.0
+        inside_visual = any(
+            rx0 <= cx_abs <= rx1 and ry0 <= cy_abs <= ry1
+            for (rx0, ry0, rx1, ry1) in visual_rects
+        )
+        if inside_visual:
+            continue
+        cx = cx_abs / pw * 100.0
+        cy = cy_abs / ph * 100.0
+        elements.append({
+            "text": combined[:80],
+            "position": {"x": cx, "y": cy},
+            "content_type": "text_block",
+        })
+
+    return elements
+
+
 def process_page(page, page_num, debug=False):
     """Process a single page and return structured result."""
     spans, pw, ph = extract_spans(page)
@@ -632,14 +758,31 @@ def process_page(page, page_num, debug=False):
     orphan_notes = {k: v for k, v in notes_references.items() if k not in used_notes_refs}
 
     if orphan_slide:
-        global_annotations.append({
-            "text": "Global slide annotation",
-            "superscripts": sorted(orphan_slide.keys()),
-            "references": [{"number": k, "text": v} for k, v in sorted(orphan_slide.items())],
-            "position": {"x": 14.0, "y": 15.0},  # overlapping left edge of slide
-            "global": True,
-            "global_reason": "orphan-slide-reference",
-        })
+        slide_elements = detect_slide_content_elements(
+            page, spans, boundary_y, pw, ph, slide_footnotes
+        )
+        refs_payload = [{"number": k, "text": v} for k, v in sorted(orphan_slide.items())]
+        sups_payload = sorted(orphan_slide.keys())
+        if slide_elements:
+            for elem in slide_elements:
+                global_annotations.append({
+                    "text": elem["text"],
+                    "superscripts": sups_payload,
+                    "references": refs_payload,
+                    "position": elem["position"],
+                    "global": True,
+                    "global_reason": "orphan-slide-reference",
+                    "content_type": elem["content_type"],
+                })
+        else:
+            global_annotations.append({
+                "text": "Global slide annotation",
+                "superscripts": sups_payload,
+                "references": refs_payload,
+                "position": {"x": 14.0, "y": 15.0},
+                "global": True,
+                "global_reason": "orphan-slide-reference",
+            })
 
     if orphan_notes:
         global_annotations.append({

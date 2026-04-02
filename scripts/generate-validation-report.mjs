@@ -359,6 +359,7 @@ function generateHTML(comparisons, fileName) {
   const totalGaps = comparisons.reduce((sum, c) => sum + c.gaps.length, 0)
   const totalRawSups = comparisons.reduce((sum, c) => sum + c.raw.totalSups, 0)
   const totalRawResolved = comparisons.reduce((sum, c) => sum + c.raw.resolvedRefs, 0)
+  const totalAnnotations = comparisons.reduce((sum, c) => sum + c.frontend.annotations.length, 0)
   const resolutionRate = totalRawSups > 0 ? ((totalRawResolved / totalRawSups) * 100).toFixed(1) : 'N/A'
   const now = new Date().toISOString().split('T')[0]
 
@@ -554,11 +555,12 @@ function generateHTML(comparisons, fileName) {
   <h1>Validation Report</h1>
   <div class="meta">${escapeHtml(fileName)} — ${now}</div>
   <div class="headline">
-    <div class="headline-number ${parseFloat(resolutionRate) >= 95 ? 'good' : parseFloat(resolutionRate) >= 80 ? 'warn' : 'bad'}">${totalRawResolved} / ${totalRawSups} — ${resolutionRate}%</div>
-    <div class="headline-label">Superscripts Resolved to Reference</div>
+    <div class="headline-number ${parseFloat(resolutionRate) >= 95 ? 'good' : parseFloat(resolutionRate) >= 80 ? 'warn' : 'bad'}">${totalAnnotations} Annotations</div>
+    <div class="headline-label">${totalRawResolved} / ${totalRawSups} superscripts resolved to reference</div>
     <div class="headline-sub">${passCount} of ${comparisons.length} pages fully correct</div>
   </div>
   <div class="summary">
+    <div class="stat"><div class="stat-value neutral">${totalAnnotations}</div><div class="stat-label">Annotations</div></div>
     <div class="stat"><div class="stat-value neutral">${comparisons.length}</div><div class="stat-label">Pages</div></div>
     <div class="stat"><div class="stat-value pass">${passCount}</div><div class="stat-label">Pass</div></div>
     <div class="stat"><div class="stat-value fail">${failCount}</div><div class="stat-label">Fail</div></div>
