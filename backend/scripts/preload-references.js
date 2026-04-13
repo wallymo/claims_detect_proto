@@ -13,7 +13,7 @@ import { extractCitationMetadata } from '../src/services/citationMetadataExtract
 import { env } from '../src/config/env.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const REFS_SOURCE = path.resolve(__dirname, '../../MKG Knowledge Base/References')
+const REFS_SOURCE = path.resolve(__dirname, '../../References/References')
 const SUPPORTED_EXTENSIONS = ['.pdf', '.docx', '.doc']
 
 async function main() {

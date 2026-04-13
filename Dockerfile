@@ -22,4 +22,4 @@ RUN npm ci --omit=dev
 
 EXPOSE 3001
 
-CMD ["node", "server.js"]
+CMD ["sh", "-c", "node scripts/preload-references.js && node server.js"]
