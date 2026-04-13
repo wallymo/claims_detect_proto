@@ -37,11 +37,21 @@ async function main() {
   }
 
   // Create brands
-  const brand = db.prepare(
-    "INSERT INTO brands (name, client) VALUES (?, ?)"
-  ).run('MKG Reference Library', 'MKG')
-  const brandId = brand.lastInsertRowid
-  console.log(`Created brand: MKG Reference Library (id: ${brandId})`)
+  const findBrandByName = db.prepare('SELECT id FROM brands WHERE name = ?')
+  const insertBrand = db.prepare('INSERT INTO brands (name, client) VALUES (?, ?)')
+  const resolveBrand = (name, client) => {
+    const existingBrand = findBrandByName.get(name)
+    if (existingBrand) {
+      console.log(`Brand already exists: ${name} (id: ${existingBrand.id})`)
+      return existingBrand.id
+    }
+
+    const result = insertBrand.run(name, client)
+    console.log(`Created brand: ${name} (id: ${result.lastInsertRowid})`)
+    return result.lastInsertRowid
+  }
+
+  const brandId = resolveBrand('MKG Reference Library', 'MKG')
 
   // Seed additional brands
   const additionalBrands = [
@@ -50,8 +60,7 @@ async function main() {
     { name: 'AI Only', client: 'AI Only' }
   ]
   for (const b of additionalBrands) {
-    const result = db.prepare("INSERT INTO brands (name, client) VALUES (?, ?)").run(b.name, b.client)
-    console.log(`Created brand: ${b.name} (id: ${result.lastInsertRowid})`)
+    resolveBrand(b.name, b.client)
   }
   console.log()
 
