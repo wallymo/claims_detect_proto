@@ -3,7 +3,7 @@ import { Brand } from '../models/Brand.js'
 import { ReferenceFact } from '../models/ReferenceFact.js'
 import { ReferencePassage } from '../models/ReferencePassage.js'
 import { extractText, extractTextByPage } from '../services/textExtractor.js'
-import { extractFacts } from '../services/factExtractor.js'
+import { extractFactsDetailed } from '../services/factExtractor.js'
 import { embedReference } from '../services/passageEmbedder.js'
 import { generateAlias } from '../services/aliasGenerator.js'
 import { extractCitationMetadata } from '../services/citationMetadataExtractor.js'
@@ -57,12 +57,12 @@ export const referenceController = {
       })
 
       // Auto-index: create pending facts row and kick off async extraction
-      if (text && process.env.VITE_GEMINI_API_KEY) {
+      if ((text || file.path) && (process.env.VITE_GEMINI_API_KEY || process.env.LLAMA_CLOUD_API_KEY)) {
         ReferenceFact.createPending(ref.id)
-        extractFacts(text, { pageCount })
-          .then(facts => {
-            ReferenceFact.createOrUpdate(ref.id, facts, 'indexed', 'gemini-3-pro-preview')
-            console.log(`Auto-indexed ref ${ref.id} (${displayAlias}): ${facts.length} facts`)
+        extractFactsDetailed({ contentText: text, filePath: file.path, pageCount })
+          .then(result => {
+            ReferenceFact.createOrUpdate(ref.id, result.facts, 'indexed', result.modelUsed)
+            console.log(`Auto-indexed ref ${ref.id} (${displayAlias}): ${result.facts.length} facts via ${result.modelUsed}`)
           })
           .catch(err => {
             console.error(`Auto-index failed for ref ${ref.id}:`, err.message)

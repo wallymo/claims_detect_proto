@@ -32,6 +32,7 @@ diagnostics-output.json
 
 # Generated validation reports
 validation-report*.html
+tmp/pdfs/
 
 # Tooling
 .serena/

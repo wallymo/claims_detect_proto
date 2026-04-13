@@ -19,10 +19,17 @@ Usage:
 import argparse
 from collections import Counter
 import json
+import os
 import re
 import sys
+import tempfile
 
 import pymupdf
+
+try:
+    from llama_cloud import LlamaCloud
+except Exception:  # pragma: no cover - optional dependency in some environments
+    LlamaCloud = None
 
 
 # ---------------------------------------------------------------------------
@@ -266,6 +273,144 @@ def _join_line_spans(spans):
             parts.append(" ")
         parts.append(text)
     return re.sub(r"\s+", " ", "".join(parts)).strip()
+
+
+def _normalize_match_text(text):
+    return re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).strip()
+
+
+def _tokenize_match_text(text):
+    return {
+        token for token in _normalize_match_text(text).split()
+        if len(token) > 2 and token not in {"with", "from", "that", "this", "were", "have", "been", "into"}
+    }
+
+
+def _overlap_score(left, right):
+    left_tokens = _tokenize_match_text(left)
+    right_tokens = _tokenize_match_text(right)
+    if not left_tokens or not right_tokens:
+        return 0.0
+
+    overlap = len(left_tokens & right_tokens)
+    if overlap == 0:
+        return 0.0
+
+    ratio = overlap / max(1, min(len(left_tokens), len(right_tokens)))
+    left_norm = _normalize_match_text(left)
+    right_norm = _normalize_match_text(right)
+    if left_norm and right_norm and (left_norm in right_norm or right_norm in left_norm):
+        ratio += 0.15
+    return min(ratio, 1.0)
+
+
+def should_use_llamaparse_global_annotations():
+    value = str(os.environ.get("PYMUPDF_GLOBAL_ANNOTATION_PROVIDER", "")).strip().lower()
+    return value in {"llamaparse", "llama_parse", "llama-parse"}
+
+
+def get_llamaparse_global_annotation_max_pages():
+    raw = str(os.environ.get("PYMUPDF_GLOBAL_ANNOTATION_MAX_PAGES", "6")).strip()
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 6
+
+
+def load_llamaparse_pages_from_pdf(pdf_path):
+    if LlamaCloud is None:
+        return {}
+
+    api_key = os.environ.get("LLAMA_CLOUD_API_KEY")
+    if not api_key:
+        return {}
+
+    client = LlamaCloud(api_key=api_key, timeout=180.0)
+    result = client.parsing.parse(
+        upload_file=pdf_path,
+        tier=os.environ.get("LLAMA_PARSE_TIER", "agentic"),
+        version=os.environ.get("LLAMA_PARSE_VERSION", "latest"),
+        output_options={
+            "spatial_text": {
+                "preserve_very_small_text": True,
+            }
+        },
+        expand=["text", "markdown"],
+    )
+
+    def _read_field(value, field_name, default=None):
+        if value is None:
+            return default
+        if isinstance(value, dict):
+            return value.get(field_name, default)
+        return getattr(value, field_name, default)
+
+    def _pages_by_number(payload, field_name):
+        pages = _read_field(payload, "pages", []) or []
+        mapped = {}
+        for page in pages:
+            page_number = _read_field(page, "page_number")
+            if page_number is None:
+                continue
+            mapped[int(page_number)] = _read_field(page, field_name, "") or ""
+        return mapped
+
+    text_pages = _pages_by_number(_read_field(result, "text"), "text")
+    markdown_pages = _pages_by_number(_read_field(result, "markdown"), "markdown")
+    page_numbers = sorted(set(text_pages.keys()) | set(markdown_pages.keys()))
+    return {
+        page_num: {
+            "page": page_num,
+            "text": text_pages.get(page_num, ""),
+            "markdown": markdown_pages.get(page_num, ""),
+        }
+        for page_num in page_numbers
+    }
+
+
+def load_llamaparse_pages_for_page_numbers(doc, page_numbers):
+    requested = sorted(set(
+        page_num for page_num in page_numbers
+        if isinstance(page_num, int) and 1 <= page_num <= len(doc)
+    ))
+    if not requested:
+        return {}
+
+    max_pages = get_llamaparse_global_annotation_max_pages()
+    selected = requested[:max_pages] if max_pages > 0 else []
+    if not selected:
+        return {}
+
+    temp_path = None
+    temp_doc = None
+    try:
+        temp_doc = pymupdf.open()
+        for page_num in selected:
+            temp_doc.insert_pdf(doc, from_page=page_num - 1, to_page=page_num - 1)
+        with tempfile.NamedTemporaryFile(suffix="-orphan-slide-pages.pdf", delete=False) as handle:
+            temp_path = handle.name
+        temp_doc.save(temp_path)
+    finally:
+        if temp_doc is not None:
+            temp_doc.close()
+
+    try:
+        subset_pages = load_llamaparse_pages_from_pdf(temp_path)
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.unlink(temp_path)
+
+    remapped = {}
+    for idx, original_page_num in enumerate(selected, start=1):
+        subset_page = subset_pages.get(idx)
+        if not subset_page:
+            continue
+        remapped[original_page_num] = {
+            "page": original_page_num,
+            "text": subset_page.get("text", ""),
+            "markdown": subset_page.get("markdown", ""),
+        }
+    return remapped
 
 
 def _parse_numbered_refs_inline(text):
@@ -708,7 +853,136 @@ def detect_slide_content_elements(page, spans, boundary_y, pw, ph, slide_footnot
     return elements
 
 
-def process_page(page, page_num, debug=False):
+def detect_llamaparse_slide_elements(llama_page, spans, boundary_y, slide_footnotes):
+    if not llama_page:
+        return []
+
+    slide_lines = []
+    footnote_values = {
+        _normalize_match_text(value)
+        for value in slide_footnotes.values()
+        if value
+    }
+
+    eligible_spans = [
+        span for span in spans
+        if span["y"] < boundary_y
+        and not span["is_superscript"]
+        and span["size"] >= 6.0
+        and span["y"] < (boundary_y * 0.85)
+        and _normalize_match_text(span["text"]) not in footnote_values
+    ]
+    eligible_spans.sort(key=lambda s: (round(s["y"], 1), s["x"]))
+
+    current_line = []
+    for span in eligible_spans:
+        if not current_line or abs(span["y"] - current_line[-1]["y"]) <= 0.8:
+            current_line.append(span)
+        else:
+            text = _join_line_spans(current_line)
+            if len(_normalize_match_text(text)) >= 8:
+                slide_lines.append({
+                    "text": text,
+                    "position": {
+                        "x": sum(item["x"] for item in current_line) / len(current_line),
+                        "y": sum(item["y"] for item in current_line) / len(current_line),
+                    },
+                    "block_id": current_line[0].get("block_id"),
+                })
+            current_line = [span]
+    if current_line:
+        text = _join_line_spans(current_line)
+        if len(_normalize_match_text(text)) >= 8:
+            slide_lines.append({
+                "text": text,
+                "position": {
+                    "x": sum(item["x"] for item in current_line) / len(current_line),
+                    "y": sum(item["y"] for item in current_line) / len(current_line),
+                },
+                "block_id": current_line[0].get("block_id"),
+            })
+
+    if not slide_lines:
+        return []
+
+    windows = []
+    for idx, line in enumerate(slide_lines):
+        window_text = line["text"]
+        windows.append({
+            "text": window_text,
+            "position": line["position"],
+            "content_type": "llamaparse_line",
+            "line_index": idx,
+        })
+        combined = window_text
+        for next_idx in range(idx + 1, min(idx + 3, len(slide_lines))):
+            next_line = slide_lines[next_idx]
+            if next_line["block_id"] != line["block_id"]:
+                break
+            combined = f"{combined} {next_line['text']}".strip()
+            windows.append({
+                "text": combined,
+                "position": line["position"],
+                "content_type": "llamaparse_window",
+                "line_index": idx,
+            })
+
+    raw_source = llama_page.get("markdown") or llama_page.get("text") or ""
+    segments = []
+    seen_segments = set()
+    for raw_line in raw_source.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        line = re.sub(r"^#{1,6}\s*", "", line)
+        line = re.sub(r"^[\-\*\u2022]+\s*", "", line)
+        line = re.sub(r"^\|", "", line).replace("|", " ")
+        line = line.replace("**", "").replace("__", "")
+        line = re.sub(r"\s+", " ", line).strip()
+        normalized = _normalize_match_text(line)
+        if len(normalized) < 10:
+            continue
+        if normalized in seen_segments:
+            continue
+        if normalized in {"speaker notes", "references", "reference"}:
+            continue
+        if normalized in footnote_values:
+            continue
+        if re.match(r"^\d{1,2}[\.\)]\s+", line):
+            continue
+        if " et al " in f" {normalized} " and any(ch.isdigit() for ch in normalized):
+            continue
+        seen_segments.add(normalized)
+        segments.append(line)
+
+    matched = []
+    used_line_indices = set()
+    for segment in segments:
+        best_window = None
+        best_score = 0.0
+        for window in windows:
+            score = _overlap_score(segment, window["text"])
+            if score > best_score:
+                best_score = score
+                best_window = window
+        if best_window is None or best_score < 0.55:
+            continue
+        line_index = best_window["line_index"]
+        if line_index in used_line_indices:
+            continue
+        used_line_indices.add(line_index)
+        matched.append({
+            "text": segment[:160],
+            "position": best_window["position"],
+            "content_type": best_window["content_type"],
+            "breakdown_provider": "llamaparse",
+        })
+
+    matched.sort(key=lambda item: (item["position"]["y"], item["position"]["x"]))
+    return matched
+
+
+def process_page(page, page_num, debug=False, llama_page=None):
     """Process a single page and return structured result."""
     spans, pw, ph = extract_spans(page)
 
@@ -758,9 +1032,21 @@ def process_page(page, page_num, debug=False):
     orphan_notes = {k: v for k, v in notes_references.items() if k not in used_notes_refs}
 
     if orphan_slide:
-        slide_elements = detect_slide_content_elements(
-            page, spans, boundary_y, pw, ph, slide_footnotes
-        )
+        slide_elements = []
+        if llama_page:
+            slide_elements = detect_llamaparse_slide_elements(
+                llama_page, spans, boundary_y, slide_footnotes
+            )
+            if debug and slide_elements:
+                print(
+                    f"  Global slide breakdown via LlamaParse: {len(slide_elements)} elements",
+                    file=sys.stderr,
+                )
+
+        if not slide_elements:
+            slide_elements = detect_slide_content_elements(
+                page, spans, boundary_y, pw, ph, slide_footnotes
+            )
         refs_payload = [{"number": k, "text": v} for k, v in sorted(orphan_slide.items())]
         sups_payload = sorted(orphan_slide.keys())
         if slide_elements:
@@ -773,6 +1059,7 @@ def process_page(page, page_num, debug=False):
                     "global": True,
                     "global_reason": "orphan-slide-reference",
                     "content_type": elem["content_type"],
+                    "breakdown_provider": elem.get("breakdown_provider", "heuristic"),
                 })
         else:
             global_annotations.append({
@@ -782,6 +1069,7 @@ def process_page(page, page_num, debug=False):
                 "position": {"x": 14.0, "y": 15.0},
                 "global": True,
                 "global_reason": "orphan-slide-reference",
+                "breakdown_provider": "fallback",
             })
 
     if orphan_notes:
@@ -828,13 +1116,52 @@ def main():
 
     doc = pymupdf.open(args.pdf_path)
 
-    pages = []
+    selected_page_indices = []
+    initial_results = {}
+    orphan_slide_pages = []
+
     for i in range(len(doc)):
         page_num = i + 1
         if args.page and page_num != args.page:
             continue
+        selected_page_indices.append((i, page_num))
         result = process_page(doc[i], page_num, debug=args.debug)
-        pages.append(result)
+        initial_results[page_num] = result
+        if any(g.get("global_reason") == "orphan-slide-reference" for g in result.get("global_annotations", [])):
+            orphan_slide_pages.append(page_num)
+
+    llama_pages = {}
+    if should_use_llamaparse_global_annotations() and orphan_slide_pages:
+        try:
+            llama_pages = load_llamaparse_pages_for_page_numbers(doc, orphan_slide_pages)
+            if args.debug and llama_pages:
+                print(
+                    f"Loaded LlamaParse context for orphan-slide pages: {sorted(llama_pages.keys())}",
+                    file=sys.stderr,
+                )
+            if args.debug:
+                max_pages = get_llamaparse_global_annotation_max_pages()
+                if max_pages > 0 and len(orphan_slide_pages) > max_pages:
+                    skipped = orphan_slide_pages[max_pages:]
+                    print(
+                        f"LlamaParse skipped orphan-slide pages due to cap ({max_pages}): {skipped}",
+                        file=sys.stderr,
+                    )
+        except Exception as exc:
+            if args.debug:
+                print(
+                    f"LlamaParse global annotation fallback: {exc}",
+                    file=sys.stderr,
+                )
+            llama_pages = {}
+
+    pages = []
+    for page_index, page_num in selected_page_indices:
+        llama_page = llama_pages.get(page_num)
+        if llama_page:
+            pages.append(process_page(doc[page_index], page_num, debug=args.debug, llama_page=llama_page))
+        else:
+            pages.append(initial_results[page_num])
 
     output = {
         "file": args.pdf_path.split("/")[-1],

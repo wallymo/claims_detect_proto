@@ -1104,6 +1104,29 @@ html, body {
   cursor: default;
 }
 
+.exportPdfBtn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--blue-7);
+  border-radius: 6px;
+  background: var(--blue-3);
+  color: var(--blue-11);
+  cursor: pointer;
+}
+
+.exportPdfBtn:hover:not(:disabled) {
+  background: var(--blue-4);
+}
+
+.exportPdfBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .resetVersionBtn {
   display: flex;
   align-items: center;

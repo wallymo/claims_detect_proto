@@ -60,7 +60,7 @@ Claims Detector uses multimodal AI to:
 | **Precise Positioning** | Claims pinpointed with x/y coordinates for bidirectional navigation |
 | **Brand Reference Library** | Upload and organize reference documents per brand with folder management |
 | **Claim-to-Reference Mapping** | Three-tier matching pipeline connects claims to source material |
-| **Reference Fact Indexing** | Pre-extract structured facts from references via Gemini for faster matching |
+| **Reference Fact Indexing** | Pre-extract structured facts from references via Gemini or LlamaParse-backed analysis for faster matching |
 | **Confidence Scoring** | 0-100 confidence rating for each detected claim |
 | **Claim Categorization** | Auto-classification: efficacy, safety, regulatory, comparative, dosage, ingredient, testimonial, pricing |
 | **Feedback Loop** | Approve/reject claims with optional reasons; feedback improves future detection |
@@ -108,7 +108,7 @@ claims_detector/
 |-------|------------|
 | **Frontend** | React 19.2, Vite 7.2, CSS Modules, pdfjs-dist |
 | **Backend** | Express 4.x, SQLite (better-sqlite3, WAL mode) |
-| **AI Models** | Google Gemini, OpenAI GPT-4o, Anthropic Claude |
+| **AI Models** | Google Gemini, OpenAI GPT-4o, Anthropic Claude, LlamaParse (reference analysis) |
 | **PDF Processing** | pdf-parse (server-side extraction), PDF.js (client-side rendering) |
 | **File Upload** | Multer (backend), drag-and-drop (frontend) |
 | **Deployment** | Vercel (frontend) |
@@ -152,7 +152,13 @@ GEMINI_API_KEY=your_gemini_api_key
 VITE_GEMINI_API_KEY=your_gemini_api_key
 VITE_OPENAI_API_KEY=your_openai_api_key
 VITE_ANTHROPIC_API_KEY=your_anthropic_api_key
+REFERENCE_ANALYSIS_PROVIDER=gemini
+LLAMA_CLOUD_API_KEY=your_llama_cloud_api_key
+LLAMA_PARSE_TIER=agentic
+LLAMA_PARSE_VERSION=latest
 ```
+
+If you want reference fact indexing to use LlamaParse first, set `REFERENCE_ANALYSIS_PROVIDER=llamaparse`. The backend will fall back to Gemini for a document when LlamaParse fails and Gemini is configured.
 
 ### Running
 
@@ -185,7 +191,7 @@ Vite proxies `/api` requests to `http://localhost:3001`.
 |---------|-------------|
 | `npm run dev` | Start Express with --watch |
 | `npm run preload` | Load reference PDFs into SQLite |
-| `node scripts/index-references.js` | Batch-extract facts from all references via Gemini |
+| `node scripts/index-references.js` | Batch-extract facts from all references via the configured provider |
 | `node scripts/index-references.js --force` | Re-index all references (even already indexed) |
 
 ---

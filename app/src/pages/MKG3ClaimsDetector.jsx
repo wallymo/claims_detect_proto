@@ -229,6 +229,7 @@ export default function MKG3ClaimsDetector() {
   const [analysisProgress, setAnalysisProgress] = useState(0)
   const [analysisStatus, setAnalysisStatus] = useState('')
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
+  const [isExportingPdf, setIsExportingPdf] = useState(false)
 
   const cancelAnalysisRef = useRef(false)
   const [matchingStats, setMatchingStats] = useState(null)
@@ -319,6 +320,15 @@ export default function MKG3ClaimsDetector() {
         .filter(Boolean)
     ).size,
     [ecosystemTrainingExamples]
+  )
+
+  const approvedExportCount = useMemo(
+    () => claims.filter(claim => (
+      claim?.status === 'approved'
+      && Array.isArray(claim.references)
+      && claim.references.length > 0
+    )).length,
+    [claims]
   )
 
   const promptInjectionText = useMemo(() => {
@@ -882,6 +892,39 @@ export default function MKG3ClaimsDetector() {
       handleAnalyze()
     } catch (err) {
       logger.error('Reset versions error:', err)
+    }
+  }
+
+  const handleExportMlrPdf = async () => {
+    if (!uploadedFile || approvedExportCount === 0) return
+
+    setIsExportingPdf(true)
+    setAnalysisError(null)
+
+    try {
+      const blob = await api.exportMlrAnnotations({
+        file: uploadedFile,
+        claims,
+        documentName: uploadedFile.name,
+        brandId: selectedBrandId,
+        documentHash
+      })
+
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      const downloadName = `${uploadedFile.name.replace(/\.pdf$/i, '') || 'annotations'}-mlr-export.pdf`
+
+      link.href = url
+      link.download = downloadName
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      logger.error('MLR export error:', err)
+      setAnalysisError(`Export failed: ${err.message}`)
+    } finally {
+      setIsExportingPdf(false)
     }
   }
 
@@ -1737,6 +1780,21 @@ export default function MKG3ClaimsDetector() {
                 <Icon name="refreshCw" size={14} />
               </button>
             </div>
+          )}
+          {uploadedFile && (
+            <button
+              className="exportPdfBtn"
+              onClick={handleExportMlrPdf}
+              disabled={isExportingPdf || approvedExportCount === 0}
+              title={
+                approvedExportCount > 0
+                  ? `Export ${approvedExportCount} approved annotation${approvedExportCount === 1 ? '' : 's'}`
+                  : 'Approve at least one claim with a reference to export'
+              }
+            >
+              <Icon name="arrow-down" size={14} />
+              {isExportingPdf ? 'Exporting...' : 'Export PDF'}
+            </button>
           )}
           <ThemeToggle />
         </div>

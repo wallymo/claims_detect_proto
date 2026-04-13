@@ -1,5 +1,5 @@
 /**
- * Batch-index reference documents to extract structured facts via Gemini.
+ * Batch-index reference documents to extract structured facts via the configured provider.
  * Run: node scripts/index-references.js
  * Flags:
  *   --force             Re-index all references (even already indexed)
@@ -9,7 +9,7 @@
 import 'dotenv/config'
 import pLimit from 'p-limit'
 import { initDb, getDb, closeDb } from '../src/config/database.js'
-import { extractFacts } from '../src/services/factExtractor.js'
+import { extractFactsDetailed, resolveReferenceAnalysisProvider } from '../src/services/factExtractor.js'
 
 function parseArgs() {
   const args = process.argv.slice(2)
@@ -26,10 +26,10 @@ function parseArgs() {
   return flags
 }
 
-async function extractWithRetry(contentText, pageCount, maxRetries = 3) {
+async function extractWithRetry(referenceInput, maxRetries = 3) {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      return await extractFacts(contentText, { pageCount })
+      return await extractFactsDetailed(referenceInput)
     } catch (err) {
       const is429 = err.message?.includes('429') || err.message?.includes('rate') || err.message?.includes('quota')
       if (is429 && attempt < maxRetries) {
@@ -49,23 +49,24 @@ async function main() {
   if (flags.force) console.log('Mode: FORCE (re-indexing all)')
   if (flags.brand) console.log(`Brand filter: ${flags.brand}`)
   console.log(`Concurrency: ${flags.concurrency}`)
+  console.log(`Provider: ${resolveReferenceAnalysisProvider()}`)
   console.log()
 
   initDb()
   const db = getDb()
 
-  if (!process.env.VITE_GEMINI_API_KEY) {
-    console.error('ERROR: VITE_GEMINI_API_KEY not set. Add it to backend/.env')
+  if (!process.env.VITE_GEMINI_API_KEY && !process.env.LLAMA_CLOUD_API_KEY) {
+    console.error('ERROR: No reference analysis provider configured. Set VITE_GEMINI_API_KEY or LLAMA_CLOUD_API_KEY in backend/.env')
     closeDb()
     process.exit(1)
   }
 
   // Build query for references needing indexing
   let query = `
-    SELECT rd.id, rd.display_alias, rd.filename, rd.content_text, rd.page_count, b.name as brand_name
+    SELECT rd.id, rd.display_alias, rd.filename, rd.file_path, rd.content_text, rd.page_count, b.name as brand_name
     FROM reference_documents rd
     JOIN brands b ON b.id = rd.brand_id
-    WHERE rd.content_text IS NOT NULL
+    WHERE (rd.content_text IS NOT NULL OR rd.file_path IS NOT NULL)
   `
   const params = []
 
@@ -116,17 +117,21 @@ async function main() {
           ).run(ref.id)
         }
 
-        const facts = await extractWithRetry(ref.content_text, ref.page_count)
+        const result = await extractWithRetry({
+          contentText: ref.content_text,
+          filePath: ref.file_path,
+          pageCount: ref.page_count
+        })
 
         // Store results
         db.prepare(`
           UPDATE reference_facts
-          SET facts_json = ?, extraction_status = 'indexed', model_used = 'gemini-3-pro-preview',
+          SET facts_json = ?, extraction_status = 'indexed', model_used = ?,
               error_message = NULL, updated_at = CURRENT_TIMESTAMP
           WHERE reference_id = ?
-        `).run(JSON.stringify(facts), ref.id)
+        `).run(JSON.stringify(result.facts), result.modelUsed, ref.id)
 
-        console.log(`  ✓ ${label}: ${facts.length} facts extracted`)
+        console.log(`  ✓ ${label}: ${result.facts.length} facts extracted via ${result.modelUsed}`)
         indexed++
       } catch (err) {
         console.error(`  ✗ ${label}: FAILED — ${err.message}`)

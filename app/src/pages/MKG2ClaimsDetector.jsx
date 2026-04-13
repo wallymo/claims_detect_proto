@@ -55,7 +55,7 @@ const PROMPT_DISPLAY_TEXT = {
 // ===== Analysis Result Cache =====
 
 const ANALYSIS_CACHE_NS = 'claims_analysis_v3'
-const ANALYSIS_CACHE_VERSION = String(import.meta.env.VITE_ANALYSIS_CACHE_VERSION || '2026-02-20').trim() || '2026-02-20'
+const ANALYSIS_CACHE_VERSION = String(import.meta.env.VITE_ANALYSIS_CACHE_VERSION || '2026-04-03-facts-v2').trim() || '2026-04-03-facts-v2'
 const ANALYSIS_BROWSER_CACHE_NS = `${ANALYSIS_CACHE_NS}:browser`
 
 function parseBooleanEnvFlag(value, fallback) {
@@ -92,8 +92,17 @@ function stableStringHash(value) {
   return (h >>> 0).toString(16).padStart(8, '0')
 }
 
-function makeReferenceFingerprint(refIds) {
-  return refIds && refIds.length > 0 ? [...refIds].sort((a, b) => a - b).join(',') : 'norefs'
+function makeReferenceFingerprint(refs) {
+  if (!Array.isArray(refs) || refs.length === 0) return 'norefs'
+  return [...refs]
+    .map((ref) => {
+      const id = Number.isFinite(Number(ref?.id)) ? Number(ref.id) : ''
+      const factsCount = Number.isFinite(Number(ref?.facts_count)) ? Number(ref.facts_count) : 0
+      const extractionStatus = String(ref?.extraction_status || '')
+      return `${id}:${factsCount}:${extractionStatus}`
+    })
+    .sort()
+    .join(',')
 }
 
 function rememberAnalysisCacheDescriptor(descriptor) {
@@ -185,10 +194,10 @@ async function getFileSha256(file) {
   return promise
 }
 
-async function makeAnalysisCacheDescriptor(file, model, promptKey, editablePrompt, docType, brandId, refIds) {
+async function makeAnalysisCacheDescriptor(file, model, promptKey, editablePrompt, docType, brandId, refs) {
   const fileSha = await getFileSha256(file)
   const promptHash = stableStringHash(editablePrompt)
-  const referencesFingerprint = makeReferenceFingerprint(refIds)
+  const referencesFingerprint = makeReferenceFingerprint(refs)
   const normalizedDocType = docType || 'speaker-notes'
   const normalizedBrandId = Number.isFinite(Number(brandId)) ? Number(brandId) : null
 
@@ -354,9 +363,6 @@ function mergeTrainingSessionsByDocument(sessions) {
 
 // ===== Fact Inventory =====
 
-const FACT_INVENTORY_MAX_REFERENCES = 14
-const FACT_INVENTORY_MAX_FACTS_PER_REFERENCE = 5
-const FACT_INVENTORY_MAX_TOTAL_FACTS = 140
 const FACT_INVENTORY_MAX_CHARS = 18000
 const FACT_INVENTORY_FACT_TEXT_MAX_CHARS = 260
 const FACT_INVENTORY_HEADER = '\n\nREFERENCE FACT INVENTORY (background context only; do NOT limit extraction to these facts):\n'
@@ -999,7 +1005,6 @@ export default function MKG2ClaimsDetector() {
 
       try {
         const promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
-        const refIds = referenceDocuments.map(r => r.id)
         const descriptor = await makeAnalysisCacheDescriptor(
           uploadedFile,
           selectedModel,
@@ -1007,7 +1012,7 @@ export default function MKG2ClaimsDetector() {
           editablePrompt,
           selectedDocType || 'speaker-notes',
           selectedBrandId,
-          refIds
+          referenceDocuments
         )
         if (cancelled) return
         const cached = await readAnalysisCache(descriptor.key)
@@ -1033,7 +1038,6 @@ export default function MKG2ClaimsDetector() {
     matchingJobIdRef.current = null
 
     const _promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
-    const _refIds = referenceDocuments.map(r => r.id)
     const cacheDescriptor = await makeAnalysisCacheDescriptor(
       uploadedFile,
       selectedModel,
@@ -1041,7 +1045,7 @@ export default function MKG2ClaimsDetector() {
       editablePrompt,
       selectedDocType || 'speaker-notes',
       selectedBrandId,
-      _refIds
+      referenceDocuments
     )
     const _cacheKey = cacheDescriptor.key
     currentCacheKeyRef.current = _cacheKey
@@ -1119,34 +1123,22 @@ export default function MKG2ClaimsDetector() {
           const factRefs = await api.fetchFactsSummary(factBrandId)
           const indexedRefs = factRefs.filter(r => r.extraction_status === 'indexed' && r.facts_count > 0)
           if (indexedRefs.length > 0) {
-            const candidateRefs = indexedRefs.slice(0, FACT_INVENTORY_MAX_REFERENCES)
             const lines = []
-            let totalFacts = 0
             let totalChars = FACT_INVENTORY_HEADER.length
-            let truncated = candidateRefs.length < indexedRefs.length
+            let truncated = false
+            let charLimitReached = false
 
-            for (const ref of candidateRefs) {
-              if (totalFacts >= FACT_INVENTORY_MAX_TOTAL_FACTS) {
-                truncated = true
+            for (const ref of indexedRefs) {
+              if (charLimitReached) {
                 break
               }
 
-              // Fetch facts for indexed references, then cap per reference and total prompt size.
+              // Fetch all indexed facts until the prompt-size guardrail is hit.
               const factsData = await api.fetchFacts(factBrandId, ref.reference_id)
               if (cancelAnalysisRef.current) return
               const facts = Array.isArray(factsData.facts) ? factsData.facts : []
-              let perReferenceFacts = 0
 
               for (const fact of facts) {
-                if (perReferenceFacts >= FACT_INVENTORY_MAX_FACTS_PER_REFERENCE) {
-                  truncated = true
-                  break
-                }
-                if (totalFacts >= FACT_INVENTORY_MAX_TOTAL_FACTS) {
-                  truncated = true
-                  break
-                }
-
                 const factText = normalizeFactText(fact.text)
                 if (!factText) continue
 
@@ -1155,29 +1147,23 @@ export default function MKG2ClaimsDetector() {
 
                 if (totalChars + line.length + 1 > FACT_INVENTORY_MAX_CHARS) {
                   truncated = true
+                  charLimitReached = true
                   break
                 }
 
                 lines.push(line)
-                perReferenceFacts += 1
-                totalFacts += 1
                 totalChars += line.length + 1
-              }
-
-              if (totalChars >= FACT_INVENTORY_MAX_CHARS) {
-                truncated = true
-                break
               }
             }
 
             if (lines.length > 0) {
               factInventory = `${FACT_INVENTORY_HEADER}${lines.join('\n')}`
               if (truncated) {
-                factInventory += '\n- [context] Additional indexed facts were omitted for brevity. Treat this inventory as optional background only.'
+                factInventory += '\n- [context] Additional indexed facts were omitted to stay within prompt size limits. Treat this inventory as optional background only.'
               }
             }
             logger.info(
-              `Loaded ${lines.length} fact lines from up to ${candidateRefs.length}/${indexedRefs.length} indexed references (truncated=${truncated})`
+              `Loaded ${lines.length} fact lines from ${indexedRefs.length} indexed references (truncated=${truncated})`
             )
           }
         } catch (err) {
@@ -1286,7 +1272,6 @@ export default function MKG2ClaimsDetector() {
 
     // Compute the key fresh in case currentCacheKeyRef hasn't been set yet
     const _promptKey = PROMPT_OPTIONS.find(p => p.id === selectedPrompt)?.promptKey || 'all'
-    const _refIds = referenceDocuments.map(r => r.id)
     const descriptor = await makeAnalysisCacheDescriptor(
       uploadedFile,
       selectedModel,
@@ -1294,7 +1279,7 @@ export default function MKG2ClaimsDetector() {
       editablePrompt,
       selectedDocType || 'speaker-notes',
       selectedBrandId,
-      _refIds
+      referenceDocuments
     )
     deleteAnalysisCache(descriptor.key)
     if (currentCacheKeyRef.current) deleteAnalysisCache(currentCacheKeyRef.current)

@@ -14,6 +14,7 @@ import brandPatternRoutes from './brand-patterns.js'
 import documentLineageRoutes from './document-lineage.js'
 import pymupdfRoutes from './pymupdf.js'
 import evidenceRoutes from './evidence.js'
+import exportRoutes from './exports.js'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -40,6 +41,7 @@ export function registerRoutes(app) {
   app.use('/api/document-lineage', documentLineageRoutes)
   app.use('/api/pymupdf-extract', pymupdfRoutes)
   app.use('/api/evidence', evidenceRoutes)
+  app.use('/api/exports', exportRoutes)
 
   // Temporary: capture V2 pipeline diagnostics to disk for analysis (dev only)
   if (process.env.NODE_ENV !== 'production') {

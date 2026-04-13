@@ -9,13 +9,13 @@ function hydrateRow(row) {
 }
 
 export const EvidenceSuggestion = {
-  bulkCreate(suggestions, debugData = {}) {
+  bulkCreate(suggestions, debugData = {}, origin = 'rules_plus_ai') {
     const db = getDb()
     const stmt = db.prepare(`
       INSERT OR REPLACE INTO evidence_suggestions
         (suggestion_id, claim_id, reference_id, page_number, type, rects, text,
          score, support_strength, rationale, status, origin, raw_shortlist, raw_gemini_response, location_annotation)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'suggested', 'rules_plus_ai', ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'suggested', ?, ?, ?, ?)
     `)
     const insert = db.transaction((rows) => {
       for (const s of rows) {
@@ -23,6 +23,7 @@ export const EvidenceSuggestion = {
           s.suggestion_id, s.claim_id, s.reference_id, s.page_number,
           s.type, JSON.stringify(s.rects), s.text,
           s.score, s.support_strength, s.rationale,
+          s.origin || origin,
           debugData.raw_shortlist ? JSON.stringify(debugData.raw_shortlist) : null,
           debugData.raw_gemini_response ? JSON.stringify(debugData.raw_gemini_response) : null,
           s.location_annotation || null

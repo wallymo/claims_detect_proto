@@ -14,6 +14,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PROJECT_ROOT = path.resolve(__dirname, '../../..')
 const PYTHON_BIN = path.join(PROJECT_ROOT, 'scripts/.venv/bin/python3')
 const PYMUPDF_SCRIPT = path.join(PROJECT_ROOT, 'scripts/pymupdf_poc.py')
+const PYMUPDF_TIMEOUT_MS = Number.parseInt(process.env.PYMUPDF_TIMEOUT_MS || '180000', 10)
 
 // Disk-based upload to temp dir — execFile needs a file path
 export const pymupdfUpload = multer({
@@ -44,7 +45,7 @@ export const pymupdfController = {
       const { stdout, stderr } = await execFileAsync(
         PYTHON_BIN,
         [PYMUPDF_SCRIPT, tempPath],
-        { maxBuffer: 50 * 1024 * 1024, timeout: 60_000 }
+        { maxBuffer: 50 * 1024 * 1024, timeout: PYMUPDF_TIMEOUT_MS }
       )
 
       if (stderr) {

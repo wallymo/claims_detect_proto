@@ -1,7 +1,8 @@
 import { ReferenceFact } from '../models/ReferenceFact.js'
 import { Reference } from '../models/Reference.js'
 import { Brand } from '../models/Brand.js'
-import { extractFacts } from '../services/factExtractor.js'
+import path from 'path'
+import { extractFactsDetailed } from '../services/factExtractor.js'
 import { AppError } from '../middleware/errorHandler.js'
 
 function cosineSimilarity(bufA, bufB) {
@@ -47,17 +48,21 @@ export const factController = {
       const refId = parseInt(req.params.refId, 10)
       const ref = Reference.findById(refId)
       if (!ref) throw new AppError('Reference not found', 404)
-      if (!ref.content_text) throw new AppError('Reference has no extracted text', 400)
+      if (!ref.content_text && !ref.file_path) throw new AppError('Reference has no extracted text or source file', 400)
 
       // Mark as pending immediately
       ReferenceFact.updateStatus(refId, 'extracting')
       res.json({ message: 'Extraction started', reference_id: refId })
 
       // Run extraction async (non-blocking)
-      extractFacts(ref.content_text, { pageCount: ref.page_count })
-        .then(facts => {
-          ReferenceFact.createOrUpdate(refId, facts, 'indexed', 'gemini-3-pro-preview')
-          console.log(`Indexed ref ${refId} (${ref.display_alias}): ${facts.length} facts`)
+      extractFactsDetailed({
+        contentText: ref.content_text,
+        filePath: ref.file_path ? path.resolve(process.cwd(), ref.file_path) : null,
+        pageCount: ref.page_count
+      })
+        .then(result => {
+          ReferenceFact.createOrUpdate(refId, result.facts, 'indexed', result.modelUsed)
+          console.log(`Indexed ref ${refId} (${ref.display_alias}): ${result.facts.length} facts via ${result.modelUsed}`)
         })
         .catch(err => {
           console.error(`Extraction failed for ref ${refId}:`, err.message)

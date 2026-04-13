@@ -326,6 +326,21 @@ export async function extractWithPyMuPDF(file) {
   })
 }
 
+export async function exportMlrAnnotations({ file, claims, documentName, brandId, documentHash }) {
+  const formData = new FormData()
+  formData.append('pdf', file)
+  formData.append('claims_json', JSON.stringify(Array.isArray(claims) ? claims : []))
+
+  if (documentName) formData.append('document_name', documentName)
+  if (brandId != null) formData.append('brand_id', String(brandId))
+  if (documentHash) formData.append('document_hash', documentHash)
+
+  return request('/exports/mlr', {
+    method: 'POST',
+    body: formData
+  })
+}
+
 // ========== Document Lineage ==========
 
 export async function createDocumentLineage({ document_hash, parent_hash, brand_id, similarity_score }) {

@@ -8,6 +8,7 @@ import { AppError } from '../middleware/errorHandler.js'
 import { Reference } from '../models/Reference.js'
 import { EvidenceSuggestion } from '../models/EvidenceSuggestion.js'
 import { AcceptedEvidence } from '../models/AcceptedEvidence.js'
+import { selectCandidatesWithLlamaParse } from '../services/evidenceSuggestionRanker.js'
 
 const execFileAsync = promisify(execFile)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -15,6 +16,20 @@ const PROJECT_ROOT = path.resolve(__dirname, '../../..')
 const PYTHON_BIN = path.join(PROJECT_ROOT, 'scripts/.venv/bin/python3')
 const CANDIDATES_SCRIPT = path.join(PROJECT_ROOT, 'scripts/evidence_candidates.py')
 const RENDER_SCRIPT = path.join(PROJECT_ROOT, 'scripts/render_page.py')
+const LLAMA_PARSE_SCRIPT = path.join(PROJECT_ROOT, 'scripts/llamaparse_reference_facts.py')
+
+function resolveReferencePdfPath(filePath) {
+  if (!filePath) return null
+  if (path.isAbsolute(filePath)) return filePath
+
+  const candidates = [
+    path.resolve(process.cwd(), filePath),
+    path.resolve(PROJECT_ROOT, 'backend', filePath),
+    path.resolve(PROJECT_ROOT, filePath),
+  ]
+
+  return candidates.find(candidate => fs.existsSync(candidate)) || candidates[0]
+}
 
 function normalizeLocationAnnotation(value) {
   if (typeof value !== 'string') {
@@ -35,8 +50,44 @@ function getGeminiClient() {
   return new GoogleGenAI({ apiKey })
 }
 
+function resolveEvidenceSuggestionProvider() {
+  const normalized = String(process.env.EVIDENCE_SUGGESTION_PROVIDER || '').trim().toLowerCase()
+  if (normalized === 'llamaparse' || normalized === 'llama_parse' || normalized === 'llama-parse') {
+    return 'llamaparse'
+  }
+  return 'gemini'
+}
+
 function stripCodeFences(text) {
   return text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim()
+}
+
+async function parseWithLlamaParse(pdfPath) {
+  const apiKey = process.env.LLAMA_CLOUD_API_KEY
+  if (!apiKey) {
+    throw new AppError('LLAMA_CLOUD_API_KEY not set', 500)
+  }
+
+  const { stdout } = await execFileAsync(
+    PYTHON_BIN,
+    [
+      LLAMA_PARSE_SCRIPT,
+      pdfPath,
+      '--tier',
+      process.env.LLAMA_PARSE_TIER || 'agentic',
+      '--version',
+      process.env.LLAMA_PARSE_VERSION || 'latest'
+    ],
+    {
+      cwd: PROJECT_ROOT,
+      env: process.env,
+      maxBuffer: 50 * 1024 * 1024,
+      timeout: 120_000
+    }
+  )
+
+  const payload = JSON.parse(stdout)
+  return Array.isArray(payload?.pages) ? payload.pages : []
 }
 
 async function decomposeClaimWithGemini(ai, claimText) {
@@ -164,7 +215,8 @@ export const evidenceController = {
       const shortCitation = ref.display_alias
         || ref.filename?.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ')
         || 'Reference'
-      if (!ref.file_path || !fs.existsSync(ref.file_path)) {
+      const pdfPath = resolveReferencePdfPath(ref.file_path)
+      if (!pdfPath || !fs.existsSync(pdfPath)) {
         throw new AppError('Reference PDF file not found on disk', 404)
       }
 
@@ -172,9 +224,9 @@ export const evidenceController = {
         throw new AppError('Python venv not found. Run: python3 -m venv scripts/.venv && scripts/.venv/bin/pip install -r scripts/requirements.txt', 500)
       }
 
-      const { stdout, stderr } = await execFileAsync(
+      const { stdout } = await execFileAsync(
         PYTHON_BIN,
-        [CANDIDATES_SCRIPT, ref.file_path, '--claim', claim_text, '--top-k', '30'],
+        [CANDIDATES_SCRIPT, pdfPath, '--claim', claim_text, '--top-k', '30'],
         { maxBuffer: 50 * 1024 * 1024, timeout: 30_000 }
       )
 
@@ -185,6 +237,42 @@ export const evidenceController = {
         return res.json({ suggestions: [] })
       }
 
+      const evidenceProvider = resolveEvidenceSuggestionProvider()
+      if (evidenceProvider === 'llamaparse') {
+        const parsedPages = await parseWithLlamaParse(pdfPath)
+        const selected = selectCandidatesWithLlamaParse(claim_text, candidates, parsedPages, 6)
+        const candidateMap = new Map(candidates.map(c => [c.candidate_id, c]))
+        const suggestions = selected.map((sel, idx) => {
+          const cand = candidateMap.get(sel.candidate_id) || {}
+          return {
+            suggestion_id: `es_${reference_id}_${claim_id}_${idx + 1}`,
+            claim_id,
+            reference_id,
+            page_number: cand.page_number || 1,
+            type: cand.type || 'text',
+            rects: cand.rects || [],
+            text: cand.text || null,
+            score: sel.score || 0,
+            support_strength: sel.support_strength || 'weak_support',
+            rationale: sel.rationale || null,
+            status: 'suggested',
+            origin: 'rules_plus_llamaparse',
+            location_annotation: `${shortCitation}${cand.location_annotation || ''}`,
+          }
+        })
+
+        EvidenceSuggestion.bulkCreate(suggestions, {
+          raw_shortlist: candidateResult,
+          raw_gemini_response: {
+            provider: 'llamaparse',
+            parsed_page_count: parsedPages.length,
+            selected
+          },
+        }, 'rules_plus_llamaparse')
+
+        return res.json({ suggestions })
+      }
+
       const ai = getGeminiClient()
 
       // Vision lane: analyze flagged pages for charts/figures
@@ -193,7 +281,7 @@ export const evidenceController = {
         let visIdx = 0
         for (const vp of visionPages.slice(0, 3)) {
           try {
-            const visionResult = await analyzePageWithVision(ai, ref.file_path, vp)
+            const visionResult = await analyzePageWithVision(ai, pdfPath, vp)
             const vpWidth = visionResult.pageWidth || 612
             const vpHeight = visionResult.pageHeight || 792
             for (const visual of (visionResult.visuals || [])) {
@@ -253,7 +341,7 @@ export const evidenceController = {
       EvidenceSuggestion.bulkCreate(suggestions, {
         raw_shortlist: candidateResult,
         raw_gemini_response: rerankResult,
-      })
+      }, 'rules_plus_ai')
 
       res.json({ suggestions })
     } catch (err) {
