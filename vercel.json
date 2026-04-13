@@ -13,6 +13,10 @@
   ],
   "rewrites": [
     {
+      "source": "/api/:path*",
+      "destination": "https://claimsdetectproto-production.up.railway.app/api/:path*"
+    },
+    {
       "source": "/:path((?!api(?:/|$))(?!.*\\.[^/]+$).*)",
       "destination": "/index.html"
     }
