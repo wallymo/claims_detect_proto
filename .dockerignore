@@ -1,0 +1,14 @@
+node_modules
+backend/node_modules
+backend/data
+backend/uploads
+app/node_modules
+app/dist
+.worktrees
+.git
+MKG Knowledge Base
+References
+*.mov
+.env
+.env.*
+!.env.example
