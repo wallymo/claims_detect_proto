@@ -24,7 +24,7 @@ function pdfRectToViewport(rect, fitScale) {
  * Reference Viewer — renders reference PDF with evidence suggestion sidebar,
  * accept/reject workflow, and manual draw mode for evidence boxes.
  */
-export default function ReferenceViewer({ referenceId, page, excerpt, claimId, claimText }) {
+export default function ReferenceViewer({ referenceId, page, excerpt, claimId, claimText, onEvidenceChanged }) {
   const [pdfDoc, setPdfDoc] = useState(null)
   const [currentPage, setCurrentPage] = useState(page || 1)
   const [totalPages, setTotalPages] = useState(0)
@@ -84,6 +84,11 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
       ...prev,
       [suggestionId]: !prev[suggestionId],
     }))
+  }
+
+  function emitEvidenceChanged(nextAcceptedEvidence) {
+    if (!claimId) return
+    onEvidenceChanged?.(claimId, nextAcceptedEvidence)
   }
 
   function beginLocationEdit(kind, item) {
@@ -510,12 +515,15 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
         ))
       }
       if (data.accepted_evidence) {
-        setAcceptedEvidence(prev => {
-          if (prev.some(ev => ev.evidence_id === data.accepted_evidence.evidence_id)) {
-            return prev
-          }
-          return [...prev, data.accepted_evidence]
-        })
+        const alreadyAccepted = acceptedEvidence.some(
+          ev => ev.evidence_id === data.accepted_evidence.evidence_id
+        )
+        const nextAcceptedEvidence = alreadyAccepted
+          ? acceptedEvidence
+          : [...acceptedEvidence, data.accepted_evidence]
+
+        setAcceptedEvidence(nextAcceptedEvidence)
+        emitEvidenceChanged(nextAcceptedEvidence)
       }
     } catch (err) {
       logger.error('Failed to accept suggestion:', err)
@@ -535,6 +543,32 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
     }
   }
 
+  async function handleResetSuggestion(suggestion) {
+    const matchedAcceptedEvidence = acceptedEvidence.find(ev =>
+      ev.suggestion_id === suggestion.suggestion_id || ev.evidence_id === `ae_${suggestion.suggestion_id}`
+    )
+
+    try {
+      if (matchedAcceptedEvidence) {
+        await api.deleteAcceptedEvidence(matchedAcceptedEvidence.evidence_id)
+        const nextAcceptedEvidence = acceptedEvidence.filter(
+          ev => ev.evidence_id !== matchedAcceptedEvidence.evidence_id
+        )
+        setAcceptedEvidence(nextAcceptedEvidence)
+        emitEvidenceChanged(nextAcceptedEvidence)
+      }
+
+      const data = await api.updateEvidenceSuggestionStatus(suggestion.suggestion_id, 'suggested')
+      if (data.suggestion) {
+        setSuggestions(prev => prev.map(s =>
+          s.suggestion_id === suggestion.suggestion_id ? { ...s, ...data.suggestion } : s
+        ))
+      }
+    } catch (err) {
+      logger.error('Failed to reset accepted suggestion:', err)
+    }
+  }
+
   async function handleRejectSuggestion(suggestion) {
     try {
       const data = await api.updateEvidenceSuggestionStatus(suggestion.suggestion_id, 'rejected')
@@ -542,6 +576,13 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
         setSuggestions(prev => prev.map(s =>
           s.suggestion_id === suggestion.suggestion_id ? { ...s, ...data.suggestion } : s
         ))
+      }
+
+      const acceptedEvidenceId = `ae_${suggestion.suggestion_id}`
+      if (acceptedEvidence.some(ev => ev.evidence_id === acceptedEvidenceId)) {
+        const nextAcceptedEvidence = acceptedEvidence.filter(ev => ev.evidence_id !== acceptedEvidenceId)
+        setAcceptedEvidence(nextAcceptedEvidence)
+        emitEvidenceChanged(nextAcceptedEvidence)
       }
     } catch (err) {
       logger.error('Failed to reject suggestion:', err)
@@ -593,7 +634,9 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
         text: null,
       })
       if (data.evidence) {
-        setAcceptedEvidence(prev => [...prev, data.evidence])
+        const nextAcceptedEvidence = [...acceptedEvidence, data.evidence]
+        setAcceptedEvidence(nextAcceptedEvidence)
+        emitEvidenceChanged(nextAcceptedEvidence)
       }
     } catch (err) {
       logger.error('Failed to save manual evidence:', err)
@@ -660,7 +703,9 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
     api.deleteAcceptedEvidence(evidenceId).catch(err =>
       logger.error('Failed to delete evidence:', err)
     )
-    setAcceptedEvidence(prev => prev.filter(e => e.evidence_id !== evidenceId))
+    const nextAcceptedEvidence = acceptedEvidence.filter(e => e.evidence_id !== evidenceId)
+    setAcceptedEvidence(nextAcceptedEvidence)
+    emitEvidenceChanged(nextAcceptedEvidence)
   }
 
   if (loading) {
@@ -862,7 +907,20 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
                           </div>
                         )}
                         {s.status === 'accepted' && (
-                          <span style={{ fontSize: '11px', color: 'var(--green-7)', fontWeight: 500 }}>Accepted</span>
+                          <div className={styles.suggestionActions}>
+                            <button
+                              type="button"
+                              className={styles.resetSuggestionButton}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleResetSuggestion(s)
+                              }}
+                            >
+                              <Icon name="refreshCw" size={12} />
+                              Reset
+                            </button>
+                            <span className={styles.acceptedBadge}>Accepted</span>
+                          </div>
                         )}
                         {s.status === 'rejected' && (
                           <Button variant="ghost" size="small" onClick={(e) => { e.stopPropagation(); handleUndoReject(s) }}>

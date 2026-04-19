@@ -192,6 +192,15 @@ function transformPyMuPDFResults(data, referenceDocuments = []) {
         globalSpot: true,
         globalReason: g.global_reason || 'orphan-page-reference',
         status: 'pending',
+        childClaims: (g.childClaims || []).map((cc, ccIdx) => ({
+          id: cc.id || `pymupdf-gc-${page.page}-${idx}-${ccIdx}`,
+          text: cc.text,
+          position: cc.position || null,
+          source: 'global-deep-link',
+          confidence: cc.confidence || 0,
+          reference_id: cc.reference_id || null,
+          evidence: cc.evidence || null,
+        })),
       })
     }
   }
@@ -288,6 +297,7 @@ export default function MKG3ClaimsDetector() {
 
   // Reference viewer overlay
   const [referenceViewerData, setReferenceViewerData] = useState(null)
+  const [acceptedEvidenceByClaim, setAcceptedEvidenceByClaim] = useState({})
 
   // Training data state
   const [trainingDocuments, setTrainingDocuments] = useState([])
@@ -861,6 +871,51 @@ export default function MKG3ClaimsDetector() {
     logger.info({ event: 'evidence_prefetch_started', pairs: pairs.length })
   }, [analysisComplete, claims])
 
+  const activeClaimIdsJson = useMemo(
+    () => JSON.stringify(Array.from(new Set(claims.map(claim => claim?.id).filter(Boolean)))),
+    [claims]
+  )
+
+  useEffect(() => {
+    const claimIds = JSON.parse(activeClaimIdsJson)
+
+    if (claimIds.length === 0) {
+      setAcceptedEvidenceByClaim({})
+      return
+    }
+
+    let cancelled = false
+
+    async function loadAcceptedEvidenceBatch() {
+      try {
+        const evidence = await api.fetchAcceptedEvidenceBatch(claimIds)
+        if (cancelled) return
+
+        const grouped = evidence.reduce((acc, item) => {
+          if (!item?.claim_id) return acc
+          if (!acc[item.claim_id]) {
+            acc[item.claim_id] = []
+          }
+          acc[item.claim_id].push(item)
+          return acc
+        }, {})
+
+        setAcceptedEvidenceByClaim(grouped)
+      } catch (err) {
+        if (!cancelled) {
+          logger.error('Failed to load accepted evidence batch:', err)
+          setAcceptedEvidenceByClaim({})
+        }
+      }
+    }
+
+    loadAcceptedEvidenceBatch()
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeClaimIdsJson])
+
   const handleSaveVersion = async () => {
     if (!documentHash || claims.length === 0) return
     try {
@@ -1326,6 +1381,59 @@ export default function MKG3ClaimsDetector() {
       claimText: claimText || null,
     })
   }
+
+  const handleChildEvidenceClick = useCallback((childClaim) => {
+    if (!childClaim?.evidence || !childClaim?.reference_id) return
+    setReferenceViewerData({
+      referenceId: childClaim.reference_id,
+      page: childClaim.evidence.page_number,
+      excerpt: childClaim.evidence.snippet,
+      claimId: childClaim.id,
+      claimText: childClaim.text,
+      highlightRects: childClaim.evidence.rects,
+    })
+  }, [])
+
+  const handleEvidenceChanged = useCallback((claimId, updatedList) => {
+    if (!claimId) return
+
+    const nextList = Array.isArray(updatedList) ? updatedList : []
+
+    setAcceptedEvidenceByClaim(prev => {
+      if (nextList.length === 0) {
+        const { [claimId]: _removed, ...rest } = prev
+        return rest
+      }
+
+      return {
+        ...prev,
+        [claimId]: nextList,
+      }
+    })
+  }, [])
+
+  const handleDeleteAcceptedEvidenceFromCard = useCallback(async (evidenceId, claimId) => {
+    if (!evidenceId || !claimId) return
+
+    try {
+      await api.deleteAcceptedEvidence(evidenceId)
+      setAcceptedEvidenceByClaim(prev => {
+        const nextList = (prev[claimId] || []).filter(item => item.evidence_id !== evidenceId)
+
+        if (nextList.length === 0) {
+          const { [claimId]: _removed, ...rest } = prev
+          return rest
+        }
+
+        return {
+          ...prev,
+          [claimId]: nextList,
+        }
+      })
+    } catch (err) {
+      logger.error('Failed to delete accepted evidence from claim card:', err)
+    }
+  }, [])
 
   // ===== Missed Claim Reporting =====
 
@@ -2260,8 +2368,11 @@ export default function MKG3ClaimsDetector() {
                                     onDelete={handleClaimDelete}
                                     onUndo={handleClaimUndo}
                                     onRefChange={handleRefChange}
+                                    acceptedEvidence={acceptedEvidenceByClaim[claim.id] ?? []}
+                                    onDeleteAcceptedEvidence={(evidenceId) => handleDeleteAcceptedEvidenceFromCard(evidenceId, claim.id)}
                                     brandReferences={referenceDocuments}
                                     trainingExamples={trainingExamples}
+                                    onChildEvidenceClick={handleChildEvidenceClick}
                                   />
                                 </div>
                               ))}
@@ -2281,10 +2392,13 @@ export default function MKG3ClaimsDetector() {
                           onSelect={() => handleClaimSelect(claim.id)}
                           onViewRef={(ref, statement) => handleViewRef(ref, statement, claim.id)}
                           onDelete={handleClaimDelete}
-                                    onUndo={handleClaimUndo}
+                          onUndo={handleClaimUndo}
                           onRefChange={handleRefChange}
+                          acceptedEvidence={acceptedEvidenceByClaim[claim.id] ?? []}
+                          onDeleteAcceptedEvidence={(evidenceId) => handleDeleteAcceptedEvidenceFromCard(evidenceId, claim.id)}
                           brandReferences={referenceDocuments}
                           trainingExamples={trainingExamples}
+                          onChildEvidenceClick={handleChildEvidenceClick}
                         />
                       </div>
                     ))}
@@ -2315,6 +2429,8 @@ export default function MKG3ClaimsDetector() {
                                 isActive={activeClaimId === mc.id}
                                 onSelect={() => handleClaimSelect(mc.id)}
                                 onRemove={handleRemoveMissedClaim}
+                                acceptedEvidence={acceptedEvidenceByClaim[mc.id] ?? []}
+                                onDeleteAcceptedEvidence={(evidenceId) => handleDeleteAcceptedEvidenceFromCard(evidenceId, mc.id)}
                                 brandReferences={referenceDocuments}
                                 trainingExamples={trainingExamples}
                               />
@@ -2372,6 +2488,8 @@ export default function MKG3ClaimsDetector() {
                 excerpt={referenceViewerData.excerpt}
                 claimId={referenceViewerData.claimId}
                 claimText={referenceViewerData.claimText}
+                onEvidenceChanged={handleEvidenceChanged}
+                highlightRects={referenceViewerData.highlightRects}
               />
             </div>
           </div>

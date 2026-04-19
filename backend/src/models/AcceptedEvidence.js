@@ -34,6 +34,21 @@ export const AcceptedEvidence = {
     return rows.map(hydrateRow)
   },
 
+  findByClaimIds(claimIds) {
+    if (!Array.isArray(claimIds) || claimIds.length === 0) {
+      return []
+    }
+
+    const db = getDb()
+    const placeholders = claimIds.map(() => '?').join(', ')
+    const rows = db.prepare(`
+      SELECT * FROM accepted_evidence
+      WHERE claim_id IN (${placeholders})
+      ORDER BY claim_id, page_number, created_at
+    `).all(...claimIds)
+    return rows.map(hydrateRow)
+  },
+
   updateLocationAnnotation(evidenceId, locationAnnotation) {
     const db = getDb()
     db.prepare(`

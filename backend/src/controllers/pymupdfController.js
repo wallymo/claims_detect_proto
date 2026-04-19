@@ -6,6 +6,7 @@ import fs from 'fs'
 import os from 'os'
 import { fileURLToPath } from 'url'
 import { AppError } from '../middleware/errorHandler.js'
+import { enrichGlobalAnnotations } from '../services/globalAnnotationLinker.js'
 
 const execFileAsync = promisify(execFile)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -52,7 +53,12 @@ export const pymupdfController = {
         console.warn('PyMuPDF stderr:', stderr)
       }
 
-      const result = JSON.parse(stdout)
+      let result = JSON.parse(stdout)
+      try {
+        result = await enrichGlobalAnnotations(result, req.body?.brandId || req.query?.brandId)
+      } catch (err) {
+        console.warn('[PyMuPDF] Global annotation enrichment failed:', err.message)
+      }
       res.json(result)
     } catch (err) {
       if (err.killed) {

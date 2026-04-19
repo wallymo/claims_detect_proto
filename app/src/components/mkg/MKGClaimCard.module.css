@@ -596,6 +596,32 @@
   color: var(--green-11);
 }
 
+.refCalloutChild {
+  position: relative;
+  align-items: center;
+  margin-left: 22px;
+  padding-right: 34px;
+  font-size: 11px;
+}
+
+.refCalloutChild .refText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.refCalloutGroupLabel {
+  font-size: 11px;
+}
+
+.refChildArrow {
+  flex-shrink: 0;
+  font-size: 12px;
+  line-height: 1;
+}
+
 .refNumber {
   font-weight: 700;
   flex-shrink: 0;
@@ -615,9 +641,37 @@
   border-color: var(--green-7);
 }
 
-.refCalloutDimmed {
-  opacity: 0.55;
-  cursor: default;
+.refCalloutDelete {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.refCalloutChild:hover .refCalloutDelete,
+.refCalloutDelete:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.refCalloutDelete:hover,
+.refCalloutDelete:focus-visible {
+  background: var(--green-2);
+  color: var(--green-11);
+  outline: none;
 }
 
 .refViewIcon {
@@ -814,4 +868,77 @@
   text-align: center;
   padding: 8px;
   margin: 0;
+}
+
+.childClaimsToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: 1px solid var(--gray-6);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--gray-9);
+  cursor: pointer;
+  margin-left: 6px;
+}
+.childClaimsToggle:hover {
+  background: var(--gray-3);
+}
+
+.childClaimsSection {
+  margin-top: 8px;
+  border-top: 1px solid var(--gray-4);
+  padding-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.childClaimRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: var(--gray-2);
+}
+
+.childClaimText {
+  font-size: 12px;
+  color: var(--gray-11);
+  line-height: 1.4;
+  flex: 1;
+}
+
+.evidenceBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--blue-2);
+  color: var(--blue-11);
+  border: none;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.evidenceBadge:hover {
+  background: var(--blue-4);
+}
+
+.evidenceType {
+  text-transform: capitalize;
+  opacity: 0.8;
+}
+
+.noEvidence {
+  font-size: 11px;
+  color: var(--gray-8);
+  white-space: nowrap;
+  flex-shrink: 0;
 }

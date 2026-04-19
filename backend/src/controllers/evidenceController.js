@@ -364,6 +364,29 @@ export const evidenceController = {
     }
   },
 
+  async getAcceptedBatch(req, res, next) {
+    try {
+      const { claim_ids } = req.body || {}
+
+      if (claim_ids === undefined) {
+        return res.json({ evidence: [] })
+      }
+
+      if (!Array.isArray(claim_ids)) {
+        throw new AppError('claim_ids must be an array', 400)
+      }
+
+      if (claim_ids.length === 0) {
+        return res.json({ evidence: [] })
+      }
+
+      const evidence = AcceptedEvidence.findByClaimIds(claim_ids)
+      res.json({ evidence })
+    } catch (err) {
+      next(err)
+    }
+  },
+
   async updateSuggestionStatus(req, res, next) {
     try {
       const { suggestionId } = req.params

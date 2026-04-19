@@ -424,6 +424,19 @@ export async function fetchAcceptedEvidence(claimId, referenceId) {
   return request(`/evidence/accepted?claim_id=${encodeURIComponent(claimId)}&reference_id=${encodeURIComponent(referenceId)}`)
 }
 
+export async function fetchAcceptedEvidenceBatch(claimIds) {
+  if (!Array.isArray(claimIds) || claimIds.length === 0) {
+    return []
+  }
+
+  const data = await request('/evidence/accepted/batch', {
+    method: 'POST',
+    body: JSON.stringify({ claim_ids: claimIds }),
+  })
+
+  return data.evidence || []
+}
+
 export async function updateEvidenceSuggestionStatus(suggestionId, status) {
   return request(`/evidence/suggestions/${encodeURIComponent(suggestionId)}`, {
     method: 'PATCH',

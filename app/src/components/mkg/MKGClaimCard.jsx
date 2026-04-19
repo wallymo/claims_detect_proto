@@ -1,9 +1,42 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import styles from './MKGClaimCard.module.css'
 import ProgressBar from '@/components/atoms/ProgressBar/ProgressBar'
 import Button from '@/components/atoms/Button/Button'
 import Icon from '@/components/atoms/Icon/Icon'
 import Badge from '@/components/atoms/Badge/Badge'
+
+const normalizeInlineText = (value) => String(value || '').replace(/\s+/g, ' ').trim()
+
+const normalizeReferenceId = (value) => {
+  const normalizedValue = String(value ?? '').trim()
+  return normalizedValue ? normalizedValue : null
+}
+
+const typeLabel = (type) => {
+  const normalizedType = String(type || 'text').toLowerCase()
+
+  if (normalizedType === 'structured_box') return 'Data'
+  if (normalizedType === 'figure' || normalizedType === 'chart' || normalizedType === 'diagram') return 'Visual'
+  if (normalizedType === 'manual_box') return 'Manual'
+  return 'Text'
+}
+
+const buildAcceptedEvidenceText = (evidence) => {
+  const annotation = normalizeInlineText(evidence.location_annotation)
+  if (annotation) return annotation
+
+  const pageLabel = evidence.page_number != null && String(evidence.page_number).trim()
+    ? String(evidence.page_number).trim()
+    : '?'
+
+  return `Page ${pageLabel}${evidence.type ? ` · ${typeLabel(evidence.type)}` : ''}`
+}
+
+const compareAcceptedEvidence = (a, b) => (
+  a.sortPage - b.sortPage ||
+  a.sortCreatedAt - b.sortCreatedAt ||
+  a.sortIndex - b.sortIndex
+)
 
 export default function MKGClaimCard({
   claim,
@@ -16,14 +49,18 @@ export default function MKGClaimCard({
   onRefChange,
   onSelect,
   onViewRef,
+  acceptedEvidence = [],
+  onDeleteAcceptedEvidence,
   brandReferences = [],
-  trainingExamples = []
+  trainingExamples = [],
+  onChildEvidenceClick
 }) {
   const [showFeedback, setShowFeedback] = useState(false)
   const [rejectionType, setRejectionType] = useState('false_positive')
   const [refSearch, setRefSearch] = useState('')
   const [selectedRefId, setSelectedRefId] = useState(null)
   const [showRefEditor, setShowRefEditor] = useState(false)
+  const [childrenExpanded, setChildrenExpanded] = useState(false)
 
   const getConfidenceVariant = (confidence) => {
     if (confidence >= 0.8) return 'success'
@@ -164,6 +201,112 @@ export default function MKGClaimCard({
   }
   const displayStatement = String(claim.statement || claim.text || claim.claim || '').trim()
   const displaySuperscripts = Array.isArray(claim.superscripts) ? claim.superscripts : claim.refNumbers
+  const references = Array.isArray(claim.references) ? claim.references : []
+
+  const { acceptedEvidenceByReferenceIndex, orphanAcceptedEvidence } = useMemo(() => {
+    if (!Array.isArray(acceptedEvidence) || acceptedEvidence.length === 0) {
+      return {
+        acceptedEvidenceByReferenceIndex: new Map(),
+        orphanAcceptedEvidence: []
+      }
+    }
+
+    const firstReferenceIndexById = new Map()
+    references.forEach((ref, index) => {
+      const referenceKey = normalizeReferenceId(ref.id)
+      if (referenceKey && !firstReferenceIndexById.has(referenceKey)) {
+        firstReferenceIndexById.set(referenceKey, index)
+      }
+    })
+
+    const acceptedEvidenceRows = acceptedEvidence
+      .map((evidence, index) => {
+        const referenceKey = normalizeReferenceId(evidence.reference_id)
+        const createdAtTime = evidence.created_at ? Date.parse(evidence.created_at) : Number.NaN
+
+        return {
+          ...evidence,
+          displayText: buildAcceptedEvidenceText(evidence),
+          referenceIndex: referenceKey && firstReferenceIndexById.has(referenceKey)
+            ? firstReferenceIndexById.get(referenceKey)
+            : null,
+          sortIndex: index,
+          sortPage: Number.isFinite(Number(evidence.page_number)) ? Number(evidence.page_number) : Number.POSITIVE_INFINITY,
+          sortCreatedAt: Number.isNaN(createdAtTime) ? Number.POSITIVE_INFINITY : createdAtTime
+        }
+      })
+      .sort(compareAcceptedEvidence)
+
+    const groupedEvidence = new Map()
+    const orphanRows = []
+
+    acceptedEvidenceRows.forEach((evidence) => {
+      if (evidence.referenceIndex == null) {
+        orphanRows.push(evidence)
+        return
+      }
+
+      const groupedRows = groupedEvidence.get(evidence.referenceIndex) || []
+      groupedRows.push(evidence)
+      groupedEvidence.set(evidence.referenceIndex, groupedRows)
+    })
+
+    return {
+      acceptedEvidenceByReferenceIndex: groupedEvidence,
+      orphanAcceptedEvidence: orphanRows
+    }
+  }, [acceptedEvidence, references])
+
+  const renderAcceptedEvidenceChild = (evidence) => (
+    <div
+      key={evidence.evidence_id}
+      className={`${styles.refCallout} ${styles.refCalloutChild}`}
+      title={evidence.displayText}
+    >
+      <span className={styles.refChildArrow}>{'\u21B3'}</span>
+      <span className={styles.refText}>{evidence.displayText}</span>
+      {onDeleteAcceptedEvidence && (
+        <button
+          type="button"
+          className={styles.refCalloutDelete}
+          onClick={(e) => {
+            e.stopPropagation()
+            onDeleteAcceptedEvidence(evidence.evidence_id)
+          }}
+          aria-label="Delete accepted evidence"
+          title="Delete accepted evidence"
+        >
+          <Icon name="x" size={12} />
+        </button>
+      )}
+    </div>
+  )
+
+  const renderReferenceCallouts = () => references.map((ref, i) => {
+    const isLinked = !!ref.id
+    const refText = ref.locator?.location_annotation
+      ? ref.locator.location_annotation.replace(/\//g, ' · ')
+      : (String(ref.text || '').trim() || `Reference ${ref.number} not found on page`)
+    const childEvidence = acceptedEvidenceByReferenceIndex.get(i) || []
+
+    return (
+      <Fragment key={ref.id ?? i}>
+        <div
+          className={`${styles.refCallout} ${isLinked ? styles.refCalloutClickable : ''}`}
+          onClick={isLinked ? (e) => { e.stopPropagation(); onViewRef?.(ref, displayStatement) } : undefined}
+          title={isLinked ? (ref.locator ? String(ref.text || '') : 'View source document') : 'Source document not in library'}
+        >
+          <span className={styles.refNumber}>{ref.number}.</span>
+          <span className={styles.refText}>{refText}</span>
+          {isLinked && <Icon name="fileSearch" size={12} className={styles.refViewIcon} />}
+        </div>
+        {childEvidence.map(renderAcceptedEvidenceChild)}
+      </Fragment>
+    )
+  })
+
+  const hasOrphanAcceptedEvidence = orphanAcceptedEvidence.length > 0
+  const hasReferenceCallouts = references.length > 0 || hasOrphanAcceptedEvidence
 
   return (
     <div className={cardClassName} onClick={handleCardClick}>
@@ -227,6 +370,16 @@ export default function MKGClaimCard({
           {claim.globalSpot && (
             <span className={styles.sourceBadgeGlobal}>Global</span>
           )}
+          {claim.childClaims?.length > 0 && (
+            <button
+              className={styles.childClaimsToggle}
+              onClick={(e) => { e.stopPropagation(); setChildrenExpanded(!childrenExpanded) }}
+              title={childrenExpanded ? 'Hide linked claims' : 'Show linked claims'}
+            >
+              <Icon name={childrenExpanded ? 'chevronDown' : 'chevronRight'} size={12} />
+              {claim.childClaims.length} claim{claim.childClaims.length !== 1 ? 's' : ''} linked
+            </button>
+          )}
           {learnedPatternMatch.hasCrossBrandMatch ? (
             <span
               className={`${styles.trainingIcon} ${styles.crossBrand}`}
@@ -274,26 +427,41 @@ export default function MKGClaimCard({
       )}
 
       {/* Reference callouts */}
-      {Array.isArray(claim.references) && claim.references.length > 0 && (
+      {hasReferenceCallouts && (
         <div className={styles.refCallouts}>
-          {claim.references.map((ref, i) => {
-            const isLinked = !!ref.id
-            const refText = ref.locator?.location_annotation
-              ? ref.locator.location_annotation.replace(/\//g, ' · ')
-              : (String(ref.text || '').trim() || `Reference ${ref.number} not found on page`)
-            return (
-              <div
-                key={i}
-                className={`${styles.refCallout} ${isLinked ? styles.refCalloutClickable : styles.refCalloutDimmed}`}
-                onClick={isLinked ? (e) => { e.stopPropagation(); onViewRef?.(ref, displayStatement) } : undefined}
-                title={isLinked ? (ref.locator ? String(ref.text || '') : 'View source document') : 'Source document not in library'}
-              >
-                <span className={styles.refNumber}>{ref.number}.</span>
-                <span className={styles.refText}>{refText}</span>
-                {isLinked && <Icon name="fileSearch" size={12} className={styles.refViewIcon} />}
+          {renderReferenceCallouts()}
+          {hasOrphanAcceptedEvidence && (
+            <>
+              <div className={`${styles.refCallout} ${styles.refCalloutGroupLabel}`}>
+                <span className={styles.refText}>(Other evidence)</span>
               </div>
-            )
-          })}
+              {orphanAcceptedEvidence.map(renderAcceptedEvidenceChild)}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Child claims from global annotation deep linking */}
+      {claim.childClaims?.length > 0 && childrenExpanded && (
+        <div className={styles.childClaimsSection}>
+          {claim.childClaims.map((cc) => (
+            <div key={cc.id} className={styles.childClaimRow}>
+              <div className={styles.childClaimText}>{cc.text}</div>
+              {cc.evidence ? (
+                <button
+                  className={styles.evidenceBadge}
+                  onClick={(e) => { e.stopPropagation(); onChildEvidenceClick?.(cc) }}
+                  title={`Page ${cc.evidence.page_number} — ${cc.evidence.type}`}
+                >
+                  <Icon name="fileText" size={10} />
+                  Pg {cc.evidence.page_number}
+                  <span className={styles.evidenceType}>{cc.evidence.type}</span>
+                </button>
+              ) : (
+                <span className={styles.noEvidence}>No evidence found</span>
+              )}
+            </div>
+          ))}
         </div>
       )}
 

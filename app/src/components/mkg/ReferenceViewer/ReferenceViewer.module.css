@@ -388,7 +388,41 @@
 
 .suggestionActions {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
+}
+
+.resetSuggestionButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--green-4);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--green-8);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.resetSuggestionButton:hover {
+  background: var(--green-2);
+  border-color: var(--green-5);
+  color: var(--green-9);
+}
+
+.resetSuggestionButton:focus-visible {
+  outline: 2px solid var(--green-6);
+  outline-offset: 1px;
+}
+
+.acceptedBadge {
+  font-size: 11px;
+  color: var(--green-7);
+  font-weight: 500;
 }
 
 .pageLabel {
