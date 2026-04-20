@@ -3,7 +3,7 @@ import { promisify } from 'util'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { GoogleGenAI } from '@google/genai'
-import Reference from '../models/Reference.js'
+import { Reference } from '../models/Reference.js'
 
 const execFileAsync = promisify(execFile)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))

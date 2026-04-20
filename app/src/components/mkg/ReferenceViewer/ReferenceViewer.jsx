@@ -594,6 +594,10 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
     if (suggestion.page_number !== currentPage) {
       setCurrentPage(suggestion.page_number)
     }
+    const rects = Array.isArray(suggestion.rects) ? suggestion.rects : []
+    if (rects.length > 0) {
+      setPinY(rects[0].y0 * fitScale)
+    }
   }
 
   // Draw mode handlers
