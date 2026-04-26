@@ -317,9 +317,10 @@ export async function clearBrandPatterns(brandId) {
 
 // ========== PyMuPDF Extraction ==========
 
-export async function extractWithPyMuPDF(file) {
+export async function extractWithPyMuPDF(file, brandId) {
   const formData = new FormData()
   formData.append('pdf', file)
+  if (brandId != null) formData.append('brandId', String(brandId))
   return request('/pymupdf-extract', {
     method: 'POST',
     body: formData

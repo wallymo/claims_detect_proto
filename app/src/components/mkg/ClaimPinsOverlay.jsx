@@ -1,6 +1,5 @@
 import { useRef, useEffect, useCallback, useState } from 'react'
 import styles from './ClaimPinsOverlay.module.css'
-import { logger } from '@/utils/logger'
 
 const DOT_RADIUS = 14
 const DOT_RADIUS_ACTIVE = 18
@@ -14,6 +13,7 @@ const CONTENT_TYPE_X_PCT = {
   chart: 5,
   global: 94
 }
+const GLOBAL_REFERENCE_PIN_COLOR = '#388E3C'
 
 /**
  * Get color based on confidence score
@@ -24,6 +24,13 @@ function confidenceColor(confidence) {
   if (confidence >= 0.7) return '#F57C00'  // Amber - Strong implication (70-89%)
   if (confidence >= 0.5) return '#E64A19'  // Orange - Borderline (50-69%)
   return '#757575'                          // Gray - Weak signal (30-49%)
+}
+
+function pinColor(dot) {
+  if (dot.source === 'global-reference' || String(dot.matchTier || '').startsWith('global-reference')) {
+    return GLOBAL_REFERENCE_PIN_COLOR
+  }
+  return confidenceColor(dot.confidence)
 }
 
 /**
@@ -124,7 +131,6 @@ export default function ClaimPinsOverlay({
   currentPage = 1,
   canvasDimensions = { width: 0, height: 0 },
   panOffset = { x: 0, y: 0 },
-  scale = 1,
   onClaimSelect,
   onClaimPositionUpdate,
   claimsPanelRef,  // Ref to the claims panel for connector positioning
@@ -154,6 +160,8 @@ export default function ClaimPinsOverlay({
           boxWidthPct: 0,
           boxHeightPct: 0,
           confidence: claim.confidence,
+          source: claim.source,
+          matchTier: claim.matchTier,
           text: claim.text,
           label: labelFromClaim(claim),
           positionSource: 'manual-drag'
@@ -187,6 +195,8 @@ export default function ClaimPinsOverlay({
         boxWidthPct,
         boxHeightPct,
         confidence: claim.confidence,
+        source: claim.source,
+        matchTier: claim.matchTier,
         text: claim.text,
         label: labelFromClaim(claim),
         positionSource: claim.position?.source || 'unknown'
@@ -252,7 +262,7 @@ export default function ClaimPinsOverlay({
     ctx.clearRect(0, 0, canvasDimensions.width, canvasDimensions.height)
 
     // Draw each dot
-    displayDots.forEach((dot, index) => {
+    displayDots.forEach((dot) => {
       const isActive = activeClaimId === dot.id
       const isHovered = hoveredDot === dot.id
       const radius = isActive || isHovered ? DOT_RADIUS_ACTIVE : DOT_RADIUS
@@ -271,7 +281,7 @@ export default function ClaimPinsOverlay({
       // Draw circle
       ctx.beginPath()
       ctx.arc(dot.x, dot.y, radius, 0, Math.PI * 2)
-      ctx.fillStyle = confidenceColor(dot.confidence)
+      ctx.fillStyle = pinColor(dot)
       ctx.fill()
 
       // Border

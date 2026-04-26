@@ -604,6 +604,11 @@
   font-size: 11px;
 }
 
+.refCalloutEvidenceLink {
+  background: color-mix(in srgb, var(--green-1) 88%, var(--blue-1));
+  border-color: var(--green-7);
+}
+
 .refCalloutChild .refText {
   flex: 1;
   min-width: 0;
@@ -625,6 +630,12 @@
 .refNumber {
   font-weight: 700;
   flex-shrink: 0;
+}
+
+.refClaimType {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: var(--green-9);
 }
 
 .refText {
@@ -707,6 +718,12 @@
   composes: sourceBadge;
   background: var(--blue-1);
   color: var(--blue-10);
+}
+
+.sourceBadgeGlobalReference {
+  composes: sourceBadge;
+  background: var(--green-1);
+  color: var(--green-10);
 }
 
 /* Delete button */

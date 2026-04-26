@@ -24,7 +24,7 @@ function pdfRectToViewport(rect, fitScale) {
  * Reference Viewer — renders reference PDF with evidence suggestion sidebar,
  * accept/reject workflow, and manual draw mode for evidence boxes.
  */
-export default function ReferenceViewer({ referenceId, page, excerpt, claimId, claimText, onEvidenceChanged }) {
+export default function ReferenceViewer({ referenceId, page, excerpt, claimId, claimText, onEvidenceChanged, highlightRects: providedHighlightRects = null }) {
   const [pdfDoc, setPdfDoc] = useState(null)
   const [currentPage, setCurrentPage] = useState(page || 1)
   const [totalPages, setTotalPages] = useState(0)
@@ -34,6 +34,7 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
   const [highlightRects, setHighlightRects] = useState([])
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
   const [fitScale, setFitScale] = useState(1)
+  const [zoom, setZoom] = useState(1)
 
   // Evidence suggestion state
   const [suggestions, setSuggestions] = useState([])
@@ -244,6 +245,10 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
     }
   }, [page])
 
+  useEffect(() => {
+    setZoom(1)
+  }, [referenceId])
+
   // Fetch accepted evidence on mount
   useEffect(() => {
     if (!claimId || !referenceId) return
@@ -300,7 +305,8 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
         const fitWidth = (containerWidth - 48) / baseViewport.width
         const fitHeight = (scrollAreaHeight - 32) / baseViewport.height
         const computedFitScale = Math.min(fitWidth, fitHeight, 2.0)
-        const viewport = pdfPage.getViewport({ scale: computedFitScale })
+        const renderScale = computedFitScale * zoom
+        const viewport = pdfPage.getViewport({ scale: renderScale })
         if (!cancelled) {
           setFitScale(computedFitScale)
         }
@@ -326,6 +332,13 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
           await textLayer.render()
         }
         if (cancelled) return
+
+        if (Array.isArray(providedHighlightRects) && providedHighlightRects.length > 0) {
+          const nextRects = providedHighlightRects.map(rect => pdfRectToViewport(rect, renderScale))
+          setHighlightRects(nextRects)
+          setPinY(nextRects.length > 0 ? nextRects[0].top : null)
+          return
+        }
 
         // Excerpt highlighting
         if (excerpt && !cancelled) {
@@ -421,10 +434,10 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
                 const overlaps = itemEnd >= matchIdx && itemStart <= matchEnd
 
                 if (overlaps) {
-                  const width = Math.max(6, (item.width || 0) * computedFitScale)
-                  const height = Math.max(10, (item.height || 0) * computedFitScale)
-                  const left = item.transform[4] * computedFitScale
-                  const top = (baseViewport.height - item.transform[5]) * computedFitScale - height
+                  const width = Math.max(6, (item.width || 0) * renderScale)
+                  const height = Math.max(10, (item.height || 0) * renderScale)
+                  const left = item.transform[4] * renderScale
+                  const top = (baseViewport.height - item.transform[5]) * renderScale - height
                   nextRects.push({
                     left: Math.max(0, left),
                     top: Math.max(0, top),
@@ -458,7 +471,7 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
 
     renderPage()
     return () => { cancelled = true }
-  }, [pdfDoc, currentPage, excerpt, totalPages])
+  }, [pdfDoc, currentPage, excerpt, totalPages, providedHighlightRects, zoom])
 
   // Scroll pin into view
   useEffect(() => {
@@ -596,7 +609,7 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
     }
     const rects = Array.isArray(suggestion.rects) ? suggestion.rects : []
     if (rects.length > 0) {
-      setPinY(rects[0].y0 * fitScale)
+      setPinY(rects[0].y0 * fitScale * zoom)
     }
   }
 
@@ -623,11 +636,12 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
 
   async function handleCanvasMouseUp() {
     if (!drawMode || !drawingRect) return
+    const renderScale = fitScale * zoom
     const pdfRect = {
-      x0: drawingRect.left / fitScale,
-      y0: drawingRect.top / fitScale,
-      x1: (drawingRect.left + drawingRect.width) / fitScale,
-      y1: (drawingRect.top + drawingRect.height) / fitScale,
+      x0: drawingRect.left / renderScale,
+      y0: drawingRect.top / renderScale,
+      x1: (drawingRect.left + drawingRect.width) / renderScale,
+      y1: (drawingRect.top + drawingRect.height) / renderScale,
     }
     try {
       const data = await api.createManualEvidence({
@@ -657,7 +671,7 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
     e.preventDefault()
     const ev = acceptedEvidence.find(x => x.evidence_id === evidenceId)
     if (!ev || !ev.rects?.[0]) return
-    const vp = pdfRectToViewport(ev.rects[0], fitScale)
+    const vp = pdfRectToViewport(ev.rects[0], fitScale * zoom)
     setResizing({
       evidenceId,
       edge,
@@ -681,11 +695,12 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
       if (r.width < 20) r.width = 20
       if (r.height < 20) r.height = 20
       // Update accepted evidence rects in state (viewport → pdf coords)
+      const renderScale = fitScale * zoom
       const pdfRect = {
-        x0: r.left / fitScale,
-        y0: r.top / fitScale,
-        x1: (r.left + r.width) / fitScale,
-        y1: (r.top + r.height) / fitScale,
+        x0: r.left / renderScale,
+        y0: r.top / renderScale,
+        x1: (r.left + r.width) / renderScale,
+        y1: (r.top + r.height) / renderScale,
       }
       setAcceptedEvidence(prev => prev.map(ev =>
         ev.evidence_id === resizing.evidenceId ? { ...ev, rects: [pdfRect] } : ev
@@ -701,7 +716,7 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
       window.removeEventListener('mousemove', onMouseMove)
       window.removeEventListener('mouseup', onMouseUp)
     }
-  }, [resizing, fitScale])
+  }, [resizing, fitScale, zoom])
 
   function handleDeleteEvidence(evidenceId) {
     api.deleteAcceptedEvidence(evidenceId).catch(err =>
@@ -730,6 +745,8 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
   }
 
   const currentPageAccepted = acceptedEvidence.filter(e => e.page_number === currentPage)
+  const renderScale = fitScale * zoom
+  const zoomPct = Math.round(zoom * 100)
 
   return (
     <div className={styles.container}>
@@ -756,6 +773,39 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
       <div className={styles.splitLayout}>
         {/* PDF panel */}
         <div className={styles.pdfPanel}>
+          <div className={styles.viewerToolbar}>
+            <div className={styles.zoomControls} aria-label="Reference zoom controls">
+              <Button
+                variant="ghost"
+                size="small"
+                onClick={() => setZoom(value => Math.max(0.5, Number((value - 0.25).toFixed(2))))}
+                disabled={zoom <= 0.5}
+                title="Zoom out"
+              >
+                <Icon name="zoomOut" size={14} />
+              </Button>
+              <span className={styles.zoomValue}>{zoomPct}%</span>
+              <Button
+                variant="ghost"
+                size="small"
+                onClick={() => setZoom(value => Math.min(3, Number((value + 0.25).toFixed(2))))}
+                disabled={zoom >= 3}
+                title="Zoom in"
+              >
+                <Icon name="zoomIn" size={14} />
+              </Button>
+              {zoom !== 1 && (
+                <Button
+                  variant="ghost"
+                  size="small"
+                  onClick={() => setZoom(1)}
+                  title="Reset zoom to fit"
+                >
+                  Fit
+                </Button>
+              )}
+            </div>
+          </div>
           <div ref={containerRef} className={styles.scrollArea}>
             <div
               className={`${styles.canvasWrapper} ${drawMode ? styles.canvasWrapperDrawMode : ''}`}
@@ -772,7 +822,7 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
                 const rects = Array.isArray(ev.rects) ? ev.rects : []
                 const isEditing = editingBoxId === ev.evidence_id
                 return rects.map((rect, ri) => {
-                  const vp = pdfRectToViewport(rect, fitScale)
+                  const vp = pdfRectToViewport(rect, renderScale)
                   return (
                     <div
                       key={`${ev.evidence_id}-${ri}`}
@@ -800,7 +850,7 @@ export default function ReferenceViewer({ referenceId, page, excerpt, claimId, c
               {/* Dashed preview for active suggestion */}
               {activeSuggestionId && suggestions.filter(s => s.suggestion_id === activeSuggestionId && s.page_number === currentPage && s.status !== 'accepted').map(s =>
                 (Array.isArray(s.rects) ? s.rects : []).map((rect, ri) => {
-                  const vp = pdfRectToViewport(rect, fitScale)
+                  const vp = pdfRectToViewport(rect, renderScale)
                   if (vp.width < 1 || vp.height < 1) return null
                   return (
                     <div

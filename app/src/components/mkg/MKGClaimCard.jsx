@@ -21,6 +21,15 @@ const typeLabel = (type) => {
   return 'Text'
 }
 
+const claimTypeLabel = (type) => {
+  const normalizedType = String(type || '').toLowerCase()
+  if (normalizedType === 'bullet') return 'bullet'
+  if (normalizedType === 'image') return 'image'
+  if (normalizedType === 'table') return 'table'
+  if (normalizedType === 'text') return 'text'
+  return null
+}
+
 const buildAcceptedEvidenceText = (evidence) => {
   const annotation = normalizeInlineText(evidence.location_annotation)
   if (annotation) return annotation
@@ -201,7 +210,10 @@ export default function MKGClaimCard({
   }
   const displayStatement = String(claim.statement || claim.text || claim.claim || '').trim()
   const displaySuperscripts = Array.isArray(claim.superscripts) ? claim.superscripts : claim.refNumbers
-  const references = Array.isArray(claim.references) ? claim.references : []
+  const references = useMemo(
+    () => (Array.isArray(claim.references) ? claim.references : []),
+    [claim.references]
+  )
 
   const { acceptedEvidenceByReferenceIndex, orphanAcceptedEvidence } = useMemo(() => {
     if (!Array.isArray(acceptedEvidence) || acceptedEvidence.length === 0) {
@@ -284,22 +296,39 @@ export default function MKGClaimCard({
 
   const renderReferenceCallouts = () => references.map((ref, i) => {
     const isLinked = !!ref.id
-    const refText = ref.locator?.location_annotation
+    const refText = String(ref.text || '').trim() || `Reference ${ref.number} not found on page`
+    const refClaimType = claimTypeLabel(ref.claim_type)
+    const locatorText = ref.locator?.location_annotation
       ? ref.locator.location_annotation.replace(/\//g, ' · ')
-      : (String(ref.text || '').trim() || `Reference ${ref.number} not found on page`)
+      : null
     const childEvidence = acceptedEvidenceByReferenceIndex.get(i) || []
+    const handleLocatorClick = isLinked
+      ? (e) => { e.stopPropagation(); onViewRef?.(ref, displayStatement) }
+      : undefined
 
     return (
       <Fragment key={ref.id ?? i}>
         <div
           className={`${styles.refCallout} ${isLinked ? styles.refCalloutClickable : ''}`}
-          onClick={isLinked ? (e) => { e.stopPropagation(); onViewRef?.(ref, displayStatement) } : undefined}
-          title={isLinked ? (ref.locator ? String(ref.text || '') : 'View source document') : 'Source document not in library'}
+          onClick={handleLocatorClick}
+          title={isLinked ? (ref.locator ? `View evidence: ${ref.locator.location_annotation || ref.locator.page_number}` : 'View source document') : 'Source document not in library'}
         >
           <span className={styles.refNumber}>{ref.number}.</span>
+          {refClaimType && <span className={styles.refClaimType}>[{refClaimType}]</span>}
           <span className={styles.refText}>{refText}</span>
           {isLinked && <Icon name="fileSearch" size={12} className={styles.refViewIcon} />}
         </div>
+        {locatorText && (
+          <div
+            className={`${styles.refCallout} ${styles.refCalloutChild} ${styles.refCalloutEvidenceLink} ${isLinked ? styles.refCalloutClickable : ''}`}
+            onClick={handleLocatorClick}
+            title={ref.locator?.snippet || ref.locator?.location_annotation || 'View evidence location'}
+          >
+            <span className={styles.refChildArrow}>{'\u21B3'}</span>
+            <Icon name="fileSearch" size={11} />
+            <span className={styles.refText}>{locatorText}</span>
+          </div>
+        )}
         {childEvidence.map(renderAcceptedEvidenceChild)}
       </Fragment>
     )
@@ -369,6 +398,9 @@ export default function MKGClaimCard({
           )}
           {claim.globalSpot && (
             <span className={styles.sourceBadgeGlobal}>Global</span>
+          )}
+          {claim.source === 'global-reference' && (
+            <span className={styles.sourceBadgeGlobalReference}>Global reference</span>
           )}
           {claim.childClaims?.length > 0 && (
             <button

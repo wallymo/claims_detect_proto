@@ -107,6 +107,35 @@
   overflow: hidden;
 }
 
+.viewerToolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--gray-3);
+  background: var(--color-background-primary);
+  flex-shrink: 0;
+}
+
+.zoomControls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border: 1px solid var(--gray-3);
+  border-radius: 999px;
+  background: var(--gray-1);
+}
+
+.zoomValue {
+  min-width: 42px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gray-8);
+}
+
 /* Claim text header */
 .claimHeader {
   display: flex;

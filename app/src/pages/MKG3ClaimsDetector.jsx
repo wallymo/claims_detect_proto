@@ -36,7 +36,7 @@ import { dedupeClaimsByPageAndText } from '@/utils/claimDedup'
 import { summarizeAnnotationClaims } from '@/utils/annotationSummary'
 import { logger } from '@/utils/logger'
 import { charOffsetToPage, resolveCitationPdfPage } from '@/utils/referenceViewerHints'
-import { matchCitationToLibrary } from '@/utils/citationLibraryMatcher'
+import { normalizeGlobalReferenceAnnotations, transformPyMuPDFResults } from '@/utils/pymupdfTransform'
 
 const fileShaPromiseCache = new WeakMap()
 
@@ -134,77 +134,6 @@ function mergeTrainingSessionsByDocument(sessions) {
   return [...grouped.values()].sort(
     (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
   )
-}
-
-function transformPyMuPDFResults(data, referenceDocuments = []) {
-  const annotations = []
-  if (!data?.pages) return annotations
-  const matchRef = (text) => {
-    if (!referenceDocuments.length) return null
-    const matched = matchCitationToLibrary(text, referenceDocuments)
-    return matched ? matched.id : null
-  }
-  for (const page of data.pages) {
-    const mapClaim = (claim, idx, region, prefix) => ({
-      id: `pymupdf-${prefix}-${page.page}-${idx}`,
-      text: claim.text,
-      claim: claim.text,
-      statement: claim.text,
-      region,
-      refNumbers: claim.superscripts || [],
-      superscripts: claim.superscripts || [],
-      references: (claim.references || []).map(r => ({ number: r.number, text: r.text, missing: false, id: matchRef(r.text) })),
-      source: 'pymupdf',
-      matched: (claim.references || []).length > 0,
-      matchTier: 'on-page',
-      confidence: 100,
-      page: page.page,
-      position: claim.position || null,
-      globalSpot: false,
-      status: 'pending',
-    })
-    for (const [idx, claim] of (page.slide_claims || []).entries()) {
-      annotations.push(mapClaim(claim, idx, 'slide', 's'))
-    }
-    for (const [idx, claim] of (page.notes_claims || []).entries()) {
-      annotations.push(mapClaim(claim, idx, 'notes', 'n'))
-    }
-    // Unresolved superscripts are kept in PyMuPDF JSON for debugging
-    // but not surfaced as annotations — they have no matched reference.
-    // Global annotations for orphan references (no superscripts in region)
-    for (const [idx, g] of (page.global_annotations || []).entries()) {
-      const region = (g.global_reason || '').includes('slide') ? 'slide' : 'notes'
-      annotations.push({
-        id: `pymupdf-g-${page.page}-${idx}`,
-        text: g.text,
-        claim: g.text,
-        statement: g.text,
-        region,
-        refNumbers: g.superscripts || [],
-        superscripts: g.superscripts || [],
-        references: (g.references || []).map(r => ({ number: r.number, text: r.text, missing: false, id: matchRef(r.text) })),
-        source: 'pymupdf',
-        matched: true,
-        matchTier: 'on-page',
-        confidence: 100,
-        page: page.page,
-        position: g.position || null,
-        globalSpot: true,
-        globalReason: g.global_reason || 'orphan-page-reference',
-        status: 'pending',
-        childClaims: (g.childClaims || []).map((cc, ccIdx) => ({
-          id: cc.id || `pymupdf-gc-${page.page}-${idx}-${ccIdx}`,
-          text: cc.text,
-          position: cc.position || null,
-          source: 'global-deep-link',
-          confidence: cc.confidence || 0,
-          reference_id: cc.reference_id || null,
-          evidence: cc.evidence || null,
-        })),
-      })
-    }
-  }
-  return annotations
 }
 
 export default function MKG3ClaimsDetector() {
@@ -460,8 +389,11 @@ export default function MKG3ClaimsDetector() {
   useEffect(() => {
     if (!claims.length) return
 
-    const deduped = dedupeClaimsByPageAndText(claims, { strategy: 'exact' })
-    if (deduped.duplicateCount === 0) return
+    const normalizedClaims = normalizeGlobalReferenceAnnotations(claims)
+    const normalizedChanged = normalizedClaims.length !== claims.length ||
+      normalizedClaims.some((claim, index) => claim.id !== claims[index]?.id || claim.text !== claims[index]?.text)
+    const deduped = dedupeClaimsByPageAndText(normalizedClaims, { strategy: 'exact' })
+    if (!normalizedChanged && deduped.duplicateCount === 0) return
 
     const indexedClaims = addGlobalIndices(deduped.claims)
     logger.info({
@@ -748,13 +680,14 @@ export default function MKG3ClaimsDetector() {
       setAnalysisProgress(20)
       setAnalysisStatus('Extracting annotations (PyMuPDF)...')
 
-      const pymupdfData = await api.extractWithPyMuPDF(uploadedFile)
+      const referenceLibraryBrandId = libraryBrandId || selectedBrandId
+      const pymupdfData = await api.extractWithPyMuPDF(uploadedFile, referenceLibraryBrandId)
       if (cancelAnalysisRef.current) return
 
       setAnalysisProgress(70)
       setAnalysisStatus('Processing results...')
 
-      const transformed = transformPyMuPDFResults(pymupdfData, referenceDocuments)
+      const transformed = normalizeGlobalReferenceAnnotations(transformPyMuPDFResults(pymupdfData, referenceDocuments))
       const indexed = addGlobalIndices(transformed)
       logger.info({ event: 'pymupdf_extraction_complete', annotations: indexed.length })
 
@@ -989,7 +922,9 @@ export default function MKG3ClaimsDetector() {
       const version = await api.getVersionByNumber(documentHash, versionNumber, selectedBrandId)
       if (version) {
         const savedAnnotations = addGlobalIndices(
-          JSON.parse(version.annotations_json).map(c => ({ ...c, status: c.status || 'pending' }))
+          normalizeGlobalReferenceAnnotations(
+            JSON.parse(version.annotations_json).map(c => ({ ...c, status: c.status || 'pending' }))
+          )
         )
         setClaims(savedAnnotations)
         setCurrentVersion(version)
@@ -1255,6 +1190,19 @@ export default function MKG3ClaimsDetector() {
 
   const handleViewRef = async (ref, claimText, claimId) => {
     if (!ref.id) return
+
+    if (ref.locator?.page_number) {
+      setReferenceViewerData({
+        referenceId: ref.id,
+        page: ref.locator.page_number,
+        excerpt: ref.locator.snippet || claimText || null,
+        pageResolution: ref.locator.location_annotation ? 'global-reference-evidence' : 'global-reference-page',
+        claimId: claimId || null,
+        claimText: claimText || null,
+        highlightRects: ref.locator.rects || [],
+      })
+      return
+    }
 
     let targetPage = 1
     let excerpt = null
